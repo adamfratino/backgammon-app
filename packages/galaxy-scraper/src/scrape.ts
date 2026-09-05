@@ -75,7 +75,10 @@ export async function scrapeCategory(
   return { pages, blunders: seen.size };
 }
 
-export function resolveCategories(counts: Record<string, number> | null, options: ScrapeOptions): string[] {
+export function resolveCategories(
+  counts: Record<string, number> | null,
+  options: ScrapeOptions,
+): string[] {
   const all = counts ? Object.keys(counts) : KNOWN_CATEGORIES;
   const requested = options.categories?.length ? options.categories : all;
   return requested.filter((c) => options.includeRecent || !CROSS_CUTTING_CATEGORIES.has(c));
@@ -90,13 +93,18 @@ export function readRawPages(): { category: string; payload: CategoryPage }[] {
     const dir = join(RAW_DIR, category);
     let files: string[];
     try {
-      files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+      files = readdirSync(dir)
+        .filter((f) => f.endsWith(".json"))
+        .sort();
     } catch {
       continue;
     }
     for (const file of files) {
       try {
-        out.push({ category, payload: JSON.parse(readFileSync(join(dir, file), "utf8")) as CategoryPage });
+        out.push({
+          category,
+          payload: JSON.parse(readFileSync(join(dir, file), "utf8")) as CategoryPage,
+        });
       } catch {
         // Skip a half-written page rather than aborting the whole load.
       }

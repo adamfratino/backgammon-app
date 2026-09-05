@@ -1,0 +1,17 @@
+# Build output and caches
+.next
+.turbo
+dist
+build
+out
+coverage
+
+# Generated
+next-env.d.ts
+
+# Owned by the package manager
+pnpm-lock.yaml
+
+# Scraped data and raw API captures
+packages/galaxy-scraper/raw
+packages/galaxy-scraper/data

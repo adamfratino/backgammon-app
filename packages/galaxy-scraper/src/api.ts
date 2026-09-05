@@ -118,7 +118,8 @@ export class GalaxyClient {
         }
       } catch (error) {
         // A rejected token is worth surfacing; a wrong path is not.
-        if (error instanceof PermanentError && (error.status === 401 || error.status === 403)) throw error;
+        if (error instanceof PermanentError && (error.status === 401 || error.status === 403))
+          throw error;
       }
     }
     return null;

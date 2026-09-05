@@ -6,10 +6,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const payload = token.split(".")[1];
   if (!payload) return null;
   try {
-    const json = Buffer.from(
-      payload.replace(/-/g, "+").replace(/_/g, "/"),
-      "base64",
-    ).toString("utf8");
+    const json = Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString(
+      "utf8",
+    );
     return JSON.parse(json) as Record<string, unknown>;
   } catch {
     return null;
@@ -28,10 +27,7 @@ export interface Credentials {
  * package root, then one at the monorepo root. Both files are gitignored.
  */
 export function loadCredentials(): Credentials {
-  const candidates = [
-    join(PACKAGE_ROOT, ".token"),
-    resolve(PACKAGE_ROOT, "../../.token"),
-  ];
+  const candidates = [join(PACKAGE_ROOT, ".token"), resolve(PACKAGE_ROOT, "../../.token")];
 
   let raw = process.env.GALAXY_TOKEN ?? "";
   if (!raw) {
@@ -51,8 +47,7 @@ export function loadCredentials(): Credentials {
   }
 
   const payload = decodeJwtPayload(token);
-  const exp =
-    typeof payload?.exp === "number" ? new Date(payload.exp * 1000) : null;
+  const exp = typeof payload?.exp === "number" ? new Date(payload.exp * 1000) : null;
   if (exp && exp.getTime() < Date.now()) {
     throw new Error(
       `Galaxy token expired at ${exp.toISOString()}. Grab a fresh one from DevTools.`,

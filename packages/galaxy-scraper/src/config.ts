@@ -7,8 +7,7 @@ export const RAW_DIR = join(PACKAGE_ROOT, "raw");
 export const DATA_DIR = join(PACKAGE_ROOT, "data");
 export const DB_PATH = join(DATA_DIR, "blunders.db");
 
-export const API_BASE =
-  "https://api.backgammongalaxy.com/blunder-service/api/v1";
+export const API_BASE = "https://api.backgammongalaxy.com/blunder-service/api/v1";
 
 /**
  * Categories as of the last observed `categories` response. Used only as a

@@ -38,14 +38,14 @@ pnpm --filter @repo/galaxy-scraper stats        # summarise the database
 pnpm --filter @repo/galaxy-scraper verify       # check the XGID converter
 ```
 
-| Option | Effect |
-| --- | --- |
-| `--category=blitz,race` | Limit to specific categories |
-| `--delay=1000` | Milliseconds between requests (default 1000) |
-| `--resume` | Reuse pages already in `raw/` instead of refetching |
-| `--include-recent` | Include the cross-cutting `recent` category |
-| `--max-pages=100` | Safety cap per category |
-| `--db=<path>` | Database location |
+| Option                  | Effect                                              |
+| ----------------------- | --------------------------------------------------- |
+| `--category=blitz,race` | Limit to specific categories                        |
+| `--delay=1000`          | Milliseconds between requests (default 1000)        |
+| `--resume`              | Reuse pages already in `raw/` instead of refetching |
+| `--include-recent`      | Include the cross-cutting `recent` category         |
+| `--max-pages=100`       | Safety cap per category                             |
+| `--db=<path>`           | Database location                                   |
 
 `scrape` writes raw pages to `raw/<category>/page-NNN.json`; `load` builds the
 database from whatever is cached. Because the two are separate, a token expiry
@@ -83,17 +83,17 @@ Two gotchas worth knowing if you query the raw JSON directly:
 
 ## Schema
 
-| Table | Contents |
-| --- | --- |
-| `matches` | One row per match: date, length, final score, opponent name. `self_*` is resolved against the token's `bg_id`, so it is correct whether you were player1 or player2. |
-| `blunders` | One row per `blunder_id`: category, kind, dice, error magnitude, equity, match score, Crawford state, cube value and ownership, `source_xgid`, GNU BG position/match ID, played vs. best move. |
-| `candidate_moves` | Every ranked alternative: notation, equity, error, `move_played` flag, and both `xgid` and `gnubgid` for the resulting position. |
-| `cube_decisions` | Full cube equities: no-double / double-take / double-pass, plus best action for each side. |
-| `blunder_categories` | Which API categories a blunder was listed under. |
+| Table                | Contents                                                                                                                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `matches`            | One row per match: date, length, final score, opponent name. `self_*` is resolved against the token's `bg_id`, so it is correct whether you were player1 or player2.                           |
+| `blunders`           | One row per `blunder_id`: category, kind, dice, error magnitude, equity, match score, Crawford state, cube value and ownership, `source_xgid`, GNU BG position/match ID, played vs. best move. |
+| `candidate_moves`    | Every ranked alternative: notation, equity, error, `move_played` flag, and both `xgid` and `gnubgid` for the resulting position.                                                               |
+| `cube_decisions`     | Full cube equities: no-double / double-take / double-pass, plus best action for each side.                                                                                                     |
+| `blunder_categories` | Which API categories a blunder was listed under.                                                                                                                                               |
 
 ## Board state
 
-Galaxy only ever hands out an XGID for the positions that *result* from each
+Galaxy only ever hands out an XGID for the positions that _result_ from each
 candidate move — never for the position you actually faced. `position.ts`
 closes that gap by decoding GNU BG's position and match IDs and re-encoding
 them as an XGID, stored as `blunders.source_xgid`. Paste it straight into
