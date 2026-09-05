@@ -1,0 +1,27 @@
+{
+  "name": "@repo/galaxy-scraper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scrapes Backgammon Galaxy blunder analysis into a local SQLite database",
+  "bin": {
+    "galaxy-scraper": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "categories": "node --disable-warning=ExperimentalWarning src/cli.ts categories",
+    "scrape": "node --disable-warning=ExperimentalWarning src/cli.ts scrape",
+    "load": "node --disable-warning=ExperimentalWarning src/cli.ts load",
+    "all": "node --disable-warning=ExperimentalWarning src/cli.ts all",
+    "stats": "node --disable-warning=ExperimentalWarning src/cli.ts stats",
+    "check-types": "tsc --noEmit",
+    "verify": "node --disable-warning=ExperimentalWarning src/cli.ts verify"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "26.4.1",
+    "typescript": "7.0.2"
+  }
+}
