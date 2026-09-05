@@ -211,26 +211,121 @@ instead.
 
 - **Mutations** — same as queries, `.mutation()` instead of `.query()`.
 - **Middleware** — how you build `protectedProcedure` from `publicProcedure`.
-- **Server-side calls** — `createCallerFactory` lets a React Server Component
-  call a procedure directly, skipping the HTTP round trip.
+
+Server-side calls are no longer skipped — see Part 1.5.
+
+---
+
+# Part 1.5 — Server Components
+
+The app has two ways to call the same procedures. Which one you reach for is the
+main architectural decision in a Next.js app.
+
+## Two callers, same router
+
+```ts
+// trpc/client.ts — browser. Goes over HTTP.
+export const trpc = createTRPCClient<AppRouter>({
+  links: [httpBatchLink({ url: "/api/trpc" })],
+});
+
+// server/caller.ts — Server Components. No network at all.
+export const caller = createCallerFactory(appRouter)(createContext);
+```
+
+`createCallerFactory` invokes procedures as **plain functions**. No fetch, no
+serialisation, no round trip — the query runs during render and its result is
+baked into the HTML.
+
+```tsx
+export async function CategoryNav() {
+  const categories = await caller.categories.list();
+  // ...
+}
+```
+
+Server Components can be `async`. There is no `useEffect`, no loading state, and
+no waterfall — the data is already there when the HTML is written.
+
+> **Gotcha:** `import "server-only"` at the top of `caller.ts` makes the build
+> fail loudly if a Client Component ever imports it. Worth adding, because the
+> failure it prevents — leaking the database handle into a client bundle — is
+> otherwise silent.
+>
+> Note it must be a **real dependency**. TypeScript does not fail resolution on
+> side-effect-only imports, and Turbopack aliases the package internally, so a
+> missing `server-only` type-checks and runs fine right up until it doesn't.
+
+## The shape of the app
+
+The split we landed on, and the reasoning:
+
+| Data                    | Where          | Why                                   |
+| ----------------------- | -------------- | ------------------------------------- |
+| Category list + counts  | Server (RSC)   | Changes rarely, needed on first paint |
+| Blunders for a category | Client         | Changes on every navigation           |
+| Which blunder is active | Client (state) | Pure interaction, no fetch            |
+
+Slow-moving data server-side, interactive data client-side. That's the general
+rule, and it's usually a better starting point than "fetch everything on the
+client."
+
+## Layouts persist across navigation
+
+`CategoryNav` lives in `app/layout.tsx`, not in the page. Next reuses a layout
+across navigations between its children, so clicking through categories does
+**not** re-run the category query. Only the page below it re-renders.
+
+This is a real performance property, not a detail — putting the nav in each page
+instead would re-query on every click.
+
+## ⚠️ Static vs Dynamic — revisit this
+
+`next build` labels every route:
+
+```
+┌ ○ /                    ← Static: rendered once at BUILD time
+├ ƒ /[category]          ← Dynamic: rendered per request
+└ ƒ /api/trpc/[trpc]
+```
+
+`○ Static` means the sidebar counts were computed **when the app was built** and
+frozen into the HTML. Re-running the scraper will not change them until the next
+deploy.
+
+This is currently wrong for us, and is left as-is deliberately so the trade-off
+stays visible. The fix is one line:
+
+```ts
+export const revalidate = 3600; // ISR: regenerate at most hourly
+export const dynamic = "force-dynamic"; // or: always fresh, never cached
+```
+
+**The trap worth remembering:** a Server Component that reads a database looks
+identical whether it runs once at build time or on every request. Nothing in the
+component tells you which. The only signal is the `○` / `ƒ` in the build output —
+so read it.
 
 ## The open problem → Part 2
 
-`app/blunders.tsx` currently fetches like this:
+`app/[category]/blunder-browser.tsx` still fetches by hand:
 
 ```tsx
 useEffect(() => {
-  trpc.blunders.list.query({ limit: 10 }).then(setBlunders);
-}, []);
+  setBlunders(null);
+  setActiveId(null);
+  trpc.blunders.byCategory.query({ category }).then(setBlunders);
+}, [category]);
 ```
 
-This works, and it's deliberately simple so the request is visible. But it has
-real problems:
+This works, and it's deliberately explicit so the request stays visible. But it
+has real problems, and now that `category` is a prop they are no longer
+hypothetical:
 
-- no error handling
-- no cleanup on unmount
-- if `limit` became a prop, it would refetch and race on every change
-- no caching — remount refetches
+- no error handling — a rejected promise is swallowed
+- no cleanup — navigate fast and a stale response can overwrite a newer one
+- no caching — going back to a category refetches from scratch
+- manual reset of two pieces of state on every change
 - no way to invalidate or refetch on demand
 
 Every one of those is what TanStack Query exists to solve. Part 2 refactors this

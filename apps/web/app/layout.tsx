@@ -1,7 +1,14 @@
+import { CategoryNav } from "./category-nav";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={{ display: "flex", gap: "3rem" }}>
+        {/* Rendered on the server once. Next reuses it across navigations
+            between categories, so it is not re-fetched on every click. */}
+        <CategoryNav />
+        {children}
+      </body>
     </html>
   );
 }
