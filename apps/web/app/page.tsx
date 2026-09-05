@@ -1,10 +1,8 @@
-import { Blunders } from "./blunders";
-
 export default function Home() {
   return (
     <main>
-      <h1>Hello world</h1>
-      <Blunders />
+      <h1>Blunders</h1>
+      <p>Select a category.</p>
     </main>
   );
 }
