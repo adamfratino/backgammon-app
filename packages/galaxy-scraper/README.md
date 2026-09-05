@@ -67,9 +67,13 @@ The API returns flat `events`, several of which share one `blunder_id`:
 
 Two gotchas worth knowing if you query the raw JSON directly:
 
-- `error_analysis.equity_error` is `0.0` on every record Galaxy returns. The
-  real magnitude lives in `raw_error` (negative). The `error_magnitude` column
-  is its absolute value, for sorting.
+- `error_analysis.equity_error` is `0.0` on every record Galaxy returns, so it
+  is discarded rather than stored. The real magnitude lives in `raw_error`
+  (negative), which is what `blunders.raw_error` holds — populated on every
+  row, never zero. `error_magnitude` is its absolute value, for sorting.
+  Per-candidate `candidate_moves.equity_error` is a different, genuinely
+  populated field: it is zero only for the rank-1 move, which by definition
+  has no error.
 - `source_position.classification` (the position's own tag, e.g. `6_prime`)
   does not always match the API category it was listed under (`six_prime`).
   Both are stored — the latter in `blunder_categories`.
