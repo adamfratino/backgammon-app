@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { GalaxyClient } from "./api.ts";
-import { DB_PATH, KNOWN_CATEGORIES, loadCredentials, RAW_DIR } from "./config.ts";
+import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
+import { loadCredentials } from "./credentials.ts";
 import { openDatabase, writeBatch } from "./db.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
 import { normalize } from "./transform.ts";
