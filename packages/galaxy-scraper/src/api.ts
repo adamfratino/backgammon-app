@@ -1,4 +1,5 @@
-import { API_BASE, type Credentials } from "./config.ts";
+import { API_BASE } from "./config.ts";
+import type { Credentials } from "./credentials.ts";
 import type { CategoryCounts, CategoryPage } from "./types.ts";
 
 /** Header set copied from the web client; Galaxy rejects requests without them. */
@@ -117,7 +118,8 @@ export class GalaxyClient {
         }
       } catch (error) {
         // A rejected token is worth surfacing; a wrong path is not.
-        if (error instanceof PermanentError && (error.status === 401 || error.status === 403)) throw error;
+        if (error instanceof PermanentError && (error.status === 401 || error.status === 403))
+          throw error;
       }
     }
     return null;

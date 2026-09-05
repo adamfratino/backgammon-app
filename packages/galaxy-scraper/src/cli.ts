@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { GalaxyClient } from "./api.ts";
-import { DB_PATH, KNOWN_CATEGORIES, loadCredentials, RAW_DIR } from "./config.ts";
+import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
+import { loadCredentials } from "./credentials.ts";
 import { openDatabase, writeBatch } from "./db.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
 import { normalize } from "./transform.ts";
@@ -150,13 +151,15 @@ async function main(): Promise<void> {
   if (args.command === "verify") {
     const report = verifyConverter();
     if (report.total === 0) {
-      console.log("No cached pages to verify against. Run \"scrape\" first.");
+      console.log('No cached pages to verify against. Run "scrape" first.');
       return;
     }
     const pct = ((report.exact / report.total) * 100).toFixed(2);
     console.log(`XGID converter: ${report.exact}/${report.total} exact (${pct}%)`);
     for (const m of report.mismatchesByField) {
-      console.log(`  ${m.field.padEnd(9)} ${String(m.count).padStart(5)} wrong  got=${m.got} want=${m.want}`);
+      console.log(
+        `  ${m.field.padEnd(9)} ${String(m.count).padStart(5)} wrong  got=${m.got} want=${m.want}`,
+      );
     }
     if (report.exact !== report.total) process.exitCode = 1;
     return;
@@ -179,7 +182,9 @@ async function main(): Promise<void> {
 
   if (credentials.expiresAt) {
     const days = (credentials.expiresAt.getTime() - Date.now()) / 86_400_000;
-    console.log(`Token valid for ${days.toFixed(1)} more days (user ${credentials.selfId ?? "?"}).`);
+    console.log(
+      `Token valid for ${days.toFixed(1)} more days (user ${credentials.selfId ?? "?"}).`,
+    );
   }
 
   const discovered = await client.fetchCategories();

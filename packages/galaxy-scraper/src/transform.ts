@@ -107,7 +107,11 @@ export interface NormalizedBatch {
   links: { blunder_id: number; category: string }[];
 }
 
-function normalizeMatch(match_id: number, a: MatchAttributes, selfId: string | null): NormalizedMatch {
+function normalizeMatch(
+  match_id: number,
+  a: MatchAttributes,
+  selfId: string | null,
+): NormalizedMatch {
   // player1 is normally the account holder, but confirm against the token's bg_id.
   const selfIsPlayer1 = selfId ? a.player1?.id === selfId : true;
   const self = selfIsPlayer1 ? a.player1 : a.player2;
@@ -225,8 +229,9 @@ export function normalize(
         : (moveReview ?? cubeReview);
     if (!flagged) continue;
 
-    const flaggedEventType = (checkerFlagged ? moveEvent : cubeFlagged ? cubeEvent : (moveEvent ?? cubeEvent))
-      ?.event?.event_type;
+    const flaggedEventType = (
+      checkerFlagged ? moveEvent : cubeFlagged ? cubeEvent : (moveEvent ?? cubeEvent)
+    )?.event?.event_type;
     const cubeAnalysisSide = cubeReview?.result?.error_analysis;
 
     const result = flagged.result;
