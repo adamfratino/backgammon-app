@@ -6,7 +6,13 @@
         "name": "next"
       }
     ],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    // @repo/galaxy-scraper targets Node's native TS runner, so its internal
+    // imports carry .ts extensions. It is type-checked as part of this program.
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "**/*.ts",
