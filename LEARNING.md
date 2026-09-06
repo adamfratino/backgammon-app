@@ -794,8 +794,8 @@ serialise that cache into the HTML, and let the browser's `QueryClient` adopt it
 on startup. `useQuery` then finds its entry already populated and never enters
 `isPending` at all.
 
-Three pieces: a proxy that calls the router directly, `dehydrate()` on the way
-out, `HydrationBoundary` on the way in.
+Two pieces: a proxy that calls the router directly, and `dehydrate()` /
+`HydrationBoundary` to carry the cache across the wire.
 
 ## 1. A server-side proxy — `trpc/server.tsx`
 
@@ -803,11 +803,14 @@ New file.
 
 ```tsx
 import "server-only";
+
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { cache } from "react";
+
 import { appRouter } from "@/server/router";
 import { createContext } from "@/server/trpc";
-import { makeQueryClient } from "@/trpc/query-client";
+
+import { makeQueryClient } from "./query-client";
 
 /**
  * One QueryClient per request. `cache()` memoises for the lifetime of a single
@@ -840,38 +843,23 @@ Client Component's cache needs seeding.
 Note this is also why Part 2's relative-URL warning never bites. Nothing here
 goes over HTTP, so there is no URL to make absolute.
 
-## 2. Let the cache dehydrate pending queries — `trpc/query-client.ts`
-
-```ts
-import { defaultShouldDehydrateQuery, QueryClient } from "@tanstack/react-query";
-
-export function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { staleTime: 60 * 1000 },
-      dehydrate: {
-        // By default only *settled* queries are serialised. Including pending
-        // ones lets us start a query without awaiting it and stream the result.
-        shouldDehydrateQuery: (query) =>
-          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
-      },
-    },
-  });
-}
-```
-
-## 3. Prefetch and wrap — `app/[category]/page.tsx`
+## 2. Prefetch and wrap — `app/[category]/page.tsx`
 
 ```tsx
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { BlunderBrowser } from "./blunder-browser";
-import { getQueryClient, trpc } from "@/trpc/server";
+import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
 
-export default async function CategoryPage({ params }: { params: Promise<{ category: string }> }) {
+import { getQueryClient, trpc } from "@/trpc/server";
+import { BlunderBrowser } from "./blunder-browser";
+
+interface CategoryPageProps {
+  params: Promise<{ category: string }>;
+}
+
+export default async function CategoryPage({ params }: CategoryPageProps) {
   const { category } = await params;
 
   const queryClient = getQueryClient();
-  void queryClient.prefetchQuery(trpc.blunders.byCategory.queryOptions({ category }));
+  await queryClient.query(trpc.blunders.byCategory.queryOptions({ category })).catch(noop);
 
   return (
     <main>
@@ -889,6 +877,36 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
 `key={category}` is unaffected. The cache lives on the `QueryClient`, not on the
 component, so remounting re-reads the same hydrated entry rather than refetching.
 
+`blunder-browser.tsx` does not change at all. That is the appeal of this version:
+the component written in Part 2 is already correct, it just stops ever seeing
+`isPending`.
+
+### Why `query()` and not `prefetchQuery()`
+
+Most guides — including the first draft of this one — write
+`queryClient.prefetchQuery(...)`. As of `@tanstack/query-core` 5.102 that is
+deprecated, and your editor will say so:
+
+> Use `queryClient.query(options)` instead. You can swallow errors with
+> `.catch(noop)`. This method will be removed in the next major version.
+
+`fetchQuery` is deprecated the same way. The replacement is `query()`, but the
+error contract changes and that is the part worth understanding. In the source,
+`prefetchQuery` is literally:
+
+```ts
+return this.fetchQuery(options).then(noop).catch(noop);
+```
+
+The swallowing was built in — `prefetchQuery` returns `Promise<void>` and never
+rejects. `query()` returns `Promise<TData>` and **does** reject. So `.catch(noop)`
+is not decoration; without it a database error becomes an unhandled rejection
+during server render instead of degrading to a client-side fetch.
+
+`noop` is public API — `@tanstack/react-query` does `export * from
+'@tanstack/query-core'`, which includes it. `.catch(() => {})` works identically
+if you would rather not import it.
+
 ## What actually lands in the HTML
 
 Measured on this app, `/blitz` (300 blunders, procedure limit 50):
@@ -896,7 +914,16 @@ Measured on this app, `/blitz` (300 blunders, procedure limit 50):
 |                       | rows in HTML | `Loading` in HTML | dehydrated entry |
 | --------------------- | ------------ | ----------------- | ---------------- |
 | Part 2 — client fetch | 0            | 1                 | no               |
-| Part 2.5 — prefetch   | 50           | 0                 | yes              |
+| Part 2.5 — prefetch   | 50           | 0                 | yes, with data   |
+
+Count rows with `aria-current`, not `<li>` — the category nav from Part 1.5
+contributes eighteen `<li>` of its own and will flatter your numbers.
+
+```sh
+curl -s http://localhost:3000/blitz > /tmp/after.html
+grep -c "Loading" /tmp/after.html                 # 0
+grep -o 'aria-current' /tmp/after.html | wc -l    # 50
+```
 
 The serialised entry carries exactly the key from Part 2:
 
@@ -905,32 +932,34 @@ The serialised entry carries exactly the key from Part 2:
 ```
 
 That is why the browser finds it. Same procedure path, same input, same key.
+The markup is finished — `<ol aria-busy="false">` with all fifty rows.
 
-One detail worth seeing, since `void` was used rather than `await`. What gets
-serialised is not the rows but a reference to a streamed promise:
+## `await` vs `void` — and why this section says `await`
 
-```
-{"queryHash":"[[\"blunders\",\"byCategory\"]...", "promise":"$@11"}
-```
+You will see `void queryClient.prefetchQuery(...)` in most write-ups, on the
+reasoning that not awaiting lets the query stream instead of blocking render.
+That is true, but it only pays off if something suspends. `useQuery` does not
+suspend. Pair `void` with `useQuery` and the server renders the loading state
+and gives up before the data arrives.
 
-React resolves it in a later chunk of the same response, and the server still
-emits finished markup — `<ol aria-busy="false">` with all fifty rows. You get
-streaming without giving up server-rendered content.
+All three rows below were measured on this app, changing only the prefetch call
+and the client hook:
 
-## `void` vs `await`
+| prefetch                | client hook                     | rows in HTML | dehydrated as |
+| ----------------------- | ------------------------------- | ------------ | ------------- |
+| `void query().catch()`  | `useQuery`                      | **0**        | promise ref   |
+| `await query().catch()` | `useQuery`                      | **50**       | resolved data |
+| `void query().catch()`  | `useSuspenseQuery` + `Suspense` | **50**       | promise ref   |
 
-| form                                   | behaviour                                                                                           |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `void queryClient.prefetchQuery(...)`  | render proceeds immediately, the promise streams. Requires the `shouldDehydrateQuery` change above. |
-| `await queryClient.prefetchQuery(...)` | page render blocks until the query resolves. Simpler, no pending-dehydration needed.                |
+So `void` is not a free optimisation over `await` — it is half of a different
+design. Taking it without the other half is strictly worse than `await`: you pay
+to run the query on the server and still ship a loading state.
 
-With one query the difference is small. With several, `void` lets them overlap
-instead of queueing — start them all, await none.
+The streaming version is real and worth knowing. It is Part 2.6.
 
-> **Gotcha:** `void` here is deliberate, not sloppiness. It marks "I am starting
-> this and intentionally not awaiting it." Without the keyword some lint configs
-> flag the floating promise, and a reader cannot tell the omission was on
-> purpose.
+> **Gotcha:** when you do use `void`, keep the keyword. It marks "I am starting
+> this and intentionally not awaiting it." Without it some lint configs flag the
+> floating promise, and a reader cannot tell the omission was on purpose.
 
 ## Two ways to get nothing for your trouble
 
@@ -945,8 +974,163 @@ fetches anyway — while the HTML still carries the payload you paid to compute.
 You would get server-rendered HTML and an immediate duplicate request. Prefetch
 and `staleTime` are a pair; the value in Part 2 is what makes this worth doing.
 
+Neither shows up in `check-types`, `lint` or `next build`. Verify by curling the
+served page, not by trusting a green build.
+
 ## What this does not fix
 
 `/` is still `○ Static`, and prefetching has nothing to say about it — that is
 Next's own render cache, a different mechanism at a different layer. Still
 tracked in Part 1.5 and BG-2.
+
+---
+
+# Part 2.6 — Streaming with `useSuspenseQuery`
+
+## The one idea
+
+Part 2.5 blocks: the page awaits the query, then renders. With one query that is
+fine. With three, they queue — and the slowest one holds the whole document.
+
+The alternative is to start every query without awaiting any of them, let React
+render the shell immediately, and stream each result into the same response as
+it resolves. For that to produce server-rendered rows rather than a spinner,
+the component has to **suspend** — which is what `useSuspenseQuery` does and
+`useQuery` does not.
+
+Three changes to the Part 2.5 code.
+
+## 1. Let the cache dehydrate pending queries — `trpc/query-client.ts`
+
+```ts
+import { defaultShouldDehydrateQuery, QueryClient } from "@tanstack/react-query";
+
+export function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000,
+      },
+      dehydrate: {
+        // By default only *settled* queries are serialised. Including pending
+        // ones lets the page start a query without awaiting it, and stream the
+        // result into the same response.
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
+      },
+    },
+  });
+}
+```
+
+Without this the dehydrated cache is empty at the moment `dehydrate()` runs —
+the query is still pending, so the default predicate skips it. This line is
+what makes `void` viable, and it is why Part 2.5 does not need it.
+
+## 2. Don't await, and add a boundary — `app/[category]/page.tsx`
+
+```tsx
+import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
+import { Suspense } from "react";
+
+import { getQueryClient, trpc } from "@/trpc/server";
+import { BlunderBrowser } from "./blunder-browser";
+
+interface CategoryPageProps {
+  params: Promise<{ category: string }>;
+}
+
+export default async function CategoryPage({ params }: CategoryPageProps) {
+  const { category } = await params;
+
+  const queryClient = getQueryClient();
+  void queryClient.query(trpc.blunders.byCategory.queryOptions({ category })).catch(noop);
+
+  return (
+    <main>
+      <h1>{category}</h1>
+      <div style={{ display: "flex", gap: "3rem" }}>
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <Suspense fallback={<p>Loading...</p>}>
+            <BlunderBrowser key={category} category={category} />
+          </Suspense>
+        </HydrationBoundary>
+      </div>
+    </main>
+  );
+}
+```
+
+A suspending component needs a `<Suspense>` above it or the suspension travels
+up to the nearest one — which, with none in the tree, means the whole route.
+
+## 3. Swap the hook — `app/[category]/blunder-browser.tsx`
+
+```tsx
+import { useSuspenseQuery } from "@tanstack/react-query";
+
+// ...
+
+const { isFetching, data } = useSuspenseQuery(trpc.blunders.byCategory.queryOptions({ category }));
+
+if (data.length === 0) return <p>No blunders in this category.</p>;
+```
+
+The two guards from Part 2 are gone, and the types explain why:
+
+| expression  | `useQuery`       | `useSuspenseQuery` |
+| ----------- | ---------------- | ------------------ |
+| `data`      | `T \| undefined` | `T`                |
+| `isPending` | `boolean`        | `false`            |
+| `error`     | `Error \| null`  | `null`             |
+
+`if (isPending)` is unreachable and `error.message` does not compile — `error` is
+typed `null`, so there is no `.message` on it. That is not TypeScript being
+pedantic; it is the contract. A suspense query cannot be pending in your render
+function (React would not have called it) and it does not return errors, it
+**throws** them.
+
+> **Gotcha:** losing the `error` guard means losing your error handling unless
+> you replace it. A thrown query error needs a React **error boundary**, which
+> is a separate component from `<Suspense>` and has no hook equivalent. Part 2's
+> `<p role="alert">` fallback was doing real work — do not delete it without
+> putting a boundary in its place.
+
+## What lands in the HTML
+
+Same `/blitz`, same fifty rows:
+
+|                                 | rows in HTML | dehydrated as |
+| ------------------------------- | ------------ | ------------- |
+| Part 2.5 — `await` + `useQuery` | 50           | resolved data |
+| Part 2.6 — `void` + suspense    | 50           | promise ref   |
+
+Both give you server-rendered rows. The difference is in the payload:
+
+```
+"queryHash":"[[\"blunders\",\"byCategory\"],...]","promise":"$@6a"
+```
+
+The dehydrated entry is a _reference to a streamed promise_, not the data.
+React resolves it in a later chunk of the same response.
+
+One measurement trap: `grep -c "Loading"` returns **1** here, and it does not
+mean the loading state shipped. The string is the `fallback` prop of the
+Suspense boundary, serialised into the RSC flight payload — in this app it sits
+at byte ~18,000 while the first row is at byte ~3,500. The rows come _first_.
+Check the rendered markup (`aria-current` count, `<ol aria-busy="false">`)
+rather than grepping for the word.
+
+## Which one to use
+
+`await` + `useQuery` (Part 2.5) is the better default here. One query, no
+waterfall to flatten, the Part 2 component untouched, error handling intact,
+and three fewer moving parts.
+
+Reach for Part 2.6 when the page fires several independent queries and you want
+them overlapping rather than queued — start them all, await none. The cost is
+real: `<Suspense>` boundaries, an error boundary to replace the guard you lost,
+and a dehydration predicate to maintain.
+
+Starting a query and not awaiting it is only an optimisation if something is
+prepared to suspend on it.
