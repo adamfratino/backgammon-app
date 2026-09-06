@@ -7,7 +7,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
     <main>
       <h1>{category}</h1>
       <div style={{ display: "flex", gap: "3rem" }}>
-        <BlunderBrowser category={category} />
+        <BlunderBrowser key={category} category={category} />
       </div>
     </main>
   );
