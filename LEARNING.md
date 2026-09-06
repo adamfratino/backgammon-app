@@ -492,8 +492,10 @@ in `server/caller.ts` points at `trpc/client.ts` by name — update it.)
 > `No QueryClient set` on first render.
 
 > **Gotcha:** the relative URL `/api/trpc` only resolves in a browser. It is
-> fine here because this client is used exclusively from Client Components. The
-> moment you prefetch from a Server Component it must become absolute.
+> fine here because this client is used exclusively from Client Components. If
+> you ever call _this_ client from the server it would have to become absolute —
+> Part 2.5 sidesteps that entirely by calling the router directly rather than
+> over HTTP.
 
 `import type { AppRouter }` is still load-bearing, for exactly the reason in
 Part 1 — it is erased at compile time, so no server code follows it into the
@@ -760,3 +762,191 @@ It is excluded from production builds automatically. Two things to try:
 - The database is a read-only local SQLite file, so the app cannot deploy and
   cannot persist anything. Tracked as BG-2, and it is what has to land before
   mutations mean anything.
+
+---
+
+# Part 2.5 — Prefetch and Hydration
+
+## The problem Part 2 leaves behind
+
+Part 2 fixed how the browser fetches. It did not change **when**. Ask the server
+for `/blitz` and read what actually comes back over the wire:
+
+```sh
+curl -s http://localhost:3000/blitz | grep -c "Loading"
+```
+
+The rows are not in the HTML. The document arrives, the JS bundle downloads,
+React hydrates, `useQuery` fires, an HTTP request goes to `/api/trpc`, and
+_then_ SQLite is read. Every step after the first is avoidable — the server had
+the database open when it wrote that HTML and chose to send "Loading..."
+instead.
+
+This is the same observation as Part 1.5, pointed at a harder case. `CategoryNav`
+solved it by not being a Client Component at all. `BlunderBrowser` cannot do
+that; it owns `activeId` and has to stay interactive. Prefetching is how you get
+server-rendered data into a component that still needs to be a client one.
+
+## The idea
+
+Run the query on the server during render, put the result in a query cache,
+serialise that cache into the HTML, and let the browser's `QueryClient` adopt it
+on startup. `useQuery` then finds its entry already populated and never enters
+`isPending` at all.
+
+Three pieces: a proxy that calls the router directly, `dehydrate()` on the way
+out, `HydrationBoundary` on the way in.
+
+## 1. A server-side proxy — `trpc/server.tsx`
+
+New file.
+
+```tsx
+import "server-only";
+import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
+import { cache } from "react";
+import { appRouter } from "@/server/router";
+import { createContext } from "@/server/trpc";
+import { makeQueryClient } from "@/trpc/query-client";
+
+/**
+ * One QueryClient per request. `cache()` memoises for the lifetime of a single
+ * server render, so the page and the dehydration step share an instance.
+ */
+export const getQueryClient = cache(makeQueryClient);
+
+export const trpc = createTRPCOptionsProxy({
+  router: appRouter,
+  ctx: createContext,
+  queryClient: getQueryClient,
+});
+```
+
+**How this differs from `caller` (Part 1.5).** Both call procedures as plain
+functions with no network. But `caller.categories.list()` hands you _data_,
+while `trpc.blunders.byCategory.queryOptions({ category })` hands you _query
+options_ — the same shape `useTRPC()` produces in the browser, and crucially
+**the same cache key**. That alignment is the entire trick: the server fills an
+entry the client is about to look for.
+
+Use `caller` when a Server Component just wants a value. Use the proxy when a
+Client Component's cache needs seeding.
+
+> **Gotcha:** `cache()` is not optional. Drop it and `getQueryClient()` returns a
+> fresh client each call — you would prefetch into one and dehydrate another,
+> and ship an empty cache. It fails silently: the app still works, just with the
+> loading state you were trying to remove.
+
+Note this is also why Part 2's relative-URL warning never bites. Nothing here
+goes over HTTP, so there is no URL to make absolute.
+
+## 2. Let the cache dehydrate pending queries — `trpc/query-client.ts`
+
+```ts
+import { defaultShouldDehydrateQuery, QueryClient } from "@tanstack/react-query";
+
+export function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { staleTime: 60 * 1000 },
+      dehydrate: {
+        // By default only *settled* queries are serialised. Including pending
+        // ones lets us start a query without awaiting it and stream the result.
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
+      },
+    },
+  });
+}
+```
+
+## 3. Prefetch and wrap — `app/[category]/page.tsx`
+
+```tsx
+import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { BlunderBrowser } from "./blunder-browser";
+import { getQueryClient, trpc } from "@/trpc/server";
+
+export default async function CategoryPage({ params }: { params: Promise<{ category: string }> }) {
+  const { category } = await params;
+
+  const queryClient = getQueryClient();
+  void queryClient.prefetchQuery(trpc.blunders.byCategory.queryOptions({ category }));
+
+  return (
+    <main>
+      <h1>{category}</h1>
+      <div style={{ display: "flex", gap: "3rem" }}>
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <BlunderBrowser key={category} category={category} />
+        </HydrationBoundary>
+      </div>
+    </main>
+  );
+}
+```
+
+`key={category}` is unaffected. The cache lives on the `QueryClient`, not on the
+component, so remounting re-reads the same hydrated entry rather than refetching.
+
+## What actually lands in the HTML
+
+Measured on this app, `/blitz` (300 blunders, procedure limit 50):
+
+|                       | rows in HTML | `Loading` in HTML | dehydrated entry |
+| --------------------- | ------------ | ----------------- | ---------------- |
+| Part 2 — client fetch | 0            | 1                 | no               |
+| Part 2.5 — prefetch   | 50           | 0                 | yes              |
+
+The serialised entry carries exactly the key from Part 2:
+
+```
+[["blunders","byCategory"],{"input":{"category":"blitz"},"type":"query"}]
+```
+
+That is why the browser finds it. Same procedure path, same input, same key.
+
+One detail worth seeing, since `void` was used rather than `await`. What gets
+serialised is not the rows but a reference to a streamed promise:
+
+```
+{"queryHash":"[[\"blunders\",\"byCategory\"]...", "promise":"$@11"}
+```
+
+React resolves it in a later chunk of the same response, and the server still
+emits finished markup — `<ol aria-busy="false">` with all fifty rows. You get
+streaming without giving up server-rendered content.
+
+## `void` vs `await`
+
+| form                                   | behaviour                                                                                           |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `void queryClient.prefetchQuery(...)`  | render proceeds immediately, the promise streams. Requires the `shouldDehydrateQuery` change above. |
+| `await queryClient.prefetchQuery(...)` | page render blocks until the query resolves. Simpler, no pending-dehydration needed.                |
+
+With one query the difference is small. With several, `void` lets them overlap
+instead of queueing — start them all, await none.
+
+> **Gotcha:** `void` here is deliberate, not sloppiness. It marks "I am starting
+> this and intentionally not awaiting it." Without the keyword some lint configs
+> flag the floating promise, and a reader cannot tell the omission was on
+> purpose.
+
+## Two ways to get nothing for your trouble
+
+Both fail quietly — the app works, it is just slow again.
+
+**Mismatched input.** The prefetch and the `useQuery` must produce the same key.
+`queryOptions({ category })` on the server and `queryOptions({ category, limit: 50 })`
+on the client are two different entries, so the client ignores your prefetch and
+fetches anyway — while the HTML still carries the payload you paid to compute.
+
+**`staleTime: 0`.** A hydrated entry that is already stale refetches on mount.
+You would get server-rendered HTML and an immediate duplicate request. Prefetch
+and `staleTime` are a pair; the value in Part 2 is what makes this worth doing.
+
+## What this does not fix
+
+`/` is still `○ Static`, and prefetching has nothing to say about it — that is
+Next's own render cache, a different mechanism at a different layer. Still
+tracked in Part 1.5 and BG-2.
