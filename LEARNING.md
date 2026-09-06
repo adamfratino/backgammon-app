@@ -335,4 +335,428 @@ exact file so the before/after is the lesson.
 
 # Part 2 — TanStack Query
 
-_Not written yet._
+## The one idea
+
+`useState` + `useEffect` treats server data as if you own it. You don't. It is a
+**local replica of something that lives somewhere else and can change without
+telling you.**
+
+TanStack Query is not a fetching library. It is a cache with a fetching policy.
+You never say "go fetch now". You declare _what this component needs_, under a
+key, and the cache decides whether the copy it already has is good enough.
+
+Everything else — deduplication, background refetch, retries, staleness — falls
+out of that one reframing.
+
+## Two integrations. Pick the right one.
+
+There are two tRPC packages for this and they are not interchangeable:
+
+| package                      | call style                                                      | status                    |
+| ---------------------------- | --------------------------------------------------------------- | ------------------------- |
+| `@trpc/react-query`          | `trpc.blunders.byCategory.useQuery({ category })`               | classic, still maintained |
+| `@trpc/tanstack-react-query` | `useQuery(trpc.blunders.byCategory.queryOptions({ category }))` | current — what we use     |
+
+The classic package wraps every TanStack hook, so tRPC sits permanently in the
+middle. The new one wraps nothing: `queryOptions()` returns a **plain options
+object**. That object composes with every TanStack API that accepts one —
+`useQuery`, `useSuspenseQuery`, `useQueries`, `prefetchQuery`, `setQueryData`.
+tRPC's only job becomes building the key and the fetcher.
+
+> **Gotcha:** most tutorials and most of the internet are still the classic API.
+> If you see `.useQuery()` hanging off the tRPC object, you are reading the old
+> one and it will not work here.
+
+## Install
+
+```sh
+pnpm --filter web add @tanstack/react-query @trpc/tanstack-react-query
+pnpm --filter web add -D @tanstack/react-query-devtools
+```
+
+`@trpc/tanstack-react-query` ships on tRPC's version line, not TanStack's. Keep
+it pinned to the same version as `@trpc/server` and `@trpc/client` — `11.18.0`
+here. `@tanstack/react-query` versions independently (v5).
+
+## The four pieces
+
+```
+apps/web/
+├── trpc/query-client.ts                 1. the cache, configured
+├── trpc/client.tsx                      2. provider + useTRPC   (was client.ts)
+├── app/layout.tsx                       3. mount the provider
+└── app/[category]/blunder-browser.tsx   4. the refactor — the actual lesson
+```
+
+### 1. The cache — `trpc/query-client.ts`
+
+New file.
+
+```ts
+import { QueryClient } from "@tanstack/react-query";
+
+export function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        // How long a fetched result is trusted without re-checking. The default
+        // is 0, which means every new mount refetches immediately — technically
+        // correct, and the reason people conclude the cache "isn't working".
+        staleTime: 60 * 1000,
+      },
+    },
+  });
+}
+```
+
+**`staleTime` is the one option to understand.** It answers: _how long may I
+serve this without asking again?_ At the default of `0`, mounting a component
+always triggers a request; you still get deduplication and background updates,
+but not the instant navigation you probably wanted.
+
+Do not confuse it with `gcTime` (default 5 minutes), which answers a different
+question: _how long do I keep this around after nothing is rendering it?_
+`staleTime` governs refetching; `gcTime` governs eviction.
+
+**Why a factory, not a module-level `new QueryClient()`.** In Next this module
+is evaluated on the server too. A module-level singleton there would be shared
+across every concurrent request — one visitor's cache serving another's
+response. A factory lets us make exactly one client per server request, and
+exactly one for the browser tab.
+
+### 2. Provider and hook — `trpc/client.tsx`
+
+This replaces the existing `trpc/client.ts`. It gains JSX, so it needs the new
+extension:
+
+```sh
+git mv apps/web/trpc/client.ts apps/web/trpc/client.tsx
+```
+
+```tsx
+"use client";
+
+import type { QueryClient } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { createTRPCContext } from "@trpc/tanstack-react-query";
+import { useState } from "react";
+import { makeQueryClient } from "@/trpc/query-client";
+import type { AppRouter } from "@/server/router";
+
+/**
+ * The typed proxy and its provider. `useTRPC()` returns an object shaped like
+ * the router, where every procedure exposes `queryOptions`, `queryKey`,
+ * `queryFilter`, `mutationOptions` — builders, not hooks.
+ */
+export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
+
+let browserQueryClient: QueryClient | undefined;
+
+function getQueryClient() {
+  // Server: a fresh cache per request, never shared between visitors.
+  if (typeof window === "undefined") return makeQueryClient();
+  // Browser: one cache for the tab's whole lifetime. Re-making it here would
+  // silently throw away everything cached so far.
+  return (browserQueryClient ??= makeQueryClient());
+}
+
+export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = getQueryClient();
+
+  // useState's initialiser runs once per mount, so the client is built once
+  // rather than rebuilt on every render.
+  const [trpcClient] = useState(() =>
+    createTRPCClient<AppRouter>({
+      links: [httpBatchLink({ url: "/api/trpc" })],
+    }),
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+        {children}
+      </TRPCProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+Notice the vanilla `trpc` export from Part 1 is gone. Its only consumer was
+`blunder-browser.tsx`, which is the file we are about to rewrite. (The comment
+in `server/caller.ts` points at `trpc/client.ts` by name — update it.)
+
+> **Gotcha:** two providers, and both are required. `QueryClientProvider` is
+> TanStack's; `TRPCProvider` is tRPC's, and it needs the _same_ `queryClient`
+> instance handed to it. Miss `QueryClientProvider` and you get a runtime
+> `No QueryClient set` on first render.
+
+> **Gotcha:** the relative URL `/api/trpc` only resolves in a browser. It is
+> fine here because this client is used exclusively from Client Components. The
+> moment you prefetch from a Server Component it must become absolute.
+
+`import type { AppRouter }` is still load-bearing, for exactly the reason in
+Part 1 — it is erased at compile time, so no server code follows it into the
+bundle.
+
+### 3. Mount it — `app/layout.tsx`
+
+```tsx
+import { CategoryNav } from "./category-nav";
+import { TRPCReactProvider } from "@/trpc/client";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body style={{ display: "flex", gap: "3rem" }}>
+        <TRPCReactProvider>
+          {/* Still rendered on the server. Passing a Server Component through
+              a client provider as children does not make it a client
+              component — see below. */}
+          <CategoryNav />
+          {children}
+        </TRPCReactProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+> **Gotcha — the RSC rule worth memorising:** wrapping your tree in a
+> `"use client"` provider does **not** turn the tree into client components.
+> `layout.tsx` is a Server Component, so `<CategoryNav />` is evaluated _there_
+> and its finished output is passed to the provider as `children`. The provider
+> renders a slot it never owns.
+>
+> This only holds because the components arrive **as children**. If
+> `TRPCReactProvider` imported `CategoryNav` itself, that import would drag it —
+> and the database handle behind it — across the boundary, and `server-only`
+> would fail the build. Composition is what keeps the boundary honest.
+
+`CategoryNav` still uses `caller` and never touches TanStack Query. Part 1.5's
+split is unchanged: slow-moving data on the server, interactive data on the
+client.
+
+### 4. The refactor — `app/[category]/blunder-browser.tsx`
+
+The whole point of Part 2. Here is what leaves:
+
+```tsx
+const [blunders, setBlunders] = useState<Blunder[] | null>(null);
+const [activeId, setActiveId] = useState<number | null>(null);
+
+useEffect(() => {
+  setBlunders(null);
+  setActiveId(null);
+  trpc.blunders.byCategory.query({ category }).then(setBlunders);
+}, [category]);
+```
+
+And what replaces it:
+
+```tsx
+"use client";
+
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { inferRouterOutputs } from "@trpc/server";
+import { useTRPC } from "@/trpc/client";
+import type { AppRouter } from "@/server/router";
+
+type Blunder = inferRouterOutputs<AppRouter>["blunders"]["byCategory"][number];
+
+export function BlunderBrowser({ category }: { category: string }) {
+  const trpc = useTRPC();
+  const [activeId, setActiveId] = useState<number | null>(null);
+
+  const blunders = useQuery(trpc.blunders.byCategory.queryOptions({ category }));
+
+  if (blunders.isPending) return <p>Loading...</p>;
+  if (blunders.error) return <p role="alert">Could not load blunders: {blunders.error.message}</p>;
+  if (blunders.data.length === 0) return <p>No blunders in this category.</p>;
+
+  const active = blunders.data.find((b) => b.blunder_id === activeId) ?? null;
+
+  return (
+    <>
+      <ol>
+        {blunders.data.map((blunder) => (
+          <li key={blunder.blunder_id}>
+            <button
+              type="button"
+              aria-current={blunder.blunder_id === activeId}
+              onClick={() => setActiveId(blunder.blunder_id)}
+            >
+              {blunder.kind} {blunder.error_magnitude.toFixed(3)}
+            </button>
+          </li>
+        ))}
+      </ol>
+
+      {active ? <BlunderDetail blunder={active} /> : null}
+    </>
+  );
+}
+```
+
+`BlunderDetail` is untouched.
+
+Note `const trpc = useTRPC()` shadows the name the old import used. It is the
+same spelling and a completely different thing: Part 1's `trpc` was a client
+that _executes_ calls; this one only _describes_ them.
+
+> **Gotcha — you need both guards, not one.** `useQuery` returns a
+> **discriminated union**: pending, error, and success are distinct shapes, and
+> only the success one carries a non-`undefined` `data`. Returning out of
+> `isPending` alone is not enough, because the error variant has no data either:
+>
+> ```tsx
+> if (blunders.isPending) return <p>Loading...</p>;
+> blunders.data.length; // ✗ 'data' is possibly 'undefined' — the error variant
+> ```
+>
+> Guard both and `data` narrows to `Blunder[]`, with no `?.` anywhere below. The
+> order of the two checks does not matter.
+
+Destructuring is fine here, incidentally —
+`const { data, isPending, error } = useQuery(...)` narrows exactly the same way,
+because TypeScript 4.6 added narrowing for destructured discriminated unions. A
+lot of older advice tells you to keep the object for this reason; that advice
+predates the feature. The one thing that _does_ break it is `let` — narrowing
+applies only to `const` bindings.
+
+## `key` does the other half
+
+The old `useEffect` was quietly doing **two** jobs — refetching the data, and
+resetting `activeId` so a selection didn't survive into a different category.
+Query takes the first job. It has no opinion about the second.
+
+Left alone, this is now a real bug: a blunder can belong to several categories
+(that is what `blunder_categories` is), so a stale `activeId` can still match a
+row in the category you just navigated to, and the detail pane silently shows a
+selection you never made.
+
+The React answer is not another effect. It is `key`, in `app/[category]/page.tsx`:
+
+```tsx
+<BlunderBrowser key={category} category={category} />
+```
+
+A changed `key` remounts the component, and remounting resets its state. State
+that is only meaningful for one value of a prop should be keyed on that prop.
+Reaching for `useEffect` to reset state is the anti-pattern this replaces.
+
+## What each defect became
+
+Part 1.5 listed five problems. Mapping them:
+
+| Part 1.5 complaint               | What fixes it                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| no error handling                | `blunders.error` — a rejected promise becomes a render branch                                                   |
+| no cleanup, stale overwrite      | cache keyed by input; a late response for category A writes to A's entry, and the component is only reading B's |
+| no caching                       | one entry per key, plus `staleTime`                                                                             |
+| manual reset of two state slices | data reset is implicit in the key change; `activeId` reset moves to `key`                                       |
+| no way to invalidate or refetch  | `queryClient.invalidateQueries(...)` / `blunders.refetch()`                                                     |
+
+The race condition deserves the extra beat, because it is the one people get
+wrong by hand. The old code had no guard at all: navigate fast enough and A's
+slower response lands after B's and calls `setBlunders` with the wrong list.
+Query cannot express that bug — responses are filed under the key they were
+requested with, and a component reads only the key it asked for.
+
+## The query key
+
+`queryOptions({ category })` builds a key from the procedure path and the input,
+roughly:
+
+```
+[["blunders", "byCategory"], { input: { category: "blitz" }, type: "query" }]
+```
+
+Path plus input, which is why `blitz` and `middle_game` are separate cache
+entries and switching between them is instant on the second visit. You can get
+it directly when you need it:
+
+```ts
+const key = trpc.blunders.byCategory.queryKey({ category });
+```
+
+## Invalidation
+
+Marking data stale so it refetches:
+
+```ts
+const queryClient = useQueryClient();
+
+// every cached category
+queryClient.invalidateQueries(trpc.blunders.byCategory.queryFilter());
+
+// just this one
+queryClient.invalidateQueries(trpc.blunders.byCategory.queryFilter({ category }));
+```
+
+> **Gotcha:** the classic package's `utils.blunders.invalidate()` does not exist
+> here. Invalidation goes through `queryClient` with a `queryFilter()` from the
+> proxy.
+
+## `isPending` vs `isFetching` vs `isLoading`
+
+Reliably confusing, and worth getting straight once:
+
+| flag         | means                                                              |
+| ------------ | ------------------------------------------------------------------ |
+| `isPending`  | no data in cache yet — nothing to render                           |
+| `isFetching` | a request is in flight _right now_, including a background refresh |
+| `isLoading`  | `isPending && isFetching` — the first load, specifically           |
+
+A background refetch over cached data is `isFetching: true` with
+`isPending: false`. Render the stale data and a subtle indicator; do not throw
+the user back to "Loading...". That distinction is most of what makes an app
+built on this feel quick.
+
+> **Gotcha:** v4 called the first-load flag `isLoading` and it was renamed to
+> `isPending` in v5. Answers written for v4 will mislead you here.
+
+## Devtools
+
+Worth mounting inside `TRPCReactProvider` while learning — it is the only way to
+_see_ any of the above:
+
+```tsx
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+
+<QueryClientProvider client={queryClient}>
+  <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+    {children}
+    <ReactQueryDevtools initialIsOpen={false} />
+  </TRPCProvider>
+</QueryClientProvider>;
+```
+
+It is excluded from production builds automatically. Two things to try:
+
+1. Click through three categories, then go back to the first. Watch the network
+   tab stay quiet — that is `staleTime`.
+2. Set `staleTime: 0`, repeat, and watch a request fire every time.
+
+## What we deliberately skipped
+
+- **Mutations** — `useMutation(trpc.x.mutationOptions())`, plus optimistic
+  updates. Blocked on a writable database (see below), not on anything here.
+- **Prefetching and hydration in RSC** — starting a query on the server and
+  handing the promise to the client so there is no loading state at all. It is
+  the natural sequel, and it needs the absolute-URL fix noted above.
+- **`useSuspenseQuery`** — moves the pending branch into a `<Suspense>`
+  boundary and deletes `isPending` from the component.
+- **Infinite queries** — `blunders.byCategory` is capped at 200 by its own zod
+  schema, so pagination has not become a problem yet.
+
+## Still open
+
+- The `⚠️ Static vs Dynamic` caveat from Part 1.5 is still unaddressed. `/` is
+  prerendered at build time and the sidebar counts remain frozen until the next
+  deploy. TanStack Query changes nothing about it — that is server-side caching,
+  a different mechanism entirely, and worth not conflating.
+- The database is a read-only local SQLite file, so the app cannot deploy and
+  cannot persist anything. Tracked as BG-2, and it is what has to land before
+  mutations mean anything.
