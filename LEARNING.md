@@ -611,12 +611,12 @@ that _executes_ calls; this one only _describes_ them.
 > **discriminated union**: pending, error, and success are distinct shapes, and
 > only the success one carries a non-`undefined` `data`. Returning out of
 > `isPending` alone is not enough, because the error variant has no data either:
->
-> ```tsx
-> if (blunders.isPending) return <p>Loading...</p>;
-> blunders.data.length; // ✗ 'data' is possibly 'undefined' — the error variant
-> ```
->
+
+```tsx
+if (blunders.isPending) return <p>Loading...</p>;
+blunders.data.length; // ✗ 'data' is possibly 'undefined' — the error variant
+```
+
 > Guard both and `data` narrows to `Blunder[]`, with no `?.` anywhere below. The
 > order of the two checks does not matter.
 
@@ -1134,3 +1134,308 @@ and a dehydration predicate to maintain.
 
 Starting a query and not awaiting it is only an optimisation if something is
 prepared to suspend on it.
+
+---
+
+# Part 2.7 — Routing to a Blunder
+
+## The one idea
+
+Part 2 kept the open blunder in `useState`. That made it **client** state, and
+client state can only be filled in after the JavaScript runs — which is why
+opening a blunder flashed "Loading analysis...".
+
+Move the selection into the URL and it stops being client state. A route param
+is something the **server** already knows, so the detail can be fetched during
+the render and arrive in the HTML. The flash has nothing left to flash.
+
+This also gets you the thing state never could: a blunder you can link to.
+
+## The shape
+
+Parts 2–2.6 built one component, `blunder-browser.tsx`, holding both panes.
+It splits along the seam the URL just created:
+
+```
+app/[category]/
+  layout.tsx              list + shell, persists across blunders
+  page.tsx                "Select a blunder."
+  blunder-list.tsx        client — links, no state
+  analysis.tsx            server — the panel (moved, near-unchanged)
+  [blunderId]/page.tsx    server — fetches one detail
+```
+
+The list moves to a **layout**, not a page. A layout is rendered once per
+category and reused while only `children` swaps, so clicking through blunders
+doesn't re-run the list query or remount the list — the same property the root
+layout already relies on for `CategoryNav`.
+
+Put the list in `page.tsx` instead and every click re-renders it.
+
+The six steps below are in dependency order — each file exists before anything
+imports it. One consequence: from step 1 until step 6 the tree does **not**
+type-check, because `blunder-browser.tsx` is still holding the old `detail`
+call. That is expected; step 6 deletes it.
+
+## 1. Validate the pair — `server/router.ts`
+
+`blunder_id` is unique across categories, so `/race/17640686` would happily
+render a blitz blunder inside the race list. The category is in the URL, so it
+belongs in the input — and the join is what makes a wrong pair return `null`.
+
+`DETAIL_COLUMNS` needs `b.` prefixes now that a second table is in scope:
+
+```ts
+/** Read straight from `blunders`; the board is derived from the position id. */
+const DETAIL_COLUMNS = `
+  b.blunder_id, b.kind, b.cube_action, b.color, b.die_1, b.die_2,
+  b.error_magnitude, b.error_severity, b.crawford_state, b.played_notation,
+  b.best_notation, b.played_rank, b.candidate_count, b.match_length,
+  b.score_black, b.score_white, b.cube_value, b.source_xgid,
+  b.source_position_value, b.win, b.win_gammon, b.win_backgammon, b.lose,
+  b.lose_gammon, b.lose_backgammon`;
+```
+
+```ts
+detail: publicProcedure
+  .input(z.object({ category: z.string(), blunder_id: z.number().int() }))
+  .output(blunderDetail.nullable())
+  .query(({ ctx, input }) => {
+    const row = ctx.db
+      .prepare(
+        `SELECT ${DETAIL_COLUMNS}
+         FROM blunders b
+         JOIN blunder_categories bc ON bc.blunder_id = b.blunder_id
+         WHERE b.blunder_id = ? AND bc.category = ?`,
+      )
+      .get(input.blunder_id, input.category);
+
+    if (!row) return null;
+
+    // ...the rest of the procedure is unchanged.
+```
+
+## 2. The panel — `app/[category]/analysis.tsx`
+
+Build this first: the detail route imports from it.
+
+Move `Chances`, `Side`, `CubeEquities`, `Plays`, the `percent`/`equity` helpers
+and the style objects across from `blunder-browser.tsx` **unchanged**. Leave
+`blunder-browser.tsx` in place for now — it comes out in the last step, once
+nothing imports it.
+
+The file starts with its own types. There is no `"use client"`: nothing here has
+state or handlers, so it renders on the server and ships no JavaScript.
+
+```tsx
+import type { AppRouter } from "@/server/router";
+import type { inferRouterOutputs } from "@trpc/server";
+
+type Outputs = inferRouterOutputs<AppRouter>;
+type BlunderDetail = NonNullable<Outputs["blunders"]["detail"]>;
+type Candidate = BlunderDetail["candidates"][number];
+type BoardSide = NonNullable<BlunderDetail["board"]>["onRoll"];
+```
+
+Same four lines `blunder-browser.tsx` opened with, minus `type Blunder` — that
+one described a list row, and the list took it. `Candidate` and `BoardSide` stay;
+`Chances` and `Side` still need them.
+
+Then `BlunderPanel` and `Analysis` **merge** into one exported component. They
+were two only so the summary could render while the analysis loaded, and nothing
+loads now. The summary reads from `detail`, which carries `kind`,
+`error_magnitude`, `error_severity` and the score as well:
+
+```tsx
+export function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
+  const rolled = detail.die_1 != null && detail.die_2 != null;
+
+  return (
+    <article aria-label={`Blunder ${detail.blunder_id}`} style={{ maxWidth: 560 }}>
+      <h2>Blunder {detail.blunder_id}</h2>
+      <dl>
+        <dt style={term}>Kind</dt>
+        <dd style={def}>{detail.kind}</dd>
+        {/* ...Error, Severity, Score — as before, reading `detail`. */}
+      </dl>
+
+      {/* ...the Position / Cube / Plays sections, moved as they were. */}
+    </article>
+  );
+}
+```
+
+## 3. The detail route — `app/[category]/[blunderId]/page.tsx`
+
+The whole point of the exercise, and it is nine lines:
+
+```tsx
+import { notFound } from "next/navigation";
+import { caller } from "@/server/caller";
+import { BlunderAnalysis } from "../analysis";
+
+interface BlunderPageProps {
+  params: Promise<{ category: string; blunderId: string }>;
+}
+
+export default async function BlunderPage({ params }: BlunderPageProps) {
+  const { category, blunderId } = await params;
+
+  // `blunderId` is whatever was in the URL bar, so it is a string that may not
+  // be a number at all. `Number("12abc")` is NaN and `Number("")` is 0.
+  const blunder_id = Number(blunderId);
+  if (!Number.isInteger(blunder_id)) notFound();
+
+  const detail = await caller.blunders.detail({ category, blunder_id });
+  if (!detail) notFound();
+
+  return <BlunderAnalysis detail={detail} />;
+}
+```
+
+`caller`, not `useQuery` — this is Part 1.5 machinery. There is no client state
+here, so there is nothing for a query to cache and no hook to call. Direct
+function call, no HTTP, straight into the HTML.
+
+`notFound()` returns `never`, so TypeScript narrows `detail` to non-null after
+the guard. You don't need `detail!` and shouldn't write it.
+
+## 4. Links instead of state — `app/[category]/blunder-list.tsx`
+
+```tsx
+"use client";
+
+import Link from "next/link";
+import { useSelectedLayoutSegment } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+
+import { useTRPC } from "@/trpc/client";
+
+export function BlunderList({ category }: { category: string }) {
+  const trpc = useTRPC();
+  // The URL is the selection now, so there is no `useState` to keep in sync.
+  // Inside `[category]/layout.tsx` this is the `[blunderId]` segment below it,
+  // or null on the index route.
+  const selected = useSelectedLayoutSegment();
+
+  const { isPending, isFetching, error, data } = useQuery(
+    trpc.blunders.byCategory.queryOptions({ category }),
+  );
+
+  if (isPending) return <p>Loading...</p>;
+  if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
+  if (data.length === 0) return <p>No blunders in this category.</p>;
+
+  return (
+    <ol aria-busy={isFetching}>
+      {data.map((blunder) => (
+        <li key={blunder.blunder_id}>
+          <Link
+            href={`/${category}/${blunder.blunder_id}`}
+            aria-current={String(blunder.blunder_id) === selected ? "page" : undefined}
+          >
+            {blunder.kind} {blunder.error_magnitude.toFixed(3)}
+          </Link>
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+> **Gotcha:** `useSelectedLayoutSegment()` returns a **string** — URL segments
+> have no types. `blunder.blunder_id === selected` is always false and TypeScript
+> won't stop you, because comparing `number` to `string | null` is allowed. Hence
+> `String(...)`.
+
+## 5. The list becomes a layout — `app/[category]/layout.tsx`
+
+Almost exactly the old `page.tsx`, with `{children}` added beside the list:
+
+```tsx
+import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
+import { getQueryClient, trpc } from "@/trpc/server";
+import { BlunderList } from "./blunder-list";
+
+interface CategoryLayoutProps {
+  params: Promise<{ category: string }>;
+  children: React.ReactNode;
+}
+
+export default async function CategoryLayout({ params, children }: CategoryLayoutProps) {
+  const { category } = await params;
+
+  const queryClient = getQueryClient();
+  await queryClient.query(trpc.blunders.byCategory.queryOptions({ category })).catch(noop);
+
+  return (
+    <main>
+      <h1>{category}</h1>
+      <div style={{ display: "flex", gap: "3rem" }}>
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <BlunderList category={category} />
+        </HydrationBoundary>
+        {children}
+      </div>
+    </main>
+  );
+}
+```
+
+The Part 2.5 prefetch is untouched and still earns its keep: the list is still a
+client component, and the rows are still in the HTML on first load.
+
+The `key={category}` from Part 2 is gone. It existed to reset `activeId` when
+you switched categories, and there is no `activeId` any more.
+
+## 6. Nothing selected — `app/[category]/page.tsx`
+
+```tsx
+/** What fills the panel before a blunder is chosen. The list lives in the layout. */
+export default function CategoryIndexPage() {
+  return <p>Select a blunder.</p>;
+}
+```
+
+Finally, delete `blunder-browser.tsx`. Nothing imports it now, and the
+`check-types` error it has been throwing — its `detail` call is missing the new
+`category` — goes with it.
+
+## What died
+
+Worth noticing how much a URL replaced:
+
+| gone                                | because                        |
+| ----------------------------------- | ------------------------------ |
+| `useState<number \| null>`          | the URL holds the selection    |
+| the `blunders.detail` `useQuery`    | the server fetches it          |
+| `isPending` / `error` on the detail | nothing is pending client-side |
+| the summary-then-analysis split     | both arrive together           |
+| `key={category}`                    | no client state left to reset  |
+| `"use client"` on the whole panel   | no state, no handlers          |
+
+The list keeps its query. It is still interactive, and filtering and sorting are
+going to live there.
+
+## What it costs
+
+Served pages, measured with `curl` against `next start`:
+
+|                                        |     raw |    gzipped |
+| -------------------------------------- | ------: | ---------: |
+| `/blitz` — list only                   | 32.5 KB |     5.0 KB |
+| `/blitz/11254931` — list plus analysis | 44.1 KB |     6.5 KB |
+| **the analysis itself**                | 11.6 KB | **1.5 KB** |
+
+That is the number that settles the argument Part 2 left open. The reason the
+detail was kept out of `byCategory` was payload: folding all fifty positions in
+took a page from ~15 KB to ~83 KB raw. But a _route_ only ever renders the one
+position you opened. The choice was never 15 KB versus 83 KB — it was 15 KB
+versus 15 KB plus 1.5 KB on the wire, and you get linkable URLs for it.
+
+Prefetching stays worth understanding, but notice which mechanism did the work
+here. Part 2.5 made the _list_ server-rendered by prefetching into the cache.
+This part made the _detail_ server-rendered by deleting the query.
+
+> The cheapest query is the one you removed. Look at what is holding the state
+> before reaching for a faster way to fetch it.

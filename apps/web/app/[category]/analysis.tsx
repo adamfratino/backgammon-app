@@ -1,17 +1,15 @@
-"use client";
-
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-
-import type { AppRouter } from "@/server/router";
-import { useTRPC } from "@/trpc/client";
 import type { inferRouterOutputs } from "@trpc/server";
 
+import type { AppRouter } from "@/server/router";
+
 type Outputs = inferRouterOutputs<AppRouter>;
-type Blunder = Outputs["blunders"]["byCategory"][number];
 type BlunderDetail = NonNullable<Outputs["blunders"]["detail"]>;
 type Candidate = BlunderDetail["candidates"][number];
 type BoardSide = NonNullable<BlunderDetail["board"]>["onRoll"];
+
+interface BlunderAnalysisProps {
+  detail: BlunderDetail;
+}
 
 const term = { fontWeight: "bold" } as const;
 const def = { marginLeft: 0, marginBottom: 8 } as const;
@@ -56,101 +54,68 @@ function Side({ side }: { side: BoardSide }) {
   );
 }
 
-export function BlunderBrowser({ category }: { category: string }) {
-  const trpc = useTRPC();
-  const [activeId, setActiveId] = useState<number | null>(null);
-
-  const { isPending, isFetching, error, data } = useQuery(
-    trpc.blunders.byCategory.queryOptions({ category }),
-  );
-
-  if (isPending) return <p>Loading...</p>;
-  if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
-  if (data.length === 0) return <p>No blunders in this category.</p>;
-
-  const active = data.find((b) => b.blunder_id === activeId) ?? null;
-
-  return (
-    <>
-      <ol aria-busy={isFetching}>
-        {data.map((blunder) => (
-          <li key={blunder.blunder_id}>
-            <button
-              type="button"
-              aria-current={blunder.blunder_id === activeId}
-              onClick={() => setActiveId(blunder.blunder_id)}
-            >
-              {blunder.kind} {blunder.error_magnitude.toFixed(3)}
-            </button>
-          </li>
-        ))}
-      </ol>
-
-      {/* `key` restarts the detail query rather than showing the last position
-          while the next one loads. */}
-      {active ? <BlunderPanel key={active.blunder_id} summary={active} /> : null}
-    </>
-  );
-}
-
 /**
- * The list already carries enough to render a heading, so the summary shows
- * immediately and only the analysis below it waits on the detail query.
+ * The whole panel, server-rendered. Part 2 split this in two — a summary from
+ * the list row, then the analysis once its query resolved. The route renders
+ * both at once, and `detail` carries the summary fields, so the split is gone.
  */
-function BlunderPanel({ summary }: { summary: Blunder }) {
-  const trpc = useTRPC();
-  const { isPending, error, data } = useQuery(
-    trpc.blunders.detail.queryOptions({ blunder_id: summary.blunder_id }),
-  );
+export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
+  const {
+    blunder_id,
+    kind,
+    error_magnitude,
+    error_severity,
+    score_white,
+    score_black,
+    match_length,
+    die_1,
+    die_2,
+    cube_value,
+    crawford_state,
+    board,
+    source_xgid,
+    candidates,
+    cube,
+  } = detail;
+
+  const rolled = die_1 != null && die_2 != null;
 
   return (
-    <article aria-label={`Blunder ${summary.blunder_id}`} style={{ maxWidth: 560 }}>
-      <h2>Blunder {summary.blunder_id}</h2>
+    <article aria-label={`Blunder ${blunder_id}`} style={{ maxWidth: 560 }}>
+      <h2>Blunder {blunder_id}</h2>
       <dl>
         <dt style={term}>Kind</dt>
-        <dd style={def}>{summary.kind}</dd>
+        <dd style={def}>{kind}</dd>
 
         <dt style={term}>Error</dt>
-        <dd style={def}>{summary.error_magnitude.toFixed(4)}</dd>
+        <dd style={def}>{error_magnitude.toFixed(4)}</dd>
 
         <dt style={term}>Severity</dt>
-        <dd style={def}>{summary.error_severity ?? "—"}</dd>
+        <dd style={def}>{error_severity ?? "—"}</dd>
 
         <dt style={term}>Score</dt>
         <dd style={def}>
-          {summary.score_black}–{summary.score_white} to {summary.match_length ?? "—"}
+          {score_black}–{score_white} to {match_length ?? "—"}
         </dd>
       </dl>
 
-      {isPending ? <p>Loading analysis...</p> : null}
-      {error ? <p role="alert">Could not load analysis: {error.message}</p> : null}
-      {data ? <Analysis detail={data} /> : null}
-    </article>
-  );
-}
-
-function Analysis({ detail }: { detail: BlunderDetail }) {
-  const rolled = detail.die_1 != null && detail.die_2 != null;
-
-  return (
-    <>
       <section style={section}>
         <h3>Position</h3>
         <dl>
           <dt style={term}>Roll</dt>
-          <dd style={def}>{rolled ? `${detail.die_1}-${detail.die_2}` : "—"}</dd>
+          <dd style={def}>{rolled ? `${die_1}-${die_2}` : "—"}</dd>
 
           <dt style={term}>Cube</dt>
-          <dd style={def}>{detail.cube_value ?? "—"}</dd>
+          <dd style={def}>{cube_value ?? "—"}</dd>
 
           <dt style={term}>Crawford</dt>
-          <dd style={def}>{detail.crawford_state ?? "—"}</dd>
+          <dd style={def}>{crawford_state ?? "—"}</dd>
 
           <dt style={term}>On roll</dt>
-          <dd style={def}>{detail.board ? <Side side={detail.board.onRoll} /> : "—"}</dd>
+          <dd style={def}>{board ? <Side side={board.onRoll} /> : "—"}</dd>
 
           <dt style={term}>Opponent</dt>
-          <dd style={def}>{detail.board ? <Side side={detail.board.opponent} /> : "—"}</dd>
+          <dd style={def}>{board ? <Side side={board.opponent} /> : "—"}</dd>
 
           <dt style={term}>XGID</dt>
           <dd
@@ -161,16 +126,16 @@ function Analysis({ detail }: { detail: BlunderDetail }) {
               overflowWrap: "anywhere",
             }}
           >
-            {detail.source_xgid ?? "—"}
+            {source_xgid ?? "—"}
           </dd>
         </dl>
       </section>
 
-      {detail.cube ? <CubeEquities detail={detail} /> : null}
+      {cube ? <CubeEquities detail={detail} /> : null}
 
       <section style={section}>
-        <h3>{detail.candidates.length > 0 ? "Plays" : "Chances"}</h3>
-        {detail.candidates.length > 0 ? (
+        <h3>{candidates.length > 0 ? "Plays" : "Chances"}</h3>
+        {candidates.length > 0 ? (
           <Plays detail={detail} />
         ) : (
           // A cube decision has no candidate plays, so the position's own
@@ -178,11 +143,11 @@ function Analysis({ detail }: { detail: BlunderDetail }) {
           <Chances of={detail} />
         )}
       </section>
-    </>
+    </article>
   );
 }
 
-function CubeEquities({ detail }: { detail: BlunderDetail }) {
+function CubeEquities({ detail }: BlunderAnalysisProps) {
   const cube = detail.cube;
   if (!cube) return null;
 
@@ -219,7 +184,7 @@ function CubeEquities({ detail }: { detail: BlunderDetail }) {
  * Every play the engine weighed, best first. Rank 1 is its choice, so its
  * equity is the benchmark and the rest are shown as the equity they give up.
  */
-function Plays({ detail }: { detail: BlunderDetail }) {
+function Plays({ detail }: BlunderAnalysisProps) {
   return (
     <ol style={{ paddingLeft: "1.5em" }}>
       {detail.candidates.map((play) => (
