@@ -112,11 +112,12 @@ type BlunderDetail = z.infer<typeof blunderDetail>;
 
 /** Read straight from `blunders`; the board is derived from the position id. */
 const DETAIL_COLUMNS = `
-  blunder_id, kind, cube_action, color, die_1, die_2, error_magnitude,
-  error_severity, crawford_state, played_notation, best_notation,
-  played_rank, candidate_count, match_length, score_black, score_white,
-  cube_value, source_xgid, source_position_value, win, win_gammon,
-  win_backgammon, lose, lose_gammon, lose_backgammon`;
+  b.blunder_id, b.kind, b.cube_action, b.color, b.die_1, b.die_2,
+  b.error_magnitude, b.error_severity, b.crawford_state, b.played_notation,
+  b.best_notation, b.played_rank, b.candidate_count, b.match_length,
+  b.score_black, b.score_white, b.cube_value, b.source_xgid,
+  b.source_position_value, b.win, b.win_gammon, b.win_backgammon, b.lose,
+  b.lose_gammon, b.lose_backgammon`;
 
 export const appRouter = router({
   categories: router({
@@ -171,12 +172,17 @@ export const appRouter = router({
      * with the list, so the cost is paid once per position actually opened.
      */
     detail: publicProcedure
-      .input(z.object({ blunder_id: z.number().int() }))
+      .input(z.object({ category: z.string(), blunder_id: z.number().int() }))
       .output(blunderDetail.nullable())
       .query(({ ctx, input }) => {
         const row = ctx.db
-          .prepare(`SELECT ${DETAIL_COLUMNS} FROM blunders WHERE blunder_id = ?`)
-          .get(input.blunder_id);
+          .prepare(
+            `SELECT ${DETAIL_COLUMNS}
+            FROM blunders b
+            JOIN blunder_categories bc ON bc.blunder_id = b.blunder_id
+            WHERE b.blunder_id = ? AND bc.category = ?`,
+          )
+          .get(input.blunder_id, input.category);
 
         if (!row) return null;
 
