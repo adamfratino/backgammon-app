@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { KINDS } from "@/lib/blunders";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
 
@@ -14,7 +16,7 @@ const category = z.object({
 
 const blunder = z.object({
   blunder_id: z.number(),
-  kind: z.string(),
+  kind: z.enum(KINDS),
   cube_action: z.string().nullable(),
   error_magnitude: z.number(),
   error_severity: z.string().nullable(),
@@ -84,7 +86,7 @@ const boardPosition = z.object({
  */
 const blunderDetail = probabilities.extend({
   blunder_id: z.number(),
-  kind: z.string(),
+  kind: z.enum(KINDS),
   cube_action: z.string().nullable(),
   color: z.string().nullable(),
   die_1: z.number().nullable(),
@@ -107,7 +109,7 @@ const blunderDetail = probabilities.extend({
 });
 
 type Category = z.infer<typeof category>;
-type Blunder = z.infer<typeof blunder>;
+export type Blunder = z.infer<typeof blunder>;
 type BlunderDetail = z.infer<typeof blunderDetail>;
 
 /** Read straight from `blunders`; the board is derived from the position id. */
