@@ -20,6 +20,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@repo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@repo/diagram':
+        specifier: workspace:*
+        version: link:../../packages/diagram
       '@repo/galaxy-scraper':
         specifier: workspace:*
         version: link:../../packages/galaxy-scraper
@@ -69,6 +75,39 @@ importers:
       eslint:
         specifier: 10.9.1
         version: 10.9.1
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/core:
+    devDependencies:
+      '@repo/galaxy-scraper':
+        specifier: workspace:*
+        version: link:../galaxy-scraper
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/diagram:
+    devDependencies:
+      '@repo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/react':
+        specifier: 19.2.18
+        version: 19.2.18
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
       typescript:
         specifier: 7.0.2
         version: 7.0.2

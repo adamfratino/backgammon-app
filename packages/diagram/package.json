@@ -1,0 +1,24 @@
+{
+  "name": "@repo/diagram",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backgammon board diagram primitive — renders a position as a scalable SVG.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@repo/core": "workspace:*",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@repo/core": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/react": "19.2.18",
+    "react": "19.2.8",
+    "typescript": "7.0.2"
+  }
+}

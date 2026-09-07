@@ -1,6 +1,9 @@
+import { parseXgid, pipCount } from "@repo/core";
+import { Board } from "@repo/diagram";
 import type { inferRouterOutputs } from "@trpc/server";
 
 import type { AppRouter } from "@/server/router";
+import { CopyButton } from "./copy-button";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type BlunderDetail = NonNullable<Outputs["blunders"]["detail"]>;
@@ -45,11 +48,16 @@ function Chances({ of }: { of: Candidate | BlunderDetail }) {
 /**
  * One side of the position. Points run from that side's own 24 point down to
  * its 1, so both sides read from their own home board.
+ *
+ * `pips` is what that side still has to travel to bear everything off. It
+ * comes from the XGID rather than from `side`, whose points are already
+ * flattened to a string — the two describe the same checkers, which is what
+ * `pnpm --filter @repo/core verify` checks on every stored position.
  */
-function Side({ side }: { side: BoardSide }) {
+function Side({ side, pips }: { side: BoardSide; pips: number | null }) {
   return (
     <span style={{ fontFamily: "monospace", fontSize: "0.85em" }}>
-      bar {side.bar}, off {side.off} — {side.points}
+      {pips == null ? null : `${pips} pips — `}bar {side.bar}, off {side.off} — {side.points}
     </span>
   );
 }
@@ -79,6 +87,7 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
   } = detail;
 
   const rolled = die_1 != null && die_2 != null;
+  const parsed = source_xgid ? parseXgid(source_xgid) : null;
 
   return (
     <article aria-label={`Blunder ${blunder_id}`} style={{ maxWidth: 560 }}>
@@ -101,6 +110,18 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
 
       <section style={section}>
         <h3>Position</h3>
+        {/* The board is drawn from the XGID rather than from `board`, so the
+            string shown below is provably the position on screen. */}
+        {parsed ? (
+          <div style={{ maxWidth: 460, marginBottom: 16 }}>
+            <Board
+              position={parsed.position}
+              dice={parsed.dice}
+              cube={parsed.cube}
+              turn={parsed.turn}
+            />
+          </div>
+        ) : null}
         <dl>
           <dt style={term}>Roll</dt>
           <dd style={def}>{rolled ? `${die_1}-${die_2}` : "—"}</dd>
@@ -112,21 +133,38 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
           <dd style={def}>{crawford_state ?? "—"}</dd>
 
           <dt style={term}>On roll</dt>
-          <dd style={def}>{board ? <Side side={board.onRoll} /> : "—"}</dd>
+          <dd style={def}>
+            {board ? (
+              <Side side={board.onRoll} pips={parsed ? pipCount(parsed.position.player) : null} />
+            ) : (
+              "—"
+            )}
+          </dd>
 
           <dt style={term}>Opponent</dt>
-          <dd style={def}>{board ? <Side side={board.opponent} /> : "—"}</dd>
+          <dd style={def}>
+            {board ? (
+              <Side
+                side={board.opponent}
+                pips={parsed ? pipCount(parsed.position.opponent) : null}
+              />
+            ) : (
+              "—"
+            )}
+          </dd>
 
           <dt style={term}>XGID</dt>
-          <dd
-            style={{
-              ...def,
-              fontFamily: "monospace",
-              fontSize: "0.85em",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {source_xgid ?? "—"}
+          <dd style={{ ...def, display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: "0.85em",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {source_xgid ?? "—"}
+            </span>
+            {source_xgid ? <CopyButton value={source_xgid} label="Copy XGID" /> : null}
           </dd>
         </dl>
       </section>
