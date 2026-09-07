@@ -11,6 +11,8 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@repo/core": "workspace:*",
+    "@repo/diagram": "workspace:*",
     "@repo/galaxy-scraper": "workspace:*",
     "@tanstack/react-query": "^5.102.8",
     "@trpc/client": "11.18.0",

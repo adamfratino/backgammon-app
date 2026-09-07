@@ -1,0 +1,23 @@
+{
+  "name": "@repo/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure backgammon position math — XGID parsing, pip counts, board vocabulary. Framework-agnostic, zero runtime dependencies.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./types": "./src/types.ts",
+    "./xgid": "./src/xgid.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "verify": "node --disable-warning=ExperimentalWarning src/verify.ts"
+  },
+  "devDependencies": {
+    "@repo/galaxy-scraper": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "26.4.1",
+    "typescript": "7.0.2"
+  }
+}
