@@ -30,7 +30,7 @@ export const CUBE_DIRECTIONS = [
   { id: "receive", label: "Being offered the cube" },
 ] as const;
 
-type CubeDirection = "offer" | "receive";
+type CubeDirection = (typeof CUBE_DIRECTIONS)[number]["id"];
 
 export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   if (direction === "double_accepted" || direction === "double_rejected") return "receive";
