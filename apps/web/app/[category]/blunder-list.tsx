@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useSelectedLayoutSegment } from "next/navigation";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import {
   CUBE_DIRECTIONS,
   cubeDirection,
   KINDS,
+  KIND_LABELS,
+  PER_PAGE,
+  pageFrom,
   SEVERITY_BANDS,
   severityOf,
   type BlunderKind,
-} from "@/lib/blunders";
+} from "@/lib/constants";
 import type { Blunder } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
 
@@ -19,26 +22,21 @@ interface BlunderListProps {
   category: string;
 }
 
-const KIND_LABELS: Record<BlunderKind, string> = {
-  checker: "Checker plays",
-  cube: "Cube decisions",
-  both: "Both checker and cube",
-};
-
 export function BlunderList({ category }: BlunderListProps) {
   const trpc = useTRPC();
 
   const selected = useSelectedLayoutSegment();
+  const page = pageFrom(useSearchParams().get("page"));
 
   const { isPending, isFetching, error, data } = useQuery(
-    trpc.blunders.byCategory.queryOptions({ category }),
+    trpc.blunders.byCategory.queryOptions({ category, page }),
   );
 
   if (isPending) return <p>Loading...</p>;
   if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
-  if (data.length === 0) return <p>No blunders in this category.</p>;
+  if (data.total === 0) return <p>No blunders in this category.</p>;
 
-  const byKind = Object.groupBy(data, (blunder) => blunder.kind);
+  const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
 
   return (
     <div aria-busy={isFetching}>
@@ -59,6 +57,7 @@ export function BlunderList({ category }: BlunderListProps) {
                   group={group}
                   category={category}
                   selected={selected}
+                  page={page}
                   depth={0}
                 />
               );
@@ -66,7 +65,34 @@ export function BlunderList({ category }: BlunderListProps) {
           </section>
         );
       })}
+      <Pagination page={page} total={data.total} />
     </div>
+  );
+}
+
+interface PaginationProps {
+  page: number;
+  total: number;
+}
+
+function Pagination({ page, total }: PaginationProps) {
+  const pageCount = Math.ceil(total / PER_PAGE);
+  if (pageCount <= 1) return null;
+
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => (
+          <li key={n}>
+            <Link href={`?page=${n}`} aria-current={n === page ? "page" : undefined}>
+              {n}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -107,11 +133,12 @@ interface BlunderGroupProps {
   group: BlunderGroup;
   category: string;
   selected: string | null;
+  page: number;
   depth: number;
 }
 
 /** One bucket. Renders its rows, or its child buckets if it has any. */
-function BlunderGroup({ group, category, selected, depth }: BlunderGroupProps) {
+function BlunderGroup({ group, category, selected, page, depth }: BlunderGroupProps) {
   const Heading = depth === 0 ? "h3" : "h4";
 
   return (
@@ -127,11 +154,17 @@ function BlunderGroup({ group, category, selected, depth }: BlunderGroupProps) {
             group={child}
             category={category}
             selected={selected}
+            page={page}
             depth={depth + 1}
           />
         ))
       ) : (
-        <BlunderLinks blunders={group.blunders} category={category} selected={selected} />
+        <BlunderLinks
+          blunders={group.blunders}
+          category={category}
+          selected={selected}
+          page={page}
+        />
       )}
     </section>
   );
@@ -141,15 +174,16 @@ interface BlunderLinkProps {
   blunders: Blunder[];
   category: string;
   selected: string | null;
+  page: number;
 }
 
-function BlunderLinks({ blunders, category, selected }: BlunderLinkProps) {
+function BlunderLinks({ blunders, category, selected, page }: BlunderLinkProps) {
   return (
     <ol>
       {blunders.map(({ blunder_id, error_magnitude, played_notation, cube_action, kind }) => (
         <li key={blunder_id}>
           <Link
-            href={`/${category}/${blunder_id}`}
+            href={`/${category}/${blunder_id}${page > 1 ? `?page=${page}` : ""}`}
             aria-current={String(blunder_id) === selected ? "page" : undefined}
           >
             [{error_magnitude.toFixed(3)}] {played_notation ? `${played_notation}` : null}{" "}

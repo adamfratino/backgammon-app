@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { KINDS, CUBE_ACTION } from "@/lib/blunders";
+import { KINDS, CUBE_ACTION, PER_PAGE } from "@/lib/constants";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
 
@@ -140,13 +140,8 @@ export const appRouter = router({
 
   blunders: router({
     byCategory: publicProcedure
-      .input(
-        z.object({
-          category: z.string(),
-          limit: z.number().int().min(1).max(200).default(50),
-        }),
-      )
-      .output(z.array(blunder))
+      .input(z.object({ category: z.string(), page: z.number().int().min(1).default(1) }))
+      .output(z.object({ blunders: z.array(blunder), total: z.number() }))
       .query(({ ctx, input }) => {
         const rows = ctx.db
           .prepare(
@@ -159,13 +154,17 @@ export const appRouter = router({
              LEFT JOIN cube_decisions c ON c.blunder_id = b.blunder_id
              WHERE bc.category = ?
              ORDER BY b.error_magnitude DESC
-             LIMIT ?`,
+             LIMIT ? OFFSET ?`,
           )
-          .all(input.category, input.limit);
+          .all(input.category, PER_PAGE, (input.page - 1) * PER_PAGE);
+
+        const { total } = ctx.db
+          .prepare(`SELECT COUNT(*) AS total FROM blunder_categories WHERE category = ?`)
+          .get(input.category) as { total: number };
 
         // The driver hands back untyped rows. This assertion is safe only
         // because `.output()` re-checks the real shape at runtime.
-        return rows as unknown as Blunder[];
+        return { blunders: rows as unknown as Blunder[], total };
       }),
 
     /**
