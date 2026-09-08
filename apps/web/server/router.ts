@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { KINDS } from "@/lib/blunders";
+import { KINDS, CUBE_ACTION } from "@/lib/blunders";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
 
@@ -17,7 +17,7 @@ const category = z.object({
 const blunder = z.object({
   blunder_id: z.number(),
   kind: z.enum(KINDS),
-  cube_action: z.string().nullable(),
+  cube_action: z.enum(CUBE_ACTION).nullable(),
   error_magnitude: z.number(),
   error_severity: z.string().nullable(),
   played_notation: z.string().nullable(),
@@ -87,7 +87,7 @@ const boardPosition = z.object({
 const blunderDetail = probabilities.extend({
   blunder_id: z.number(),
   kind: z.enum(KINDS),
-  cube_action: z.string().nullable(),
+  cube_action: z.enum(CUBE_ACTION).nullable(),
   color: z.string().nullable(),
   die_1: z.number().nullable(),
   die_2: z.number().nullable(),
