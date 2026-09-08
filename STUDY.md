@@ -1,6 +1,6 @@
 # Study notes
 
-Need the wiring or a signature? [CHEATSHEET.md](./CHEATSHEET.md) is the short one. This file is the background reading.
+[CHEATSHEET.md](./CHEATSHEET.md) is the short one — concepts and snippets at a glance. This is the background reading behind it.
 
 The concepts from [LEARNING.md](./LEARNING.md), compressed for a skim before an interview. One idea per section, then a table or a short snippet, then the traps. `LEARNING.md` is where the full walkthroughs live.
 
@@ -23,7 +23,7 @@ const trpc = createTRPCClient<AppRouter>({ links: [httpBatchLink({ url: "/api/tr
 **It's just HTTP.** The thing an interviewer is really checking when they ask how tRPC works:
 
 ```
-GET /api/trpc/blunders.list?input={"limit":2}
+GET /api/trpc/posts.list?input={"limit":2}
 → {"result":{"data":[ … ]}}
 ```
 
@@ -34,7 +34,7 @@ Procedure path in the URL, input as a JSON query param, result under `result.dat
 **Types flow out for free.** Components derive their types from the API itself — no shared types package, nothing to keep in sync:
 
 ```ts
-type Blunder = inferRouterOutputs<AppRouter>["blunders"]["list"][number];
+type Post = inferRouterOutputs<AppRouter>["posts"]["list"][number];
 ```
 
 `inferRouterInputs` for the argument side.
@@ -75,7 +75,7 @@ This only holds because they arrive **as children**. If the client component `im
 
 ```
 ○ /             static — rendered once at BUILD time
-ƒ /[category]   dynamic — rendered per request
+ƒ /[slug]       dynamic — rendered per request
 ```
 
 The fix is one line: `export const revalidate = 3600` for ISR, `export const dynamic = "force-dynamic"` for always-fresh.
@@ -114,7 +114,7 @@ None of the three fails a build, a lint or a typecheck. Verify by curling the se
 **The query key is the cache identity** — procedure path plus input:
 
 ```
-[["blunders","byCategory"], { input: { category: "blitz" }, type: "query" }]
+[["posts","byAuthor"], { input: { author: "ada" }, type: "query" }]
 ```
 
 Different input, different entry. That's why revisiting is instant, and it's what makes invalidation addressable: `queryClient.invalidateQueries({ queryKey })`.
@@ -171,10 +171,10 @@ Picking the right one of these is most of the design work.
 **Reset state with `key`, not an effect.**
 
 ```tsx
-<Browser key={category} category={category} />
+<Browser key={authorId} authorId={authorId} />
 ```
 
-A changed `key` remounts the component, and remounting resets its state. State that's only meaningful for one value of a prop should be keyed on that prop. `useEffect(() => setSelected(null), [category])` is the anti-pattern this replaces.
+A changed `key` remounts the component, and remounting resets its state. State that's only meaningful for one value of a prop should be keyed on that prop. `useEffect(() => setSelected(null), [authorId])` is the anti-pattern this replaces.
 
 **Derived values belong in render.** Don't mirror props into state. Compute during render and leave it there until something measures otherwise; `useMemo` is the next step, and Query's `select` the one after that.
 
@@ -210,15 +210,15 @@ A changed `key` remounts the component, and remounting resets its state. State t
 ### Grouping
 
 ```js
-const byKind = Object.groupBy(rows, (r) => r.kind);
-// { checker: [ … ], cube: [ … ] }   <- only the keys it actually saw
+const byStatus = Object.groupBy(rows, (r) => r.status);
+// { draft: [ … ], published: [ … ] }   <- only the keys it actually saw
 ```
 
 One pass, a callback returning a key, an object of arrays back. **The fallback**, for an older runtime or an older `lib` setting — and what most existing code looks like:
 
 ```js
-const byKind = rows.reduce((acc, r) => {
-  (acc[r.kind] ??= []).push(r);
+const byStatus = rows.reduce((acc, r) => {
+  (acc[r.status] ??= []).push(r);
   return acc;
 }, {});
 ```
@@ -230,14 +230,14 @@ const byKind = rows.reduce((acc, r) => {
 | missing bucket     | absent, and the type makes you check | absent, and nothing warns you |
 | first row of a key | handled                              | `??= []` or it throws         |
 | returns            | `Partial<Record<K, T[]>>`            | whatever you annotate         |
-| reads as           | "group these by kind"                | "fold these into an object"   |
+| reads as           | "group these by status"              | "fold these into an object"   |
 
 `reduce` is still right the moment the fold _isn't_ a grouping — a sum, a max, an index by id. Grouping specifically now has a better verb. `Map.groupBy` is the variant to use when the keys aren't strings, since it doesn't stringify them.
 
 **Two rules that bite whichever you use:**
 
-- It only creates keys it _saw_. A list with no cube rows has no `cube` key — not an empty array — so `.length` on it throws, in whatever case you didn't happen to open while developing. Always guard.
-- Key order follows **first occurrence in the data**, not your intended order. Render by mapping over a list _you_ wrote down (`KINDS.map(...)`), so the order is stable and yours.
+- It only creates keys it _saw_. A list with no archived rows has no `archived` key — not an empty array — so `.length` on it throws, in whatever case you didn't happen to open while developing. Always guard.
+- Key order follows **first occurrence in the data**, not your intended order. Render by mapping over a list _you_ wrote down (`STATUSES.map(...)`), so the order is stable and yours.
 
 ### `flatMap` — map and filter in one pass
 
@@ -279,14 +279,14 @@ The callback has three legal answers: `[x]` keep it, `[]` drop it, `[a, b]` expa
 **`as const` is what turns an array into a union.** It freezes a literal tuple instead of widening to `string[]`:
 
 ```ts
-const KINDS = ["checker", "cube", "both"] as const;
-type Kind = (typeof KINDS)[number]; // "checker" | "cube" | "both"
+const STATUSES = ["draft", "published", "archived"] as const;
+type Status = (typeof STATUSES)[number]; // the union, not string
 ```
 
 **`Record<Union, T>` is a free exhaustiveness check.** Add a member to the union and every `Record` over it stops compiling until you handle it — the cheapest way to make "we added a case and forgot the label" a build error rather than a blank spot on screen.
 
 ```ts
-const KIND_LABEL: Record<Kind, string> = { checker: "…", cube: "…", both: "…" };
+const LABEL: Record<Status, string> = { draft: "…", published: "…", archived: "…" };
 ```
 
 **Narrowing a discriminated union** is why both `useQuery` guards are needed — pending, error and success are distinct shapes. Destructuring is fine; TypeScript narrows destructured unions as long as the bindings are `const`, and the order of the guards doesn't matter.
