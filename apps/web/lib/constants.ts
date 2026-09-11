@@ -1,6 +1,14 @@
+export const PER_PAGE = 50;
+
 export const KINDS = ["checker", "cube", "both"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
+
+export const KIND_LABELS: Record<BlunderKind, string> = {
+  checker: "Checker plays",
+  cube: "Cube decisions",
+  both: "Both checker and cube",
+};
 
 export const SEVERITY_BANDS = [
   { id: "catastrophic", label: "Catastrophic", min: 0.4 },
@@ -35,4 +43,10 @@ type CubeDirection = (typeof CUBE_DIRECTIONS)[number]["id"];
 export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   if (direction === "double_accepted" || direction === "double_rejected") return "receive";
   return "offer";
+}
+
+/** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
+export function pageFrom(value: string | null): number {
+  const page = Number(value);
+  return Number.isInteger(page) && page >= 1 ? page : 1;
 }

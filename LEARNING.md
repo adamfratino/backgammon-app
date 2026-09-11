@@ -49,21 +49,38 @@ Each part follows the same shape: **the whole file**, then **the pieces** broken
   - [What died](#what-died)
 - [Part 3 — Bucketing the List](#part-3--bucketing-the-list)
   - [The one idea](#the-one-idea-5)
-  - [1. `apps/web/lib/blunders.ts` — new file](#1-appsweblibblundersts--new-file)
+  - [1. `apps/web/lib/constants.ts` — new file](#1-appsweblibconstantsts--new-file)
   - [2. `apps/web/server/router.ts`](#2-appswebserverrouterts-1)
   - [3. `apps/web/app/[category]/blunder-list.tsx`](#3-appswebappcategoryblunder-listtsx)
   - [Gotchas](#gotchas)
 - [Part 3.5 — A Key That Isn't in the Data](#part-35--a-key-that-isnt-in-the-data)
   - [The one idea](#the-one-idea-6)
-  - [1. `apps/web/lib/blunders.ts`](#1-appsweblibblundersts)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts)
   - [2. `apps/web/app/[category]/blunder-list.tsx`](#2-appswebappcategoryblunder-listtsx)
   - [Gotchas](#gotchas-1)
 - [Part 3.6 — An Extra Level for the Cube](#part-36--an-extra-level-for-the-cube)
   - [The one idea](#the-one-idea-7)
-  - [1. `apps/web/lib/blunders.ts`](#1-appsweblibblundersts-1)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-1)
   - [2. `apps/web/app/[category]/blunder-list.tsx`](#2-appswebappcategoryblunder-listtsx-1)
   - [`flatMap`](#flatmap)
   - [Still open](#still-open)
+- [Part 4 — Pagination](#part-4--pagination)
+  - [The one idea](#the-one-idea-8)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-2)
+  - [2. `apps/web/server/router.ts`](#2-appswebserverrouterts-2)
+  - [3. `apps/web/app/[category]/blunder-list.tsx`](#3-appswebappcategoryblunder-listtsx-1)
+  - [4. `apps/web/proxy.ts` — new file](#4-appswebproxyts--new-file)
+  - [5. `apps/web/app/[category]/layout.tsx`](#5-appswebappcategorylayouttsx-1)
+  - [Gotchas](#gotchas-2)
+- [Part 4.5 — Keeping the Old Page On Screen](#part-45--keeping-the-old-page-on-screen)
+  - [The one idea](#the-one-idea-9)
+  - [`apps/web/app/[category]/blunder-list.tsx`](#appswebappcategoryblunder-listtsx)
+  - [Gotchas](#gotchas-3)
+- [Part 4.6 — Prefetching the Next Page](#part-46--prefetching-the-next-page)
+  - [The one idea](#the-one-idea-10)
+  - [`apps/web/app/[category]/blunder-list.tsx`](#appswebappcategoryblunder-listtsx-1)
+  - [Gotchas](#gotchas-4)
+  - [Still open](#still-open-1)
 
 ---
 
@@ -77,12 +94,12 @@ Instead, **one TypeScript type crosses the client/server boundary by import.** Y
 
 That's the whole trick. Everything else is plumbing.
 
-| file | job |
-| --- | --- |
-| `server/trpc.ts` | init + context |
-| `server/router.ts` | the API surface |
-| `app/api/trpc/[trpc]/route.ts` | the HTTP adapter |
-| `trpc/client.ts` | the browser client |
+| file                           | job                |
+| ------------------------------ | ------------------ |
+| `server/trpc.ts`               | init + context     |
+| `server/router.ts`             | the API surface    |
+| `app/api/trpc/[trpc]/route.ts` | the HTTP adapter   |
+| `trpc/client.ts`               | the browser client |
 
 ---
 
@@ -258,11 +275,11 @@ Server Components can be `async`. No `useEffect`, no loading state, no waterfall
 
 ## The split
 
-| data | where | why |
-| --- | --- | --- |
-| Category list + counts | Server (RSC) | changes rarely, needed on first paint |
-| Blunders for a category | Client | changes on every navigation |
-| Which blunder is active | Client state | pure interaction, no fetch |
+| data                    | where        | why                                   |
+| ----------------------- | ------------ | ------------------------------------- |
+| Category list + counts  | Server (RSC) | changes rarely, needed on first paint |
+| Blunders for a category | Client       | changes on every navigation           |
+| Which blunder is active | Client state | pure interaction, no fetch            |
 
 Slow-moving data server-side, interactive data client-side. A better starting point than "fetch everything on the client", and the reasoning an interviewer is looking for when they ask where a given fetch belongs.
 
@@ -313,12 +330,12 @@ pnpm --filter web add @tanstack/react-query @trpc/tanstack-react-query
 
 Use `@trpc/tanstack-react-query`, not the older `@trpc/react-query`. The old one wraps every TanStack hook so tRPC sits permanently in the middle; the new one wraps nothing — `queryOptions()` returns a plain options object that composes with `useQuery`, `useSuspenseQuery`, `useQueries` and `setQueryData` alike. If you see `.useQuery()` hanging off the tRPC object, you're reading the old API and it won't work here.
 
-| file | job |
-| --- | --- |
-| `trpc/query-client.ts` | new — the cache, configured |
-| `trpc/client.tsx` | provider + `useTRPC` (was `client.ts`) |
-| `app/layout.tsx` | mount the provider |
-| `app/[category]/blunder-browser.tsx` | the refactor — the actual lesson |
+| file                                 | job                                    |
+| ------------------------------------ | -------------------------------------- |
+| `trpc/query-client.ts`               | new — the cache, configured            |
+| `trpc/client.tsx`                    | provider + `useTRPC` (was `client.ts`) |
+| `app/layout.tsx`                     | mount the provider                     |
+| `app/[category]/blunder-browser.tsx` | the refactor — the actual lesson       |
 
 ---
 
@@ -527,7 +544,7 @@ Guard both and `data` narrows to `Blunder[]`, with no `?.` anywhere below. The o
 
 The one people get wrong by hand. The old code had no guard: navigate from A to B fast enough and A's slower response lands after B's, calling `setBlunders` with the wrong list. Nothing in that code is obviously broken, which is why it survives code review.
 
-Query cannot express that bug. Responses are filed under the key they were *requested* with, and a component reads only the key it asked for. A late response for A writes to A's entry while the component is reading B's.
+Query cannot express that bug. Responses are filed under the key they were _requested_ with, and a component reads only the key it asked for. A late response for A writes to A's entry while the component is reading B's.
 
 ## `key` does the other half
 
@@ -559,11 +576,11 @@ queryClient.invalidateQueries(trpc.blunders.byCategory.queryFilter({ category })
 
 ## `isPending` vs `isFetching`
 
-| flag | means |
-| --- | --- |
-| `isPending` | no data in cache yet — nothing to render |
+| flag         | means                                                            |
+| ------------ | ---------------------------------------------------------------- |
+| `isPending`  | no data in cache yet — nothing to render                         |
 | `isFetching` | a request is in flight right now, including a background refresh |
-| `isLoading` | `isPending && isFetching` — the first load specifically |
+| `isLoading`  | `isPending && isFetching` — the first load specifically          |
 
 A background refetch over cached data is `isFetching: true` with `isPending: false`. Render the stale data and a subtle indicator; don't throw the user back to "Loading...". That distinction is most of what makes an app built on this feel quick.
 
@@ -888,14 +905,14 @@ Then delete `blunder-browser.tsx`. Nothing imports it now.
 
 Worth noticing how much a URL replaced:
 
-| gone | because |
-| --- | --- |
-| `useState<number \| null>` | the URL holds the selection |
-| the `blunders.detail` `useQuery` | the server fetches it |
+| gone                                | because                        |
+| ----------------------------------- | ------------------------------ |
+| `useState<number \| null>`          | the URL holds the selection    |
+| the `blunders.detail` `useQuery`    | the server fetches it          |
 | `isPending` / `error` on the detail | nothing is pending client-side |
-| the summary-then-analysis split | both arrive together |
-| `key={category}` | no client state left to reset |
-| `"use client"` on the whole panel | no state, no handlers |
+| the summary-then-analysis split     | both arrive together           |
+| `key={category}`                    | no client state left to reset  |
+| `"use client"` on the whole panel   | no state, no handlers          |
 
 The detail pane costs about 1.5 KB gzipped on the wire, and a route only ever renders the one position you opened — which is why the payload argument for keeping `detail` out of the list query stopped mattering the moment it became a URL.
 
@@ -912,7 +929,12 @@ The list keeps its query. It is still interactive, and filtering and sorting are
 Every row already knows what it is. `kind` is `checker`, `cube` or `both`, and the list has been printing it on all fifty lines:
 
 ```tsx
-{kind} {error_magnitude.toFixed(3)}
+{
+  kind;
+}
+{
+  error_magnitude.toFixed(3);
+}
 ```
 
 Printing a value on every row is what you do when you have not grouped by it.
@@ -921,15 +943,15 @@ This part is array work: one pass to bucket the rows, then render the buckets.
 
 Three files change:
 
-| file | why |
-| --- | --- |
-| `apps/web/lib/blunders.ts` | new — the bucket names |
-| `apps/web/server/router.ts` | `kind` gets a real type, and the row type is exported |
-| `apps/web/app/[category]/blunder-list.tsx` | the grouping and the render |
+| file                                       | why                                                   |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `apps/web/lib/constants.ts`                | new — the bucket names                                |
+| `apps/web/server/router.ts`                | `kind` gets a real type, and the row type is exported |
+| `apps/web/app/[category]/blunder-list.tsx` | the grouping and the render                           |
 
 ---
 
-## 1. `apps/web/lib/blunders.ts` — new file
+## 1. `apps/web/lib/constants.ts` — new file
 
 ### The whole file
 
@@ -947,7 +969,7 @@ export type BlunderKind = (typeof KINDS)[number];
 
 ### Why its own file
 
-Not `server/router.ts`, even though that is where the shape is defined. The list is a client component, and importing a *value* from the router drags `server/trpc.ts` and then `server/db.ts` behind it, at which point the build dies trying to put `node:sqlite` in the browser bundle. Types are fine — they are erased — which is why `import type { Blunder }` below is safe and `import { KINDS }` from the same file would not be.
+Not `server/router.ts`, even though that is where the shape is defined. The list is a client component, and importing a _value_ from the router drags `server/trpc.ts` and then `server/db.ts` behind it, at which point the build dies trying to put `node:sqlite` in the browser bundle. Types are fine — they are erased — which is why `import type { Blunder }` below is safe and `import { KINDS }` from the same file would not be.
 
 ---
 
@@ -956,7 +978,7 @@ Not `server/router.ts`, even though that is where the shape is defined. The list
 An existing file, so only the changed lines. Add the import:
 
 ```ts
-import { KINDS } from "@/lib/blunders";
+import { KINDS } from "@/lib/constants";
 ```
 
 Change `kind` in **both** `blunder` and `blunderDetail`:
@@ -968,7 +990,7 @@ Change `kind` in **both** `blunder` and `blunderDetail`:
 And export the row type, which the list needs:
 
 ```ts
-export type Blunder = z.infer<typeof blunder>;   // was: type Blunder = …
+export type Blunder = z.infer<typeof blunder>; // was: type Blunder = …
 ```
 
 `z.enum` buys two things. `.output()` now rejects a row whose `kind` is not one of the three, so a scraper change fails at the boundary instead of rendering an invisible bucket. And every bucket key downstream is checked — `byKind.cubes` is an error rather than a silent `undefined`.
@@ -986,7 +1008,7 @@ import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
-import { KINDS, type BlunderKind } from "@/lib/blunders";
+import { KINDS, type BlunderKind } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 interface BlunderListProps {
@@ -1080,11 +1102,13 @@ Rows keep the order they arrived in, which is already magnitude descending. Grou
 **The outer loop.** Over `KINDS`, never over `Object.keys(byKind)` — see the gotchas:
 
 ```tsx
-{KINDS.map((kind) => {
-  const blunders = byKind[kind];
-  if (!blunders) return null;
-  // …
-})}
+{
+  KINDS.map((kind) => {
+    const blunders = byKind[kind];
+    if (!blunders) return null;
+    // …
+  });
+}
 ```
 
 **The rows** are unchanged from Part 2.7 except that `{kind}` is gone from the line. The heading says it once per group, which is the actual payoff — grouping did not just reorganise the list, it deleted fifty repetitions.
@@ -1135,18 +1159,17 @@ const byKind = data.reduce<Record<string, Blunder[]>>((acc, blunder) => {
 
 Worth being able to write, because it makes the machinery obvious: an accumulator, a key, a push. The `??= []` is the whole trick — the first row for any key has no array to push onto yet, and forgetting it is the classic crash.
 
-| | `Object.groupBy` | `reduce` |
-| --- | --- | --- |
-| missing bucket | absent, and you are made to check | absent, and nothing warns you |
-| first row of a key | handled | `acc[key] ??= []` or it throws |
-| reads as | "group these by kind" | "fold these into an object" |
+|                    | `Object.groupBy`                  | `reduce`                       |
+| ------------------ | --------------------------------- | ------------------------------ |
+| missing bucket     | absent, and you are made to check | absent, and nothing warns you  |
+| first row of a key | handled                           | `acc[key] ??= []` or it throws |
+| reads as           | "group these by kind"             | "fold these into an object"    |
 
 `reduce` is still right the moment the fold is not a grouping — a sum, a max, a lookup keyed by id. Grouping specifically now has a better verb.
 
 ### Where the grouping runs
 
 In the render body, so it runs on every render. For fifty rows that is a few microseconds, and leaving it there is the right default — derived values belong in render until something measures otherwise. `useMemo` is the next step if it ever matters, and TanStack Query's `select` the one after that. Both are Part 4 material.
-
 
 # Part 3.5 — A Key That Isn't in the Data
 
@@ -1176,7 +1199,7 @@ That is a real distribution. The key has to be computed from it.
 
 ---
 
-## 1. `apps/web/lib/blunders.ts`
+## 1. `apps/web/lib/constants.ts`
 
 ### The whole file
 
@@ -1202,7 +1225,7 @@ export function severityOf(errorMagnitude: number): Severity {
 
 ### The pieces
 
-**The table.** A sorted array plus `find` beats an `if/else` ladder because the bands become *data*: they can be rendered, counted, reordered, or eventually driven by a control. The same array classifies the rows and titles the headings.
+**The table.** A sorted array plus `find` beats an `if/else` ladder because the bands become _data_: they can be rendered, counted, reordered, or eventually driven by a control. The same array classifies the rows and titles the headings.
 
 **The lookup.**
 
@@ -1226,7 +1249,7 @@ import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
-import { KINDS, SEVERITY_BANDS, severityOf, type BlunderKind } from "@/lib/blunders";
+import { KINDS, SEVERITY_BANDS, severityOf, type BlunderKind } from "@/lib/constants";
 import type { Blunder } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
 
@@ -1321,16 +1344,14 @@ function BlunderLinks({ blunders, category, selected }: BlunderLinksProps) {
 **The second grouping.** Nesting is just calling it again on each bucket:
 
 ```tsx
-const bySeverity = Object.groupBy(blunders, (blunder) =>
-  severityOf(blunder.error_magnitude),
-);
+const bySeverity = Object.groupBy(blunders, (blunder) => severityOf(blunder.error_magnitude));
 ```
 
-The only difference from the first call is that this callback *computes* a key where the other *read* one. `Object.groupBy` does not care; it wants a string.
+The only difference from the first call is that this callback _computes_ a key where the other _read_ one. `Object.groupBy` does not care; it wants a string.
 
 **The second loop** walks `SEVERITY_BANDS` for the same reason the first walks `KINDS` — declared order, stable headings, and the same `if (!banded) return null` guard because the same rule applies at every level.
 
-**The extracted leaf.** At three levels of nesting the JSX stopped fitting on a line, so `BlunderLinks` came out. Note it is the *leaf* that was extracted, not the grouping: the grouping is the part worth reading in one place, the row markup was the part in the way. `selected` is threaded down as a prop rather than calling `useSelectedLayoutSegment` again — one call per list beats one per bucket, and it keeps the leaf a plain function of its props.
+**The extracted leaf.** At three levels of nesting the JSX stopped fitting on a line, so `BlunderLinks` came out. Note it is the _leaf_ that was extracted, not the grouping: the grouping is the part worth reading in one place, the row markup was the part in the way. `selected` is threaded down as a prop rather than calling `useSelectedLayoutSegment` again — one call per list beats one per bucket, and it keeps the leaf a plain function of its props.
 
 **The rows** now show `played_notation` when there is one, since checker rows have a move worth reading and cube rows do not.
 
@@ -1373,14 +1394,13 @@ No `Moderate`, no `Mild`, even though those are the two biggest bands across the
 
 That is the real limit of grouping on the client: you can only bucket what you asked for.
 
-
 # Part 3.6 — An Extra Level for the Cube
 
 ## The one idea
 
 Severity is the innermost question for every kind. A cube blunder still costs equity, and "how much" is still how you rank two of them.
 
-What cube blunders have that checker blunders don't is a *side*. You were either offering the cube or being offered it, and those are different skills — misjudging a double is not the same mistake as misjudging a take. So the cube bucket gets an extra level **above** severity, not instead of it:
+What cube blunders have that checker blunders don't is a _side_. You were either offering the cube or being offered it, and those are different skills — misjudging a double is not the same mistake as misjudging a take. So the cube bucket gets an extra level **above** severity, not instead of it:
 
 ```
 Cube decisions (11)
@@ -1394,16 +1414,16 @@ Cube decisions (11)
 
 The four `cube_action` values collapse into those two sides:
 
-| `cube_action` | side |
-| --- | --- |
-| `double_requested` | offering |
-| `dice_rolled` | offering |
-| `double_accepted` | receiving |
-| `double_rejected` | receiving |
+| `cube_action`      | side      |
+| ------------------ | --------- |
+| `double_requested` | offering  |
+| `dice_rolled`      | offering  |
+| `double_accepted`  | receiving |
+| `double_rejected`  | receiving |
 
 ---
 
-## 1. `apps/web/lib/blunders.ts`
+## 1. `apps/web/lib/constants.ts`
 
 ### The addition
 
@@ -1447,7 +1467,7 @@ import {
   cubeDirection,
   severityOf,
   type BlunderKind,
-} from "@/lib/blunders";
+} from "@/lib/constants";
 import type { Blunder } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
 
@@ -1629,7 +1649,7 @@ return SEVERITY_BANDS.flatMap(({ id, label }) => {
 });
 ```
 
-Read it as: *for each band, if the bucket exists produce one group, otherwise produce nothing.*
+Read it as: _for each band, if the bucket exists produce one group, otherwise produce nothing._
 
 **It only flattens one level.** `[[1, [2]]].flatMap((x) => x)` gives `[1, [2]]`, not `[1, 2]`. If you need deeper that's `.flat(Infinity)` — and wanting it usually means the shape is wrong.
 
@@ -1643,7 +1663,7 @@ SEVERITY_BANDS.map(({ id, label }) => ({ id, label, blunders: bySeverity[id] }))
 ); // blunders is still possibly undefined
 ```
 
-`filter` narrows when the callback tests the value itself — `(x) => x !== undefined` — but not when it tests a *property* of the value. There is no way to say "the same object, but that field is definitely there now".
+`filter` narrows when the callback tests the value itself — `(x) => x !== undefined` — but not when it tests a _property_ of the value. There is no way to say "the same object, but that field is definitely there now".
 
 `flatMap` sidesteps it by building the object only in the branch that has the data. Nothing is left to narrow, and it is one pass instead of two.
 
@@ -1651,4 +1671,507 @@ SEVERITY_BANDS.map(({ id, label }) => ({ id, label, blunders: bySeverity[id] }))
 
 The list is the worst fifty in the category, so a category with 300 blunders shows a sixth of itself and the sidebar count never matches. That is Part 4.
 
-Loosely, from here: **Part 4** pagination, **Part 5** simple filters, **Part 6** mutations — a scratchpad textarea for notes on a blunder, which needs writing back to the database.
+# Part 4 — Pagination
+
+## The one idea
+
+The sidebar says `middle_game` has 300. The list shows 50. Those two numbers have never agreed, and there has never been a way to reach row 51.
+
+Pagination gets taught as a backend problem — `LIMIT`, `OFFSET`, ship it. That part is genuinely two lines. The interesting half is a frontend question: **where does the page number live?**
+
+Part 2.7 already answered that exact question once, for the open blunder, and the answer was the URL. The same argument applies here — a page worth linking to, that survives a refresh. But this time the URL fights back, because of where the list happens to live.
+
+| file                              | job                                                        |
+| --------------------------------- | ---------------------------------------------------------- |
+| `lib/constants.ts`                | the page size and the `?page` parser, shared by both sides |
+| `server/router.ts`                | offset and a total — the brief bit                         |
+| `app/[category]/blunder-list.tsx` | reads `?page`, draws the pager                             |
+| `proxy.ts`                        | new — forwards the query string to the layout              |
+| `app/[category]/layout.tsx`       | prefetches the page that was actually asked for            |
+
+---
+
+## 1. `apps/web/lib/constants.ts`
+
+### The addition
+
+```ts
+export const PER_PAGE = 50;
+
+/** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
+export function pageFrom(value: string | null): number {
+  const page = Number(value);
+  return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+```
+
+### The pieces
+
+**`PER_PAGE` is one number with two readers.** The server slices with it; the client divides `total` by it to know how many links to draw. They have to agree or the last page is wrong.
+
+**`pageFrom` has two readers as well**, which is the only reason it lives here rather than beside the component that uses it — the list parses `?page` out of the browser's URL, and the layout parses the same value out of a request header. One parser, one set of rules, and no way for the two to disagree about what `?page=0` means.
+
+It validates because a search param is an untrusted string that anyone can type. `Number(null)` is `0`, `Number("")` is `0`, `Number("abc")` is `NaN`, `Number("2.5")` is `2.5`. None of those is a page, and all of them land on 1.
+
+This is also the reason the file exists at all, from Part 3: the list is a client component, so it cannot import a _value_ from the router without dragging `node:sqlite` into the browser bundle. Shared constants live here.
+
+---
+
+## 2. `apps/web/server/router.ts`
+
+### The change
+
+```ts
+byCategory: publicProcedure
+  .input(z.object({ category: z.string(), page: z.number().int().min(1).default(1) }))
+  .output(z.object({ blunders: z.array(blunder), total: z.number() }))
+  .query(({ ctx, input }) => {
+    const rows = ctx.db
+      .prepare(
+        `SELECT b.blunder_id, b.kind, b.cube_action, b.error_magnitude,
+                b.error_severity, b.played_notation, b.best_notation,
+                b.match_length, b.score_black, b.score_white,
+                c.doublers_best_action, c.receivers_best_action
+         FROM blunders b
+         JOIN blunder_categories bc ON bc.blunder_id = b.blunder_id
+         LEFT JOIN cube_decisions c ON c.blunder_id = b.blunder_id
+         WHERE bc.category = ?
+         ORDER BY b.error_magnitude DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(input.category, PER_PAGE, (input.page - 1) * PER_PAGE);
+
+    const { total } = ctx.db
+      .prepare(`SELECT COUNT(*) AS total FROM blunder_categories WHERE category = ?`)
+      .get(input.category) as { total: number };
+
+    return { blunders: rows as unknown as Blunder[], total };
+  }),
+```
+
+`PER_PAGE` joins the existing import from `@/lib/constants`. The column list is exactly the one from Part 3 — only the last line of the query and the return value are new.
+
+### The pieces
+
+Three things changed and none of them are clever.
+
+**`limit` is gone, replaced by `page`.** Page size stopped being the caller's choice the moment a pager had to render a fixed number of links.
+
+**`(page - 1) * PER_PAGE` is the whole of offset pagination.** Page 1 skips nothing, page 2 skips 50.
+
+**The output went from an array to an object.** That is the change with a frontend blast radius: `data` is no longer the rows, so `data.length` becomes `data.blunders.length` everywhere below. It buys `total`, and without `total` you cannot draw `1 2 3 4 5 6` — you have no idea there are six.
+
+---
+
+## 3. `apps/web/app/[category]/blunder-list.tsx`
+
+### The whole file
+
+`bandsOf` and `groupsOf` are unchanged from Part 3.6 and elided here. `BlunderGroup` and `BlunderLinks` need one new prop each, shown below the file.
+
+```tsx
+"use client";
+
+import Link from "next/link";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+
+import {
+  CUBE_DIRECTIONS,
+  cubeDirection,
+  KINDS,
+  KIND_LABELS,
+  PER_PAGE,
+  pageFrom,
+  SEVERITY_BANDS,
+  severityOf,
+  type BlunderKind,
+} from "@/lib/constants";
+import type { Blunder } from "@/server/router";
+import { useTRPC } from "@/trpc/client";
+
+interface BlunderListProps {
+  category: string;
+}
+
+export function BlunderList({ category }: BlunderListProps) {
+  const trpc = useTRPC();
+
+  const selected = useSelectedLayoutSegment();
+  const page = pageFrom(useSearchParams().get("page"));
+
+  const { isPending, isFetching, error, data } = useQuery(
+    trpc.blunders.byCategory.queryOptions({ category, page }),
+  );
+
+  if (isPending) return <p>Loading...</p>;
+  if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
+  if (data.total === 0) return <p>No blunders in this category.</p>;
+
+  const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
+
+  return (
+    <div aria-busy={isFetching}>
+      {KINDS.map((kind) => {
+        const blunders = byKind[kind];
+        if (!blunders) return null;
+
+        return (
+          <section key={kind}>
+            <h2 style={{ margin: 0 }}>
+              {KIND_LABELS[kind]} <data value={blunders.length}>({blunders.length})</data>
+            </h2>
+
+            {groupsOf(kind, blunders).map((group) => (
+              <BlunderGroup
+                key={group.id}
+                group={group}
+                category={category}
+                selected={selected}
+                depth={0}
+              />
+            ))}
+          </section>
+        );
+      })}
+
+      <Pagination page={page} total={data.total} />
+    </div>
+  );
+}
+
+interface PaginationProps {
+  page: number;
+  total: number;
+}
+
+/** Every page listed. Fine at six; an ellipsis is a problem for another day. */
+function Pagination({ page, total }: PaginationProps) {
+  const pageCount = Math.ceil(total / PER_PAGE);
+  if (pageCount <= 1) return null;
+
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => (
+          <li key={n}>
+            <Link href={`?page=${n}`} aria-current={n === page ? "page" : undefined}>
+              {n}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+```
+
+### The pieces
+
+**Reading the page.** `useSearchParams()` is the client-side read of the query string. It hands back a `ReadonlyURLSearchParams`, and `.get()` returns `string | null`.
+
+**The page is now part of the cache key.** `queryOptions({ category, page })` gives each page its own entry, so page 1 is still sitting in the cache when you come back to it — instantly, no request. That is the same property that made switching categories cheap in Part 2, applied one level down.
+
+**The pager.**
+
+```tsx
+const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+```
+
+`Array.from` with a length and a mapper is the shortest honest way to write `[1…n]`.
+
+`href={`?page=${n}`}` is a _relative_ href: it replaces the query string and keeps the current path, so paging while a blunder is open leaves that blunder open. `aria-current="page"` marks the one you're on. And the whole nav disappears at one page — `/close_out` has 7 rows and no business showing a pager.
+
+**Carrying the page onto the blunder links.** The row links point at an absolute path, and an absolute path has no query string, so opening a blunder from page 6 silently drops you back to page 1. `page` has to be threaded down to the leaf and put back on:
+
+```tsx
+function BlunderLinks({ blunders, category, selected, page }: BlunderLinkProps) {
+  // ...
+  <Link href={`/${category}/${blunder_id}${page > 1 ? `?page=${page}` : ""}`}>
+```
+
+`BlunderGroup` gains a `page` prop for the same reason it already threads `selected` — it sits between the list and the leaf and has to pass it through. The `page > 1` check keeps page 1's URLs clean: `?page=1` and no param at all mean the same thing, and only one of them is worth putting in someone's address bar.
+
+---
+
+## 4. `apps/web/proxy.ts` — new file
+
+Here is the problem this file exists to solve. The list lives in `[category]/layout.tsx`, and **layouts are not given `searchParams`** — only pages are. So the server rendering your HTML has no idea whether you asked for page 1 or page 6, and everything past page 1 arrives as `Loading...`. The gotchas below have the measurements and the reason the API is built that way.
+
+Layouts don't get search params. They _do_ get request headers.
+
+**The file is `proxy.ts`, not `middleware.ts`.** Next 16 renamed this convention. `middleware.ts` still works and warns — `The "middleware" file convention is deprecated. Please use "proxy" instead.` — and there is a codemod, `npx @next/codemod@canary middleware-to-proxy .`, which renames the exported function too. Almost everything written about this is still called middleware, so expect to translate as you read.
+
+### The whole file
+
+```ts
+import { NextResponse, type NextRequest } from "next/server";
+
+/**
+ * Layouts are not given `searchParams`, but they are given the request headers.
+ * Forwarding the query string here is what lets `[category]/layout.tsx` prefetch
+ * the page that was actually asked for.
+ */
+export function proxy(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set("x-search", request.nextUrl.search);
+  return NextResponse.next({ request: { headers } });
+}
+
+export const config = {
+  matcher: "/((?!_next/static|_next/image|favicon.ico|api).*)",
+};
+```
+
+### The pieces
+
+**`NextResponse.next({ request: { headers } })` rewrites the headers going _in_,** not the ones coming out. The browser never sees `x-search`; it exists for the duration of one render, which is exactly the lifetime you want for it.
+
+**`request.nextUrl.search`** is the raw query string, `"?page=3"` or `""`. Passing the whole thing rather than just the page number means the next feature that needs a search param — sorting, in Part 5 — costs nothing here.
+
+**The matcher earns its exclusions.** `_next/*` and `favicon.ico` are static assets that would gain a pointless hop, and `api` covers every tRPC call — those already carry their input in the URL and have no use for the header. This runs on every request that matches, so the matcher is the difference between a targeted fix and a tax on the whole app.
+
+---
+
+## 5. `apps/web/app/[category]/layout.tsx`
+
+### The change
+
+```tsx
+import { headers } from "next/headers";
+import { pageFrom } from "@/lib/constants";
+
+// Layouts get no `searchParams`, but they do get headers — the proxy forwards
+// the query string so the prefetch matches the page actually requested.
+const search = (await headers()).get("x-search") ?? "";
+const page = pageFrom(new URLSearchParams(search).get("page"));
+
+await queryClient.query(trpc.blunders.byCategory.queryOptions({ category, page })).catch(noop);
+```
+
+### The pieces
+
+**`headers()` is async and reading it makes the route dynamic.** `[category]` was already dynamic — it reads SQLite — so this costs nothing here. On a route you wanted static, this is the line that would quietly stop it being static, and only the `○` / `ƒ` in the build output would tell you.
+
+**`new URLSearchParams(search)` gives the layout the same `.get()` the client has**, so the exact same `pageFrom` handles both. The server and the browser now parse `?page` with one function, which is the only way they can be guaranteed to agree.
+
+**The `?? ""` matters.** If the proxy doesn't run — wrong matcher, or the file isn't picked up — the header is absent, `pageFrom(null)` returns 1, and you are back to the old behaviour rather than a crash. Degrading to "page 1 was server-rendered" is the right failure mode for a performance optimisation.
+
+---
+
+## Gotchas
+
+### Layouts don't get `searchParams`
+
+This is the constraint the part is built around, and it is not a bug. Run `next typegen` and read what Next generates for you:
+
+```ts
+interface PageProps<AppRoute extends AppRoutes> {
+  params: Promise<ParamMap[AppRoute]>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+type LayoutProps<LayoutRoute extends LayoutRoutes> = {
+  params: Promise<ParamMap[LayoutRoute]>;
+  children: React.ReactNode;
+};
+```
+
+Pages get `searchParams`. Layouts get `params` and `children`, and that's it.
+
+The reason is the thing Part 2.7 bought us. A layout is _reused_ across the navigations beneath it and does not re-render when only the query string changes — so handing it a `searchParams` it could not stay in sync with would be a lie. The API is honest about a tradeoff we opted into.
+
+Our list lives in that layout and reads `?page`, so without the proxy the server rendering the HTML cannot know which page was asked for, while the browser can. Measured on `/middle_game` — 300 rows, six pages — before and after adding it:
+
+| URL                   | without the proxy    | with the proxy |
+| --------------------- | -------------------- | -------------- |
+| `/middle_game`        | 50 rows              | 50 rows        |
+| `/middle_game?page=2` | 0, plus `Loading...` | 50 rows        |
+| `/middle_game?page=6` | 0, plus `Loading...` | 50 rows        |
+
+The rows on page 1 and page 2 have no ids in common, which is the check worth running — "50 rows appeared" and "the _right_ 50 rows appeared" are different claims, and an off-by-one in the offset satisfies the first one happily.
+
+The clearest way to see the constraint itself is a URL that trips both rules at once. Without the proxy, `/middle_game/17599806?page=3` server-renders the analysis panel in full while the list beside it says `Loading...`. Same request, same screen, two different answers — because the analysis comes from a page, which can read `?page`, and the list comes from a layout, which cannot.
+
+The tempting shortcut is to move the list into `page.tsx` and take the `searchParams` for free. Don't: the list is rendered on both `/[category]` and `/[category]/[blunderId]`, so it would remount every time you open a blunder — which is exactly what Part 2.7 moved it into the layout to avoid. Six lines of proxy keeps both properties.
+
+### The proxy only fixes the cold load, which is the point
+
+Layouts still don't re-render when only the query string changes — that is what makes them layouts, and the proxy doesn't alter it. So clicking page 2 in the browser doesn't re-run the layout's prefetch; the client cache and `useQuery` handle that case, exactly as they did before.
+
+Which is the correct division of labour. The warm case was never broken — a client navigation has a cache, and Part 4.6 warms it on hover. The cold case had no cache and no HTML, and that is the one this fixes.
+
+### An absolute `href` throws the query string away
+
+This is the bug you will actually hit, and nothing warns you. `<Link href={`?page=6`}>` is relative and keeps the path; `<Link href={`/${category}/${id}`}>` is absolute and keeps nothing. Once any state lives in the query string, every link in the app has to decide whether to carry it, and the default is to lose it.
+
+The symptom is confusing because the list is right: you click a blunder on page 6, the URL becomes `/middle_game/17593171`, `?page` is gone, `pageFrom(null)` returns 1, and the list you are looking at snaps back to the first fifty — while the blunder you opened is still correctly displayed beside it, because _its_ id was in the path. Half the screen keeps its state and half loses it.
+
+Worth knowing that this is exactly the class of problem `useSearchParams` and a helper solve at scale: as the number of params grows, hand-building hrefs stops being viable and you want one function that takes the current params, overrides a key, and returns the string. With one param, threading it is simpler and honest.
+
+### The prefetch key still has to match exactly
+
+Part 2.5's silent failure, with a fresh way to trigger it. `.default(1)` means the server happily accepts `{ category }` — but the query key is built from what you _passed_, not from what Zod filled in afterwards:
+
+```
+{ category: "middle_game" }             ← what the layout prefetched
+{ category: "middle_game", page: 1 }    ← what the component asks for
+```
+
+Two different keys, so the hydrated entry is ignored and the browser refetches data that was already in the HTML. Pass `page` explicitly on both sides. Nothing fails: the build is green, the page works, it is just slower. Check the HTML, not the terminal.
+
+### Offset or cursor
+
+`OFFSET` is right here, and it's worth being able to say why it isn't always.
+
+The database has to walk and discard every row it skips, so `OFFSET 100000` is genuinely slow. The bigger problem is that offsets count _positions_ in a result set: insert a row above your window between page 1 and page 2 and everything shifts down, so you see one row twice and never see another. Cursor pagination asks for "the 50 after _this row_" instead of "skip 50", which is stable under inserts and stays fast at any depth — but it cannot give you page numbers, because reaching page 4 means walking pages 1 through 3.
+
+Our data is 1,380 rows from a batch scrape, six pages deep, with nobody inserting between clicks. Offset, and the numbered pages it makes possible, is the better trade. That reasoning is the interview answer — not "cursor is better".
+
+# Part 4.5 — Keeping the Old Page On Screen
+
+## The one idea
+
+Click page 2 and the list vanishes, then comes back.
+
+Nothing is broken. Page 2 is a different cache key, a key with nothing in it is `isPending`, and the first line of the component throws the entire list away when that's true:
+
+```tsx
+if (isPending) return <p>Loading...</p>;
+```
+
+That guard was written in Part 2 for a component that only ever had one thing to show. Now there is a perfectly good previous page on screen and we replace it with the word "Loading". The fetch isn't the problem — the guard is.
+
+`placeholderData` is the fix, and it's one line: while this key is empty, show the last one's data.
+
+---
+
+## `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+```tsx
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+
+const { isPending, isPlaceholderData, error, data } = useQuery({
+  ...trpc.blunders.byCategory.queryOptions({ category, page }),
+  placeholderData: keepPreviousData,
+});
+```
+
+And the wrapper, which was reading `isFetching`:
+
+```tsx
+<div aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
+```
+
+### The pieces
+
+**The spread is the entire argument for the modern tRPC adapter.** `queryOptions()` returns a plain object, so adding a TanStack option is `...` and one more line. Part 2 claimed that composability as the reason to pick `@trpc/tanstack-react-query` over the old wrapper — this is the first time we actually cash it in. On the old API there is no object to spread into.
+
+**`isPlaceholderData` is the flag to render against.** It is true exactly when what you're looking at belongs to a different key than the one you asked for: the old page, still on screen, while the new one loads. Dim it and the layout never collapses.
+
+**`isPending` finally means what it says.** It now only fires when there is nothing to fall back to — the genuine first load. Every page change after that keeps its content, which is the difference between an app that feels fast and one that measures fast.
+
+---
+
+## Gotchas
+
+### It's `keepPreviousData`, not `true`
+
+v4 spelled this `keepPreviousData: true` as its own option. v5 removed it and replaced it with a function you hand to `placeholderData`. Any answer setting a boolean is out of date — the same v4/v5 trap as `isLoading` and `isPending` in Part 2.
+
+The general shape is worth knowing: `placeholderData` takes any value, or a function `(previousData) => …`. `keepPreviousData` is just that function, returning the previous data unchanged, shipped for you.
+
+### Placeholder data is never written to the cache
+
+It is shown, not stored. Page 2's entry stays empty until page 2's real data lands, so there's no risk of stale rows being cached under the wrong key, and `isPlaceholderData` flips to false the moment the real thing arrives.
+
+### It follows the hook, not the input
+
+"Previous" means whatever this hook rendered last, whichever key that was — including a different _category_, not just a different page. That's harmless for us only because switching category server-renders and hydrates the new list, so real data is already in the cache and the placeholder never gets its chance. Worth checking before you reuse this on a query where that isn't true, because showing one category's rows under another category's heading is a convincing bug.
+
+# Part 4.6 — Prefetching the Next Page
+
+## The one idea
+
+Part 2.5 prefetched on the server: fill the cache before the browser even exists. This does the same thing from inside the browser, and the timing is a gift — someone hovering a page link is roughly 200ms away from clicking it, which is plenty of time to already have the page.
+
+Same cache, same keys, same idea. The only thing that's new is doing it _imperatively_ rather than declaring it and letting the cache decide.
+
+---
+
+## `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+```tsx
+import { keepPreviousData, noop, useQuery, useQueryClient } from "@tanstack/react-query";
+
+interface PaginationProps {
+  category: string;
+  page: number;
+  total: number;
+}
+
+function Pagination({ category, page, total }: PaginationProps) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  // ...pageCount and pages are unchanged...
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => (
+          <li key={n}>
+            <Link
+              href={`?page=${n}`}
+              aria-current={n === page ? "page" : undefined}
+              onMouseEnter={() =>
+                queryClient
+                  .query(trpc.blunders.byCategory.queryOptions({ category, page: n }))
+                  .catch(noop)
+              }
+            >
+              {n}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+```
+
+`Pagination` takes `category` now — it needs it to build the key — so the call site becomes `<Pagination category={category} page={page} total={data.total} />`.
+
+### The pieces
+
+**`useQueryClient()` hands you the cache itself**, rather than a subscription to one entry in it. `useQuery` says "I need this, re-render me when it changes"; `queryClient.query()` says "go and get this, I'm not rendering it". Two jobs, one cache — and because the key is built the same way, the `useQuery` on the next render finds the entry already full.
+
+**`.catch(noop)`, for the reason Part 2.5 gave.** `query()` returns a promise that rejects, and an unhandled rejection triggered by a mouse moving across a link is a silly way to meet an error overlay. A speculative fetch is allowed to fail silently — that's what makes it speculative.
+
+**`staleTime` already stops you flooding the network.** Hovering the same link ten times does not fire ten requests: `query()` respects the 60-second `staleTime` set back in Part 2, so everything after the first resolves straight from cache. The prefetch gets to be naive because the cache policy isn't.
+
+**Why not `prefetchQuery`.** It's what most write-ups reach for, and it is deprecated in v5 — `query(options).catch(noop)` is the replacement, exactly the same swap Part 2.5 made on the server side. Deprecated code still compiles and still lints, so this is one you only catch by reading the type.
+
+---
+
+## Gotchas
+
+### Hover isn't a real event on a phone
+
+`onMouseEnter` never fires on a touch device. It costs nothing and helps on desktop, which makes it a fine default, but treat it as an enhancement rather than the mechanism — the app has to be correct with the prefetch removed. `onPointerDown` fires on both and still buys you the gap between press and release, which is less time but not zero.
+
+### Don't prefetch everything
+
+Six links and a hover is fine. A loop that warms all six on mount is six queries to serve one, on a connection the user is currently using for the page they actually asked for. Prefetching is a bet on what happens next, and it stops paying the moment you bet on everything.
+
+## Still open
+
+The pager describes the category, but the buckets inside it still describe the page: `Checker plays (37)` means 37 of _these fifty_, not 37 of 300. Every heading count comes from `.length` on whatever happens to be loaded. Fixing that means counts computed by the database rather than by the component — which is really a filtering question, and that's Part 5.
+
+From here: **Part 5** simple filters, **Part 6** mutations — a scratchpad textarea for notes on a blunder, which needs writing back to the database.
