@@ -1,7 +1,10 @@
 {
   "name": "backgammon-app",
   "private": true,
+  "type": "module",
   "scripts": {
+    "setup:worktree": "node --disable-warning=ExperimentalWarning scripts/setup-worktree.ts",
+    "postinstall": "node --disable-warning=ExperimentalWarning scripts/setup-worktree.ts",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
