@@ -2344,7 +2344,7 @@ await queryClient
   .catch(noop);
 ```
 
-The comment above those lines, about layouts getting headers instead of `searchParams`, stays exactly as Part 4 left it.
+Part 4's comment about layouts getting headers instead of `searchParams` goes with the lines it described; `proxy.ts` still explains why the header is there at all.
 
 ### The pieces
 

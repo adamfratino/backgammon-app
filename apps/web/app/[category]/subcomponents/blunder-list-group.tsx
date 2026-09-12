@@ -20,7 +20,7 @@ interface BlunderListGroupProps {
   group: BlunderListGroup;
   category: string;
   selected: string | null;
-  page: number;
+  query: string;
   depth: number;
 }
 
@@ -29,7 +29,7 @@ export function BlunderListGroup({
   group,
   category,
   selected,
-  page,
+  query,
   depth,
 }: BlunderListGroupProps) {
   const Heading = depth === 0 ? "h3" : "h4";
@@ -47,7 +47,7 @@ export function BlunderListGroup({
             group={child}
             category={category}
             selected={selected}
-            page={page}
+            query={query}
             depth={depth + 1}
           />
         ))
@@ -56,7 +56,7 @@ export function BlunderListGroup({
           blunders={group.blunders}
           category={category}
           selected={selected}
-          page={page}
+          query={query}
         />
       )}
     </section>

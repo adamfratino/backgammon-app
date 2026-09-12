@@ -3,7 +3,9 @@ import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
 
 import { filtersFrom, pageFrom } from "@/lib/constants";
 import { getQueryClient, trpc } from "@/trpc/server";
+
 import { BlunderList } from "./blunder-list";
+import { BlunderFilterPanel } from "./blunder-filters";
 
 interface CategoryLayoutProps {
   params: Promise<{ category: string }>;
@@ -14,8 +16,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
   const { category } = await params;
 
   const queryClient = getQueryClient();
-  // Layouts get no `searchParams`, but they do get headers — middleware forwards
-  // the query string so the prefetch matches the page actually requested.
+
   const search = new URLSearchParams((await headers()).get("x-search") ?? "");
   const page = pageFrom(search.get("page"));
   const filters = filtersFrom(search);
@@ -27,6 +28,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
   return (
     <main>
       <h1>{category}</h1>
+      <BlunderFilterPanel category={category} />
       <div style={{ display: "flex", gap: "3rem" }}>
         <HydrationBoundary state={dehydrate(queryClient)}>
           <BlunderList category={category} />

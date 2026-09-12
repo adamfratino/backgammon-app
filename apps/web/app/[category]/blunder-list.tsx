@@ -3,7 +3,7 @@
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
-import { filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
+import { filterParams, filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
@@ -21,6 +21,11 @@ export function BlunderList({ category }: BlunderListProps) {
   const page = pageFrom(searchParams.get("page"));
   const filters = filtersFrom(searchParams);
 
+  // What every link out of this list has to carry to come back to this view.
+  const params = filterParams(filters);
+  if (page > 1) params.set("page", String(page));
+  const query = params.size > 0 ? `?${params}` : "";
+
   const { isPending, isPlaceholderData, error, data } = useQuery({
     ...trpc.blunders.byCategory.queryOptions({ category, page, ...filters }),
     placeholderData: keepPreviousData,
@@ -37,7 +42,7 @@ export function BlunderList({ category }: BlunderListProps) {
 
   return (
     <div aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
-      <BlunderListPagination page={page} total={data.total} category={category} />
+      <BlunderListPagination page={page} total={data.total} category={category} filters={filters} />
       {KINDS.map((kind) => {
         const blunders = byKind[kind];
         if (!blunders) return null;
@@ -55,8 +60,8 @@ export function BlunderList({ category }: BlunderListProps) {
                   group={group}
                   category={category}
                   selected={selected}
-                  page={page}
                   depth={0}
+                  query={query}
                 />
               );
             })}

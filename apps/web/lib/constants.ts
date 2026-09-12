@@ -1,6 +1,5 @@
 export const PER_PAGE = 50;
 
-/** No `both`: the query splits one of those into a checker decision and a cube decision. */
 export const KINDS = ["checker", "cube"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
@@ -45,11 +44,9 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   return "offer";
 }
 
-/** The ids on their own: the filter validates against these, and so does the router. */
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
 
-/** An empty group means no filter on it, so this is also what "unfiltered" looks like. */
 export interface BlunderFilters {
   kinds: BlunderKind[];
   severities: BlunderSeverity[];
@@ -80,4 +77,17 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
     severities: pick("severity", SEVERITIES),
     directions: pick("direction", DIRECTIONS),
   };
+}
+
+/**
+ * The inverse of `filtersFrom`: filters back out to `?kind=&severity=&direction=`,
+ * in the constants' own order. It writes filters and nothing else — no `?page=` —
+ * so a link built from it starts the filtered list at the beginning.
+ */
+export function filterParams({ kinds, severities, directions }: BlunderFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const kind of kinds) params.append("kind", kind);
+  for (const severity of severities) params.append("severity", severity);
+  for (const direction of directions) params.append("direction", direction);
+  return params;
 }

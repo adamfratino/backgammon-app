@@ -6,16 +6,16 @@ interface BlunderListLinkProps {
   blunders: Blunder[];
   category: string;
   selected: string | null;
-  page: number;
+  query: string;
 }
 
-export function BlunderListLinks({ blunders, category, selected, page }: BlunderListLinkProps) {
+export function BlunderListLinks({ blunders, category, selected, query }: BlunderListLinkProps) {
   return (
     <ol>
       {blunders.map(({ blunder_id, error_magnitude, played_notation, cube_action, kind }) => (
         <li key={blunder_id}>
           <Link
-            href={`/${category}/${blunder_id}${page > 1 ? `?page=${page}` : ""}`}
+            href={`/${category}/${blunder_id}${query}`}
             aria-current={String(blunder_id) === selected ? "page" : undefined}
           >
             [{error_magnitude.toFixed(3)}] {played_notation ? `${played_notation}` : null}{" "}
