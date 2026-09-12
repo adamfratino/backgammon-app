@@ -4,7 +4,7 @@ Reference notes written while building this app. Aimed at a frontend-leaning eng
 
 Each part follows the same shape: **the whole file**, then **the pieces** broken down, then **gotchas**. Type the files, read the breakdown, skim the gotchas until one bites you.
 
-Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB_PATH` pointing at the scraped database in the main checkout. The file is gitignored and exists in exactly one place, so without it every page throws while SQLite tries to open a file that isn't there — which reads like broken code rather than a missing database.
+Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB_PATH` pointing at the scraped database in the main checkout, and `pnpm install` now writes that file for you — `pnpm setup:worktree` does the same on demand. The database is gitignored and exists in exactly one place, so without the file every page throws while SQLite tries to open a file that isn't there, which reads like broken code rather than a missing database. An `.env.local` you wrote yourself is never overwritten.
 
 ## Contents
 
