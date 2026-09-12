@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
 
-import { filtersFrom, pageFrom } from "@/lib/constants";
+import { filtersFrom, pageFrom, sortFrom } from "@/lib/constants";
 import { getQueryClient, trpc } from "@/trpc/server";
 
 import { BlunderList } from "./blunder-list";
@@ -20,9 +20,10 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
   const search = new URLSearchParams((await headers()).get("x-search") ?? "");
   const page = pageFrom(search.get("page"));
   const filters = filtersFrom(search);
+  const sort = sortFrom(search.get("sort"));
 
   await queryClient
-    .query(trpc.blunders.byCategory.queryOptions({ category, page, ...filters }))
+    .query(trpc.blunders.byCategory.queryOptions({ category, page, ...filters, sort }))
     .catch(noop);
 
   return (

@@ -44,9 +44,18 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   return "offer";
 }
 
+export const SORTS = [
+  { id: "worst", label: "Worst first" },
+  { id: "mildest", label: "Mildest first" },
+] as const;
+
+export type BlunderSort = (typeof SORTS)[number]["id"];
+
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
+export const SORT_IDS = SORTS.map(({ id }) => id);
 
+export const DEFAULT_SORT: BlunderSort = "worst";
 export interface BlunderFilters {
   kinds: BlunderKind[];
   severities: BlunderSeverity[];
@@ -57,6 +66,15 @@ export interface BlunderFilters {
 export function pageFrom(value: string | null): number {
   const page = Number(value);
   return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+
+/**
+ * `?sort=` is a single choice out of a whitelist, not a set, so unlike the
+ * filters it has a default rather than an empty state: anything that isn't one
+ * of ours — missing, misspelled, or repeated — is the default ordering.
+ */
+export function sortFrom(value: string | null): BlunderSort {
+  return SORT_IDS.find((id) => id === value) ?? DEFAULT_SORT;
 }
 
 /**
@@ -80,14 +98,23 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
 }
 
 /**
- * The inverse of `filtersFrom`: filters back out to `?kind=&severity=&direction=`,
- * in the constants' own order. It writes filters and nothing else — no `?page=` —
- * so a link built from it starts the filtered list at the beginning.
+ * Everything a link has to carry to land on the view you are already looking at:
+ * the filters, in the constants' own order, and the sort. It writes no `?page=`,
+ * so a link built from it starts the list at the beginning.
+ *
+ * `sort` is a required argument rather than an optional one on purpose. Adding a
+ * member to URL state should break every link that writes the URL until each one
+ * has been told what to do about it — an optional parameter would instead let
+ * every existing caller keep compiling while quietly clearing the sort.
  */
-export function filterParams({ kinds, severities, directions }: BlunderFilters): URLSearchParams {
+export function viewParams(
+  { kinds, severities, directions }: BlunderFilters,
+  sort: BlunderSort,
+): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
   for (const direction of directions) params.append("direction", direction);
+  if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
 }
