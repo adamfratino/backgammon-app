@@ -9,7 +9,7 @@ export async function CategoryNav() {
   const categories = await caller.categories.list();
 
   return (
-    <nav aria-label="Blunder categories">
+    <nav data-slot="category-nav" aria-label="Blunder categories">
       <ul>
         {categories.map(({ category, count }) => (
           <li key={category}>

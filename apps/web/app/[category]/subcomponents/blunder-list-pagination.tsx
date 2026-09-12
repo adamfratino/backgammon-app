@@ -4,15 +4,21 @@ import { useQueryClient, noop } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { useTRPC } from "@/trpc/client";
-import { PER_PAGE } from "@/lib/constants";
+import { PER_PAGE, filterParams, type BlunderFilters } from "@/lib/constants";
 
 interface BlunderListPaginationProps {
   page: number;
   total: number;
   category: string;
+  filters: BlunderFilters;
 }
 
-export function BlunderListPagination({ page, category, total }: BlunderListPaginationProps) {
+export function BlunderListPagination({
+  page,
+  category,
+  total,
+  filters,
+}: BlunderListPaginationProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -24,21 +30,27 @@ export function BlunderListPagination({ page, category, total }: BlunderListPagi
   return (
     <nav aria-label="Pagination">
       <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
-        {pages.map((n) => (
-          <li key={n}>
-            <Link
-              href={`?page=${n}`}
-              aria-current={n === page ? "page" : undefined}
-              onMouseEnter={() =>
-                queryClient
-                  .query(trpc.blunders.byCategory.queryOptions({ category, page: n }))
-                  .catch(noop)
-              }
-            >
-              {n}
-            </Link>
-          </li>
-        ))}
+        {pages.map((n) => {
+          // Rebuilt per link: a page number belongs to one page, the filters to all of them.
+          const params = filterParams(filters);
+          params.set("page", String(n));
+
+          return (
+            <li key={n}>
+              <Link
+                href={`?${params}`}
+                aria-current={n === page ? "page" : undefined}
+                onMouseEnter={() =>
+                  queryClient
+                    .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters }))
+                    .catch(noop)
+                }
+              >
+                {n}
+              </Link>
+            </li>
+          );
+        })}
       </ol>
     </nav>
   );

@@ -1,6 +1,5 @@
 export const PER_PAGE = 50;
 
-/** No `both`: the query splits one of those into a checker decision and a cube decision. */
 export const KINDS = ["checker", "cube"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
@@ -38,15 +37,57 @@ export const CUBE_DIRECTIONS = [
   { id: "receive", label: "Being offered the cube" },
 ] as const;
 
-type CubeDirection = (typeof CUBE_DIRECTIONS)[number]["id"];
+export type CubeDirection = (typeof CUBE_DIRECTIONS)[number]["id"];
 
 export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   if (direction === "double_accepted" || direction === "double_rejected") return "receive";
   return "offer";
 }
 
+export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
+export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
+
+export interface BlunderFilters {
+  kinds: BlunderKind[];
+  severities: BlunderSeverity[];
+  directions: CubeDirection[];
+}
+
 /** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
 export function pageFrom(value: string | null): number {
   const page = Number(value);
   return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+
+/**
+ * The filters, read from `?kind=&severity=&direction=`. Anything that isn't one
+ * of ours is dropped, and each group comes back in the constants' own order —
+ * which is what lets the browser and the server build the same cache key from
+ * the same URL. Takes anything with `getAll`, so the read-only search params in
+ * the browser and a plain `URLSearchParams` on the server both fit.
+ */
+export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFilters {
+  const pick = <T extends string>(key: string, allowed: readonly T[]): T[] => {
+    const chosen = new Set(params.getAll(key));
+    return allowed.filter((value) => chosen.has(value));
+  };
+
+  return {
+    kinds: pick("kind", KINDS),
+    severities: pick("severity", SEVERITIES),
+    directions: pick("direction", DIRECTIONS),
+  };
+}
+
+/**
+ * The inverse of `filtersFrom`: filters back out to `?kind=&severity=&direction=`,
+ * in the constants' own order. It writes filters and nothing else — no `?page=` —
+ * so a link built from it starts the filtered list at the beginning.
+ */
+export function filterParams({ kinds, severities, directions }: BlunderFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const kind of kinds) params.append("kind", kind);
+  for (const severity of severities) params.append("severity", severity);
+  for (const direction of directions) params.append("direction", direction);
+  return params;
 }

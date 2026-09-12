@@ -86,11 +86,20 @@ Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB
 - [Part 5 — Filters](#part-5--filters)
   - [The one idea](#the-one-idea-11)
   - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts)
-  - [2. `apps/web/server/router.ts`](#2-appswebserverrouterts-3)
-  - [3. `apps/web/app/[category]/layout.tsx`](#3-appswebappcategorylayouttsx)
-  - [4. `apps/web/app/[category]/blunder-list.tsx`](#4-appswebappcategoryblunder-listtsx)
+  - [2. `apps/web/app/[category]/layout.tsx`](#2-appswebappcategorylayouttsx)
+  - [3. `apps/web/app/[category]/blunder-list.tsx`](#3-appswebappcategoryblunder-listtsx-2)
   - [Gotchas](#gotchas-5)
   - [Still open](#still-open-2)
+- [Part 5.5 — The Filter UI](#part-55--the-filter-ui)
+  - [The one idea](#the-one-idea-12)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-4)
+  - [2. `apps/web/app/[category]/blunder-filters.tsx` — new file](#2-appswebappcategoryblunder-filterstsx--new-file)
+  - [3. `apps/web/app/[category]/layout.tsx`](#3-appswebappcategorylayouttsx)
+  - [4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`](#4-appswebappcategorysubcomponentsblunder-list-paginationtsx)
+  - [5. `blunder-list-group.tsx` and `blunder-list-links.tsx`](#5-blunder-list-grouptsx-and-blunder-list-linkstsx)
+  - [6. `apps/web/app/[category]/blunder-list.tsx`](#6-appswebappcategoryblunder-listtsx)
+  - [Gotchas](#gotchas-6)
+  - [Still open](#still-open-3)
 
 ---
 
@@ -2190,6 +2199,8 @@ From here: **Part 5** simple filters, **Part 6** mutations — a scratchpad text
 
 **Already done for you, before this part starts.** A blunder stored as `kind = 'both'` used to be a single row holding two unrelated mistakes: a wrong cube decision, and then a wrong checker play on the same roll — filed together and measured by the checker error, so the cube half was sorted by the wrong number. Those nineteen rows are now split in the query into one checker decision and one cube decision each, so a row is one thing somebody got wrong. The change is already in your files: `KINDS` lost `both`, `server/router.ts` gained a `WITH_DECISIONS` clause that its queries start from, and the analysis panel prints one error line per decision. Nothing below depends on how that works — it matters here only because the kind filter now has two honest options instead of three.
 
+**Also already done: the query itself.** `byCategory` takes `kinds`, `severities` and `directions` alongside `category` and `page`, and turns whatever it is handed into a `WHERE` — an empty array means no filter on that group, so sending all three empty is the unfiltered list you already have. It is a page of SQL assembled from string fragments, which is a backend problem and not what this document is about, so it isn't reproduced here. The one idea in it worth carrying anywhere else is in the gotchas below, under _build the condition, bind the value_. Everything that follows needs only the signature: send the three arrays, get back the rows that match and a total that counts them.
+
 ## The one idea
 
 Hiding the mild blunders, or showing only cube decisions, looks like a job for the list component. It has the rows right there and `filter` is one line.
@@ -2198,18 +2209,18 @@ It isn't, and the reason is Part 4. The database already decides which fifty row
 
 | `/middle_game`        | page 1 | the whole category |
 | --------------------- | ------ | ------------------ |
-| catastrophic / severe | 9 / 41 | 9 / 53             |
-| moderate / mild       | 0 / 0  | 166 / 72           |
+| catastrophic / severe | 9 / 41 | 9 / 55             |
+| moderate / mild       | 0 / 0  | 166 / 74           |
 | cube decisions        | 11     | 59                 |
 
-"Only mild" would empty page 1 while the pager still offered six pages, because the first mild row is on page 5. Anything that changes _which rows qualify_ has to run where the pagination runs.
+"Only mild" would empty page 1 while the pager still offered seven pages, because the first mild row is on page 5. Anything that changes _which rows qualify_ has to run where the pagination runs.
 
 That puts the filter values on the far side of the wire, so they have to travel with the request — and Part 2.7 already chose where that kind of state lives. The URL. It survives a refresh, it survives opening a blunder, and you can send it to someone. Part 4's `proxy.ts` forwards the whole query string to the layout already, and said at the time that the next param would cost nothing here. This is that bill arriving.
 
 | file                              | job                                                     |
 | --------------------------------- | ------------------------------------------------------- |
 | `lib/constants.ts`                | one parser for `?kind=`, `?severity=` and `?direction=` |
-| `server/router.ts`                | turns them into a `WHERE`                               |
+| `server/router.ts`                | turns them into a `WHERE` — already done, above         |
 | `app/[category]/layout.tsx`       | prefetches the page that was actually asked for         |
 | `app/[category]/blunder-list.tsx` | reads the URL and asks for what it says                 |
 
@@ -2317,124 +2328,7 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
 
 ---
 
-## 2. `apps/web/server/router.ts`
-
-### The change
-
-An existing file, so only the changed part. `byCategory` takes three arrays and builds its `WHERE` from them — `WITH_DECISIONS` and the `decisions` join are already there from the preface, and stay exactly as they are:
-
-```ts
-byCategory: publicProcedure
-  .input(
-    z.object({
-      category: z.string(),
-      page: z.number().int().min(1).default(1),
-      kinds: z.array(z.enum(KINDS)).default([]),
-      severities: z.array(z.enum(SEVERITIES)).default([]),
-      directions: z.array(z.enum(DIRECTIONS)).default([]),
-    }),
-  )
-  .output(z.object({ blunders: z.array(blunder), total: z.number() }))
-  .query(({ ctx, input }) => {
-    // Conditions are assembled here; every value they compare against is
-    // bound, so nothing from the URL is ever part of the SQL itself.
-    const where = ["bc.category = ?"];
-    const params: (string | number)[] = [input.category];
-
-    if (input.kinds.length > 0) {
-      where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
-      params.push(...input.kinds);
-    }
-
-    if (input.severities.length > 0) {
-      // A band runs from its own `min` up to the next one above it, and the
-      // top band has no ceiling.
-      const clauses = SEVERITY_BANDS.filter((band) => input.severities.includes(band.id)).map(
-        (band) => {
-          const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
-          params.push(band.min);
-          if (!above) return "d.error_magnitude >= ?";
-          params.push(above.min);
-          return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
-        },
-      );
-      where.push(`(${clauses.join(" OR ")})`);
-    }
-
-    if (input.directions.length > 0) {
-      // A checker decision has no cube action, so asking for a direction is
-      // also asking for cube decisions.
-      const actions = CUBE_ACTION.filter((action) =>
-        input.directions.includes(cubeDirection(action)),
-      );
-      where.push(`d.kind = 'cube'`);
-      where.push(`b.cube_action IN (${actions.map(() => "?").join(", ")})`);
-      params.push(...actions);
-    }
-
-    const filter = where.join(" AND ");
-
-    const rows = ctx.db
-      .prepare(
-        `${WITH_DECISIONS}
-         SELECT d.blunder_id, d.kind, b.cube_action, d.error_magnitude,
-                b.error_severity, d.played_notation, d.best_notation,
-                b.match_length, b.score_black, b.score_white,
-                c.doublers_best_action, c.receivers_best_action
-         FROM decisions d
-         JOIN blunders b ON b.blunder_id = d.blunder_id
-         JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-         LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
-         WHERE ${filter}
-         ORDER BY d.error_magnitude DESC
-         LIMIT ? OFFSET ?`,
-      )
-      .all(...params, PER_PAGE, (input.page - 1) * PER_PAGE);
-
-    const { total } = ctx.db
-      .prepare(
-        `${WITH_DECISIONS}
-         SELECT COUNT(*) AS total
-         FROM decisions d
-         JOIN blunders b ON b.blunder_id = d.blunder_id
-         JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-         WHERE ${filter}`,
-      )
-      .get(...params) as { total: number };
-
-    // The driver hands back untyped rows. This assertion is safe only
-    // because `.output()` re-checks the real shape at runtime.
-    return { blunders: rows as unknown as Blunder[], total };
-  }),
-```
-
-The imports grow to match:
-
-```ts
-import {
-  CUBE_ACTION,
-  cubeDirection,
-  DIRECTIONS,
-  KINDS,
-  PER_PAGE,
-  SEVERITIES,
-  SEVERITY_BANDS,
-} from "@/lib/constants";
-```
-
-### The pieces
-
-**The `WHERE` is built, but the values are bound.** `where` collects condition strings and `params` collects the values, in the same order. The only thing interpolated into the SQL is `?`, one per value, which is why `?severity=' OR 1=1 --` is a filter that matches nothing rather than an incident.
-
-**The bands become ranges.** `SEVERITY_BANDS` is the same list the UI groups by, ordered from worst down, so the ceiling of a band is the smallest `min` above it — `filter(…).at(-1)` — and the top band has none. Thresholds stay defined in exactly one place, and SQL never learns the word "catastrophic".
-
-**Filtering by direction filters to cube decisions.** `cubeDirection` already maps a cube action to a side; running it over `CUBE_ACTION` inverts it, turning "offering" into the actions that mean it. A checker decision has no cube action at all, so it can't match — see the gotcha.
-
-**One `filter` string, two queries.** The rows and the total have to agree on what they're counting, so they share the string and the params. The count query joins `blunders` even when nothing needs it, because the direction condition mentions `b.cube_action` and a condition can't reference a table that isn't there.
-
----
-
-## 3. `apps/web/app/[category]/layout.tsx`
+## 2. `apps/web/app/[category]/layout.tsx`
 
 ### The change
 
@@ -2450,7 +2344,7 @@ await queryClient
   .catch(noop);
 ```
 
-The comment above those lines, about layouts getting headers instead of `searchParams`, stays exactly as Part 4 left it.
+Part 4's comment about layouts getting headers instead of `searchParams` goes with the lines it described; `proxy.ts` still explains why the header is there at all.
 
 ### The pieces
 
@@ -2460,7 +2354,7 @@ The comment above those lines, about layouts getting headers instead of `searchP
 
 ---
 
-## 4. `apps/web/app/[category]/blunder-list.tsx`
+## 3. `apps/web/app/[category]/blunder-list.tsx`
 
 ### The whole file
 
@@ -2549,7 +2443,7 @@ export function BlunderList({ category }: BlunderListProps) {
 
 ### Build the condition, bind the value
 
-The rule is one line long: the SQL string may be assembled, but every value in it is a `?`.
+The filter query written for you follows one rule, and it holds anywhere something builds SQL: the string may be assembled, but every value in it is a `?`.
 
 ```ts
 where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
@@ -2595,3 +2489,459 @@ The filters work, but only if you type them into the address bar, which is not a
 Then **Part 6**, mutations.
 
 **Why none of this uses a store.** Part 5 was planned as filters in a global store — zustand rather than React context. It isn't one, because the server needs the filter values to run the query and the URL is how they travel; a store would be a second copy of state that already has a home, and two copies have to be kept in step forever. A store earns its place on state the server never needs and that separate parts of the tree share — a display preference read by both the list, which lives in the layout, and the analysis panel, which lives in the page, with no client component above them in common. That is the shape to look for when it does turn up, along with `persist` and the server/client hydration problem it brings.
+
+# Part 5.5 — The Filter UI
+
+## The one idea
+
+Part 5 taught the URL to carry filters and the server to read them, then left you typing `?severity=mild` into the address bar by hand. Everything needed to finish the job is already in place. What is missing is that nothing _writes_ the URL.
+
+That turns out to be the harder half, because the URL does not get written in one place. The checkboxes write it. The pager writes it. Every row link writes it. Part 5 gave you `filtersFrom`, a reader with no inverse, so each of those three would invent its own spelling of the same state — which is exactly how a filter disappears the moment you turn a page.
+
+The rule underneath this part: **when the URL is your state, every link is a write.** A link that leaves a param out is not neutral about it, it clears it. The pager's `?page=2` was a complete and correct URL for as long as `page` was the only thing in it; the moment a second param exists, that same link is a "clear the filters" button wearing a page number. Nothing warns you, because nothing is broken — you just end up somewhere you didn't ask for.
+
+| file                                                    | job                                                              |
+| ------------------------------------------------------- | ---------------------------------------------------------------- |
+| `lib/constants.ts`                                      | `filterParams`, the inverse `filtersFrom` never had              |
+| `app/[category]/blunder-filters.tsx`                    | the checkboxes — the only thing here that navigates              |
+| `app/[category]/layout.tsx`                             | mounts the panel where the list's loading state can't swallow it |
+| `subcomponents/blunder-list-pagination.tsx`             | pages _within_ the filters, and prefetches with them             |
+| `subcomponents/blunder-list-group.tsx` and `-links.tsx` | carry a finished suffix down to the rows                         |
+| `app/[category]/blunder-list.tsx`                       | builds that suffix, and wires the two above together             |
+
+---
+
+## 1. `apps/web/lib/constants.ts`
+
+### The change
+
+One function, appended. It is the mirror of `filtersFrom` directly above it:
+
+```ts
+/**
+ * The inverse of `filtersFrom`: filters back out to `?kind=&severity=&direction=`,
+ * in the constants' own order. It writes filters and nothing else — no `?page=` —
+ * so a link built from it starts the filtered list at the beginning.
+ */
+export function filterParams({ kinds, severities, directions }: BlunderFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const kind of kinds) params.append("kind", kind);
+  for (const severity of severities) params.append("severity", severity);
+  for (const direction of directions) params.append("direction", direction);
+  return params;
+}
+```
+
+### The pieces
+
+**It is deliberately an incomplete inverse.** `filtersFrom` reads a whole URL; `filterParams` writes only the filter part of one. It has no idea `?page=` exists and no way to write it. That refusal is not an oversight to patch later — it _is_ the page reset. Build a URL from this function and you have, by construction, a URL with no page in it, which `pageFrom` reads as page 1. The requirement "changing a filter sends you back to page 1" never becomes a line of code anywhere; it is a consequence of the only tool for the job being unable to do otherwise.
+
+**The order is the constants' order, on the way out as well as in.** Part 5 made `filtersFrom` walk `KINDS` and `SEVERITIES` rather than the query string, so that two URLs describing the same filters produce one cache key. `filterParams` walks the same lists in the same direction, so the round trip is stable: parse a URL, serialize it back, and you get the same string. That property is what lets the next section launder a messy URL by simply passing it through both.
+
+**It returns `URLSearchParams`, not a string.** Each caller needs `page` handled differently — the pager names a page on every link, a row link carries one only when it isn't page 1, and the checkboxes must not write one at all. Handing back a mutable object lets each of the three finish the sentence its own way, instead of forcing a `pageForLinks?: number` flag into a function that is clearer without one.
+
+---
+
+## 2. `apps/web/app/[category]/blunder-filters.tsx` — new file
+
+### The panel
+
+```tsx
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+
+import {
+  CUBE_DIRECTIONS,
+  filterParams,
+  filtersFrom,
+  KINDS,
+  KIND_LABELS,
+  SEVERITY_BANDS,
+} from "@/lib/constants";
+
+interface BlunderFilterPanelProps {
+  category: string;
+}
+
+export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filters = filtersFrom(searchParams);
+
+  function toggle(param: string, value: string, checked: boolean) {
+    const params = new URLSearchParams(searchParams);
+    if (checked) params.append(param, value);
+    else params.delete(param, value);
+
+    // `filterParams` writes filters and nothing else, so `?page=` is gone by
+    // construction — which is the reset a filter change needs.
+    const query = filterParams(filtersFrom(params)).toString();
+    router.push(query ? `/${category}?${query}` : `/${category}`);
+  }
+
+  return (
+    <div style={{ display: "flex", gap: "2rem" }}>
+      <FilterGroup
+        legend="Kind"
+        param="kind"
+        options={KINDS.map((id) => ({ id, label: KIND_LABELS[id] }))}
+        chosen={filters.kinds}
+        onToggle={toggle}
+      />
+      <FilterGroup
+        legend="Severity"
+        param="severity"
+        options={SEVERITY_BANDS}
+        chosen={filters.severities}
+        onToggle={toggle}
+      />
+      <FilterGroup
+        legend="Cube"
+        param="direction"
+        options={CUBE_DIRECTIONS}
+        chosen={filters.directions}
+        onToggle={toggle}
+      />
+    </div>
+  );
+}
+```
+
+### The group
+
+The checkboxes themselves, in the same file below it:
+
+```tsx
+interface FilterGroupProps {
+  legend: string;
+  param: string;
+  options: readonly { id: string; label: string }[];
+  chosen: readonly string[];
+  onToggle: (param: string, value: string, checked: boolean) => void;
+}
+
+/** One group of checkboxes. The `name` is the query param it writes. */
+function FilterGroup({ legend, param, options, chosen, onToggle }: FilterGroupProps) {
+  return (
+    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+      <legend>{legend}</legend>
+      {options.map(({ id, label }) => (
+        <label key={id} style={{ display: "block" }}>
+          <input
+            type="checkbox"
+            name={param}
+            value={id}
+            checked={chosen.includes(id)}
+            onChange={(event) => onToggle(param, id, event.currentTarget.checked)}
+          />{" "}
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+```
+
+### The pieces
+
+**There is no `useState` in this component.** A checkbox is the textbook `useState` example, and it would be wrong here: the URL already holds this state, the server already reads it, and a `useState` copy would be a second source of truth that has to be re-synced on every back button, every shared link and every navigation. `checked={chosen.includes(id)}` reads the URL. `onChange` writes the URL. The re-render arrives because the route changed. The component holds nothing, which is why there is nothing in it to get out of step.
+
+**`params.delete(name, value)` takes two arguments now.** The second argument removes one specific name/value pair instead of every entry under that name, which is what a single checkbox turning off actually means. It landed in browsers around 2023 and in Node 20, so it is safe here and worth knowing, because the older spelling is a genuine trap:
+
+```ts
+// New: remove exactly this pair.
+params.delete(param, value);
+
+// Older fallback: there is no "remove one", so you empty the key and put the survivors back.
+const kept = params.getAll(param).filter((v) => v !== value);
+params.delete(param);
+for (const v of kept) params.append(param, v);
+```
+
+The fallback is four lines and, note, re-appends at the end — which quietly moves that group to the back of the query string. Harmless here only because the round trip below re-sorts everything anyway.
+
+**`filterParams(filtersFrom(params))` launders the URL.** It parses whatever is in the address bar and writes it back out clean: unknown params dropped, unknown values dropped, groups in the constants' order. So `?severity=banana&page=7&kind=cube` becomes `?kind=cube` on the next click without a single line that mentions `banana`, `page`, or sorting. This is the payoff for making both functions walk the constants rather than the input.
+
+**It pushes `/${category}`, not `?…`.** A relative `?…` would keep the current path, and the current path may be `/middle_game/15987446` — a blunder that the new filter might exclude, leaving the analysis panel showing a row that isn't in the list beside it. Going to the category root closes it. The reasoning is the same as the page reset: narrowing a list can remove the thing you were looking at, so a filter change returns you to the top of the new list rather than to a stale position in it. The cost is real — you lose the open blunder on every tick — and the alternative, `router.push(\`?${query}\`)`, is one character away if you'd rather keep it.
+
+**`query ? … : …` avoids a bare `?`.** Unticking the last checkbox produces an empty `URLSearchParams`, and `/middle_game?` is a URL nobody wants to see or share. The same shape appears again in section 4.
+
+---
+
+## 3. `apps/web/app/[category]/layout.tsx`
+
+### The change
+
+Two lines. An import, next to the one for the list:
+
+```tsx
+import { BlunderFilterPanel } from "./blunder-filters";
+import { BlunderList } from "./blunder-list";
+```
+
+and the panel itself, between the heading and the flex row that holds the list and the analysis:
+
+```tsx
+<main>
+  <h1>{category}</h1>
+  <BlunderFilterPanel category={category} />
+  <div style={{ display: "flex", gap: "3rem" }}>
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <BlunderList category={category} />
+    </HydrationBoundary>
+    {children}
+  </div>
+</main>
+```
+
+The prefetch above it is untouched — Part 5 already taught it to read the filters.
+
+### The pieces
+
+**It is mounted in the layout, not inside the list.** The list was the tempting place — it already has the parsed filters sitting in a variable. But `BlunderList` returns `<p>Loading...</p>` before it renders anything, so the filter panel would vanish on the first load and reappear a moment later, and the control you just clicked would disappear from under the pointer. Putting it in the layout costs one prop and makes the panel independent of the query's state.
+
+**It takes no filter props.** The panel is a client component reading `useSearchParams()` for itself, so a server component can mount it without having parsed anything. Two components read the same URL independently and agree, because the URL is the thing they agree on — no context, no store, no drilling.
+
+---
+
+## 4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
+
+The next three sections go bottom-up: the two children that gain props are changed first, then the list that passes them. Typing them in that order leaves `blunder-list.tsx` briefly wrong — this section makes `filters` a required prop it does not yet pass, and the next one renames `page` to `query` underneath it. Both errors are in the list, both are expected, and section 6 clears them together. Nothing is broken; the compiler is just reading your unfinished sentence.
+
+### The whole file
+
+```tsx
+"use client";
+
+import { useQueryClient, noop } from "@tanstack/react-query";
+import Link from "next/link";
+
+import { useTRPC } from "@/trpc/client";
+import { filterParams, PER_PAGE, type BlunderFilters } from "@/lib/constants";
+
+interface BlunderListPaginationProps {
+  page: number;
+  total: number;
+  category: string;
+  filters: BlunderFilters;
+}
+
+export function BlunderListPagination({
+  page,
+  category,
+  total,
+  filters,
+}: BlunderListPaginationProps) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  const pageCount = Math.ceil(total / PER_PAGE);
+  if (pageCount <= 1) return null;
+
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => {
+          // Rebuilt per link: a page number belongs to one page, the filters to all of them.
+          const params = filterParams(filters);
+          params.set("page", String(n));
+
+          return (
+            <li key={n}>
+              <Link
+                href={`?${params}`}
+                aria-current={n === page ? "page" : undefined}
+                onMouseEnter={() =>
+                  queryClient
+                    .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters }))
+                    .catch(noop)
+                }
+              >
+                {n}
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+```
+
+### The pieces
+
+**`href={`?page=${n}`}` was the bug this part exists to fix.** It is a correct-looking link that silently clears every filter, and the failure mode is the worst kind: page 1 is right, so nothing seems wrong until page 2, by which point the list has changed under you and the URL looks like something you might have typed on purpose.
+
+**The params are rebuilt inside the map.** `filterParams` returns a fresh mutable object and `params.set("page", …)` mutates it, so hoisting the call above the loop would leave every link pointing at whichever page was rendered last. Building one per iteration is a line of waste and a class of bug avoided.
+
+**The prefetch key grew too, and that one is silent.** `queryOptions({ category, page: n, ...filters })` has to spread the filters for the same reason Part 2.5's prefetch did: the key is built from the input, so a prefetch without filters warms a cache entry the component will never ask for. Nothing errors — the hover simply stops doing anything, and the page you were promised instantly arrives at normal speed. The only way to notice is to watch for the request you were trying to avoid.
+
+**Every pager link names its page, including page 1.** `?kind=cube&page=1` is redundant but honest, and `pageFrom` reads it as 1 either way. The alternative — omitting it, and so emitting a bare `?` for the unfiltered first page — costs more than the six characters it saves.
+
+---
+
+## 5. `blunder-list-group.tsx` and `blunder-list-links.tsx`
+
+### The change
+
+The same rename in both files: the `page: number` prop becomes `query: string`. In `blunder-list-group.tsx` that touches the props interface and the destructure:
+
+```tsx
+interface BlunderListGroupProps {
+  group: BlunderListGroup;
+  category: string;
+  selected: string | null;
+  query: string;
+  depth: number;
+}
+
+export function BlunderListGroup({
+  group,
+  category,
+  selected,
+  query,
+  depth,
+}: BlunderListGroupProps) {
+```
+
+and the two places it hands the value on — the recursive `<BlunderListGroup>` and the `<BlunderListLinks>` below it — each swap `page={page}` for `query={query}`. Nothing else in that file changes.
+
+`blunder-list-links.tsx` is short enough to show whole, and the link is where the value is finally spent:
+
+```tsx
+import Link from "next/link";
+
+import type { Blunder } from "@/server/router";
+
+interface BlunderListLinkProps {
+  blunders: Blunder[];
+  category: string;
+  selected: string | null;
+  query: string;
+}
+
+export function BlunderListLinks({ blunders, category, selected, query }: BlunderListLinkProps) {
+  return (
+    <ol>
+      {blunders.map(({ blunder_id, error_magnitude, played_notation, cube_action, kind }) => (
+        <li key={blunder_id}>
+          <Link
+            href={`/${category}/${blunder_id}${query}`}
+            aria-current={String(blunder_id) === selected ? "page" : undefined}
+          >
+            [{error_magnitude.toFixed(3)}] {played_notation ? `${played_notation}` : null}{" "}
+            {kind !== "checker" ? cube_action : null}
+          </Link>
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+### The pieces
+
+**The leaf never wanted a page number.** It wanted a URL suffix, and `page` was the only ingredient back when the suffix had one ingredient. Passing the built string instead of the parts means adding a fourth filter group later touches `filterParams` and nothing else — the group component recurses past this value without ever knowing it changed shape.
+
+**Prop drilling is the right call at this depth.** `query` passes through `BlunderListGroup`'s recursion untouched, which is the classic context-shaped itch. It is two levels and one string, and every component in the chain is already a client component that could call `useSearchParams()` for itself — which would be a third place parsing the URL and a third chance to spell it differently. One value, computed once, handed down.
+
+---
+
+## 6. `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+Three edits, all inside `BlunderList`. The import gains `filterParams`:
+
+```tsx
+import { filterParams, filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
+```
+
+The link suffix is built once, directly under the two lines Part 5 added — shown with its neighbours so there is no guessing where it goes:
+
+```tsx
+const selected = useSelectedLayoutSegment();
+const searchParams = useSearchParams();
+const page = pageFrom(searchParams.get("page"));
+const filters = filtersFrom(searchParams);
+
+// What every link out of this list has to carry to come back to this view.
+const params = filterParams(filters);
+if (page > 1) params.set("page", String(page));
+const query = params.size > 0 ? `?${params}` : "";
+```
+
+Then the two children each take one more prop — the ones sections 4 and 5 just taught to accept them:
+
+```tsx
+<BlunderListPagination page={page} total={data.total} category={category} filters={filters} />
+```
+
+```tsx
+<BlunderListGroup
+  key={group.id}
+  group={group}
+  category={category}
+  selected={selected}
+  query={query}
+  depth={0}
+/>
+```
+
+Nothing else in the file moves.
+
+### The pieces
+
+**Why the pager gets `filters` but the groups get `query`.** The two props look inconsistent and are not. They build different numbers of URLs. The pager builds one href per page — seven links, seven different `?page=` values, the same filters running through all of them — so it needs the ingredients and assembles each link itself. Every row link points at the view you are on right now: same page, same filters, one identical suffix repeated fifty times. So the list builds that string once and hands it down finished. Pass the finished value when there is exactly one; pass the parts when the child has to make several things out of them.
+
+**One suffix, built once, for every row link below.** Each row wants "the URL I came from", so that opening a blunder and coming back lands on the same page of the same filtered list. Building it here rather than in the leaf also means the leaf never learns what a filter is.
+
+**`page` is written only when it isn't 1.** Same rule Part 4 set: page 1 is the absence of `?page=`, not `?page=1`. It keeps the common URL short and keeps one spelling for one view, which matters because this string ends up in the address bar and in shared links.
+
+**`params.size` is newer than it looks.** `URLSearchParams` had no `size` until 2023 — before that the idiom was `[...params].length`, or `toString()` for this exact test:
+
+```ts
+const query = params.size > 0 ? `?${params}` : ""; // today
+const query = params.toString() ? `?${params}` : ""; // works anywhere, and reads fine
+```
+
+---
+
+## Gotchas
+
+### A link that forgets a param is a reset
+
+This is the whole part in one line, and it generalises past this app: **the moment more than one thing lives in the query string, no link is allowed to be built from scratch.** Every `href` is a complete statement of where you'll be, including the parts it doesn't mention.
+
+The tell is that it never breaks loudly. `?page=2` is a valid URL, the page renders, the query succeeds, and the reader is simply somewhere else than they asked to be. Grepping for backtick-`?` in a codebase is a surprisingly good audit: every hit is a link declaring that it knows the complete state of the URL.
+
+### The prefetch key and the query key are two places, forever
+
+Three times now this document has added a param, and three times the prefetch has had to be changed in lockstep — `page` in Part 4, the filters in Part 5's layout, the filters again in the pager here. The failure is always silent and always the same: a cache entry nobody asks for, and a refetch of data that was already on its way.
+
+The structural fix is to stop hand-writing the input object in two places, and that is Part 5.8's argument for `nuqs` — define a param once, and the reader, the writer and both keys come from the definition.
+
+### `checked` from the URL means nothing to keep in sync
+
+Worth saying plainly because the instinct runs the other way: a checkbox whose `checked` comes from `useSearchParams()` has no local state, so the back button, a pasted link, a `router.push` from somewhere else and a server render all produce the right boxes with no effort. Had it been `useState`, each of those would be a bug to find — starting with the one where the panel is server-rendered with a filter applied and hydrates with every box empty.
+
+### Changing a filter closes the open blunder
+
+A deliberate choice, made in one line, and the one most likely to feel wrong later. Ticking "cube decisions" while reading a checker blunder navigates away from it, because the row you are reading is no longer in the list beside you. Keeping it open is defensible too — it's `router.push(\`?${query}\`)`instead — but then the analysis panel and the list disagree about what you're looking at, and`aria-current` points at a row that isn't rendered.
+
+## Still open
+
+The filters now work by pointing and clicking, and nothing about them survives leaving the category. What's left, in order:
+
+**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` chosen from a whitelist because a SQL keyword cannot be a bound parameter, and a tie-breaker: 59 magnitudes are tied inside categories, and a sort without a unique tie-breaker can repeat or skip rows across a page boundary.
+
+**Part 5.7 — counts from the database.** `Checker plays (37 of 245)` needs a `GROUP BY`, because every heading count in the list is still `.length` on whatever page happens to be loaded. This is the thread Part 4.6 left hanging.
+
+**Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, then deleting `pageFrom`, `filtersFrom`, `filterParams` and every hand-built query string in this part. Diffing that against what you typed here is the lesson.
+
+**Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
+
+Then **Part 6**, mutations.
