@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-import { KINDS, CUBE_ACTION, PER_PAGE } from "@/lib/constants";
+import {
+  CUBE_ACTION,
+  cubeDirection,
+  DIRECTIONS,
+  KINDS,
+  PER_PAGE,
+  SEVERITIES,
+  SEVERITY_BANDS,
+} from "@/lib/constants";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
 
@@ -161,9 +169,55 @@ export const appRouter = router({
 
   blunders: router({
     byCategory: publicProcedure
-      .input(z.object({ category: z.string(), page: z.number().int().min(1).default(1) }))
+      .input(
+        z.object({
+          category: z.string(),
+          page: z.number().int().min(1).default(1),
+          kinds: z.array(z.enum(KINDS)).default([]),
+          severities: z.array(z.enum(SEVERITIES)).default([]),
+          directions: z.array(z.enum(DIRECTIONS)).default([]),
+        }),
+      )
       .output(z.object({ blunders: z.array(blunder), total: z.number() }))
       .query(({ ctx, input }) => {
+        // Conditions are assembled here; every value they compare against is
+        // bound, so nothing from the URL is ever part of the SQL itself.
+        const where = ["bc.category = ?"];
+        const params: (string | number)[] = [input.category];
+
+        if (input.kinds.length > 0) {
+          where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
+          params.push(...input.kinds);
+        }
+
+        if (input.severities.length > 0) {
+          // A band runs from its own `min` up to the next one above it, and the
+          // top band has no ceiling.
+          const clauses = SEVERITY_BANDS.filter((band) => input.severities.includes(band.id)).map(
+            (band) => {
+              const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
+              params.push(band.min);
+              if (!above) return "d.error_magnitude >= ?";
+              params.push(above.min);
+              return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
+            },
+          );
+          where.push(`(${clauses.join(" OR ")})`);
+        }
+
+        if (input.directions.length > 0) {
+          // A checker decision has no cube action, so asking for a direction is
+          // also asking for cube decisions.
+          const actions = CUBE_ACTION.filter((action) =>
+            input.directions.includes(cubeDirection(action)),
+          );
+          where.push(`d.kind = 'cube'`);
+          where.push(`b.cube_action IN (${actions.map(() => "?").join(", ")})`);
+          params.push(...actions);
+        }
+
+        const filter = where.join(" AND ");
+
         const rows = ctx.db
           .prepare(
             `${WITH_DECISIONS}
@@ -175,21 +229,22 @@ export const appRouter = router({
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
              LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
-             WHERE bc.category = ?
+             WHERE ${filter}
              ORDER BY d.error_magnitude DESC
              LIMIT ? OFFSET ?`,
           )
-          .all(input.category, PER_PAGE, (input.page - 1) * PER_PAGE);
+          .all(...params, PER_PAGE, (input.page - 1) * PER_PAGE);
 
         const { total } = ctx.db
           .prepare(
             `${WITH_DECISIONS}
              SELECT COUNT(*) AS total
              FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-             WHERE bc.category = ?`,
+             WHERE ${filter}`,
           )
-          .get(input.category) as { total: number };
+          .get(...params) as { total: number };
 
         // The driver hands back untyped rows. This assertion is safe only
         // because `.output()` re-checks the real shape at runtime.

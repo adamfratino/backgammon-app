@@ -3,7 +3,7 @@
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
-import { KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
+import { filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
@@ -17,16 +17,21 @@ export function BlunderList({ category }: BlunderListProps) {
   const trpc = useTRPC();
 
   const selected = useSelectedLayoutSegment();
-  const page = pageFrom(useSearchParams().get("page"));
+  const searchParams = useSearchParams();
+  const page = pageFrom(searchParams.get("page"));
+  const filters = filtersFrom(searchParams);
 
   const { isPending, isPlaceholderData, error, data } = useQuery({
-    ...trpc.blunders.byCategory.queryOptions({ category, page }),
+    ...trpc.blunders.byCategory.queryOptions({ category, page, ...filters }),
     placeholderData: keepPreviousData,
   });
 
   if (isPending) return <p>Loading...</p>;
   if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
-  if (data.total === 0) return <p>No blunders in this category.</p>;
+  if (data.total === 0) {
+    const filtered = Object.values(filters).some(({ length }) => length > 0);
+    return <p>{filtered ? "No blunders match these filters." : "No blunders in this category."}</p>;
+  }
 
   const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
 
