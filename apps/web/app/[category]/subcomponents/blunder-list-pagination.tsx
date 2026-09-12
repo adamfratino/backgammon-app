@@ -4,13 +4,14 @@ import { useQueryClient, noop } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { useTRPC } from "@/trpc/client";
-import { PER_PAGE, filterParams, type BlunderFilters } from "@/lib/constants";
+import { PER_PAGE, viewParams, type BlunderFilters, type BlunderSort } from "@/lib/constants";
 
 interface BlunderListPaginationProps {
   page: number;
   total: number;
   category: string;
   filters: BlunderFilters;
+  sort: BlunderSort;
 }
 
 export function BlunderListPagination({
@@ -18,6 +19,7 @@ export function BlunderListPagination({
   category,
   total,
   filters,
+  sort,
 }: BlunderListPaginationProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -32,7 +34,7 @@ export function BlunderListPagination({
       <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
         {pages.map((n) => {
           // Rebuilt per link: a page number belongs to one page, the filters to all of them.
-          const params = filterParams(filters);
+          const params = viewParams(filters, sort);
           params.set("page", String(n));
 
           return (
@@ -42,7 +44,14 @@ export function BlunderListPagination({
                 aria-current={n === page ? "page" : undefined}
                 onMouseEnter={() =>
                   queryClient
-                    .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters }))
+                    .query(
+                      trpc.blunders.byCategory.queryOptions({
+                        category,
+                        page: n,
+                        ...filters,
+                        sort,
+                      }),
+                    )
                     .catch(noop)
                 }
               >

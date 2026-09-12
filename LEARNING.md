@@ -2948,24 +2948,27 @@ Then **Part 6**, mutations.
 
 # Part 5.6 — Sort
 
+**Already done for you, before this part starts.** `byCategory` takes a `sort` alongside the filters — `"worst"` or `"mildest"`, defaulting to `"worst"` — and the list query orders by it. The change is in `server/router.ts` and isn't reproduced here, but the two things it does are worth knowing by name:
+
+- **A lookup, not a placeholder.** SQL can bind a value into a `?` but not a keyword like `DESC`, so the sort id is used as a key into a record of `ORDER BY` strings written in the router, and `z.enum(SORT_IDS)` rejects any other id before the query runs. Nothing from the URL is ever pasted into SQL.
+- **A tie-breaker.** Plenty of decisions share a magnitude, and the database may return tied rows in a different order on each request — enough to put one row on two pages and another on none. Every sort now ends in `d.blunder_id, d.kind`, which is unique, so each page is a clean slice of one stable list.
+
+The router imports `BlunderSort`, `SORT_IDS` and `DEFAULT_SORT` from `lib/constants.ts`, so it compiles once section 1 is in. Everything after that needs only the signature: send a `sort`, get the rows back in that order.
+
 ## The one idea
 
-Every filter in Part 5 is a value compared against a column. `d.kind IN (?, ?)` ships to SQLite as a statement with holes in it, and the things from the URL go into the holes — never into the statement. That separation is the whole reason none of Part 5 needed escaping, quoting, or trust.
+Every filter in Part 5 is a set, and an empty set is a coherent answer: tick nothing and nothing is narrowed. A sort is not a set. It is exactly one choice out of a closed list, and there is no such thing as an unsorted list — the rows arrive in _some_ order whether you picked one or not. So where `filtersFrom` has an empty array, `sortFrom` has a default, and where the filters have checkboxes, the sort has radios. That asymmetry runs through every file below.
 
-Sort is the first thing the URL asks for that a hole cannot hold. `ORDER BY ?` is not a query waiting for a value; it is a query that will never compile, because a keyword and a column name are part of the statement's _shape_, and the shape has to be settled before a single value is bound. A placeholder is a slot for data. `DESC` is not data.
+The second idea is about the links. Part 5.5's rule was that every link is a write, and a link that forgets a param clears it. A new param means every place that writes the URL has to be taught about it — and the cheapest way to find them all is to make the build fail until each one has been.
 
-So this is the one place in the app where something from the URL chooses SQL _text_. What keeps that safe is not escaping it. It is that the URL never supplies text at all: it supplies a key, and the key looks up a string this repository wrote. The difference between a whitelist and sanitisation is that a whitelist cannot fail open — there is no clever input, because input is not what gets used.
-
-The second idea costs one line and is the easier one to skip, because nothing appears to be wrong without it. `ORDER BY d.error_magnitude DESC` is not an order over these rows. It is most of an order, with the ties left to the database's discretion — and paging silently assumes that discretion is identical on every request, which nothing anywhere promises.
-
-| file                                        | job                                                 |
-| ------------------------------------------- | --------------------------------------------------- |
-| `lib/constants.ts`                          | the sorts the UI offers, and `sortFrom` to read one |
-| `server/router.ts`                          | what each sort means in SQL, and the tie-breaker    |
-| `app/[category]/layout.tsx`                 | prefetches with the sort in the key                 |
-| `subcomponents/blunder-list-pagination.tsx` | pages _within_ a sort, and prefetches with it       |
-| `app/[category]/blunder-list.tsx`           | reads it, queries with it, hands it down            |
-| `app/[category]/blunder-filters.tsx`        | the radios — the only thing here that navigates     |
+| file                                        | job                                                  |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `lib/constants.ts`                          | the sorts the UI offers, and `sortFrom` to read one  |
+| `server/router.ts`                          | the `ORDER BY` and tie-breaker — already done, above |
+| `app/[category]/layout.tsx`                 | prefetches with the sort in the key                  |
+| `subcomponents/blunder-list-pagination.tsx` | pages _within_ a sort, and prefetches with it        |
+| `app/[category]/blunder-list.tsx`           | reads it, queries with it, hands it down             |
+| `app/[category]/blunder-filters.tsx`        | the radios — the only thing here that navigates      |
 
 ---
 
@@ -3045,7 +3048,7 @@ Save this file and the project stops compiling in three places. That is the poin
 
 ### The pieces
 
-**`SORTS` holds ids and labels, and no SQL.** The shape matches `SEVERITY_BANDS` and `CUBE_DIRECTIONS` deliberately, so the panel in section 6 can render it with the component it already has. What it does not hold is the `ORDER BY` each id means. That lives in `router.ts`, because this file is imported by client components, and a string of SQL in a client component is a string of SQL in the JavaScript bundle — harmless here, but it is the sort of thing that is only ever harmless until the day it isn't. The ids are the shared vocabulary; the SQL is an implementation detail of one side.
+**`SORTS` holds ids and labels, and no SQL.** The shape matches `SEVERITY_BANDS` and `CUBE_DIRECTIONS` deliberately, so the panel in section 5 can render it with the component it already has. What it does not hold is the `ORDER BY` each id means. That lives in `router.ts`, because this file is imported by client components, and a string of SQL in a client component is a string of SQL in the JavaScript bundle — harmless here, but it is the sort of thing that is only ever harmless until the day it isn't. The ids are the shared vocabulary; the SQL is an implementation detail of one side.
 
 **`sortFrom` has a default where `filtersFrom` has an empty array, and that asymmetry is the concept.** A filter is a set: choosing nothing is a coherent answer meaning "don't narrow anything". A sort is a choice out of a closed list, and there is no such thing as an unsorted list — the rows come back in _some_ order whether you picked one or not. So the absent case is not empty, it is `worst`, and every invalid case collapses onto it too. `SORT_IDS.find((id) => id === value)` returns `undefined` for a missing param, a misspelled one and a repeated one alike, and `?? DEFAULT_SORT` turns all three into the same answer without a single branch mentioning any of them.
 
@@ -3053,101 +3056,11 @@ Save this file and the project stops compiling in three places. That is the poin
 
 **Making `sort` required rather than optional is the same instinct, enforced by the compiler.** Part 5.5's rule was that every link is a write, and a link that omits a param clears it. An optional `sort?: BlunderSort` would let all four existing call sites keep compiling unchanged, and all four would then quietly reset the sort to `worst` on every click — the exact bug, reintroduced, with no error to find it. A required argument turns "I added something to URL state" into "the build is broken until every writer of that URL has been told what to do", which is what you actually want it to mean.
 
-**The default is read, never written.** `if (sort !== DEFAULT_SORT)` keeps `?sort=worst` out of every URL in the app, because it would mean precisely what the empty string already means. The round trip still holds: `viewParams` drops it, `sortFrom` puts it back, and the radio in section 6 reads `worst` either way.
+**The default is read, never written.** `if (sort !== DEFAULT_SORT)` keeps `?sort=worst` out of every URL in the app, because it would mean precisely what the empty string already means. The round trip still holds: `viewParams` drops it, `sortFrom` puts it back, and the radio in section 5 reads `worst` either way.
 
 ---
 
-## 2. `apps/web/server/router.ts`
-
-### The change
-
-Two constants, above `appRouter`:
-
-```ts
-/**
- * What each sort means in SQL. A keyword is not a value, so `ORDER BY ?` is not
- * a thing SQLite will bind — which makes this the one place where something
- * from the URL chooses SQL *text* rather than being compared against it. That is
- * safe only because the choice is a key into this record and can be nothing else:
- * `.input()` rejects an unknown sort before it ever reaches here.
- *
- * Typed as a `Record<BlunderSort, ...>`, so adding a sort to `SORTS` fails to
- * compile until it is given an ordering here.
- */
-const SORT_ORDER_BY: Record<BlunderSort, string> = {
-  worst: "d.error_magnitude DESC",
-  mildest: "d.error_magnitude ASC",
-};
-
-/**
- * Magnitude alone is not a total order — 60 magnitudes are shared by two or more
- * decisions inside a single category. SQLite is free to return tied rows in any
- * order it likes, and it need not pick the same one twice, so a tie spanning a
- * page boundary can show the same decision on both pages and drop another
- * entirely. `blunder_id` with `kind` is unique in `decisions` (each arm of the
- * union emits at most one row per blunder), so appending it makes the order
- * total and every page a clean slice of one stable list.
- */
-const TIE_BREAKER = "d.blunder_id ASC, d.kind ASC";
-```
-
-The import grows to match:
-
-```ts
-import {
-  type BlunderSort,
-  CUBE_ACTION,
-  cubeDirection,
-  DEFAULT_SORT,
-  DIRECTIONS,
-  KINDS,
-  PER_PAGE,
-  SEVERITIES,
-  SEVERITY_BANDS,
-  SORT_IDS,
-} from "@/lib/constants";
-```
-
-One line joins the input, below `directions`:
-
-```ts
-sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
-```
-
-And the list query's `ORDER BY` stops being a constant:
-
-```ts
-             WHERE ${filter}
-             ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}
-             LIMIT ? OFFSET ?`,
-```
-
-### The pieces
-
-**`z.enum(SORT_IDS)` is the whole security story, and it runs before any of this code does.** By the time `input.sort` exists, it is one of two strings, because tRPC parsed it against the schema and rejected the request otherwise. `SORT_ORDER_BY[input.sort]` is then a lookup that cannot miss and cannot return anything but a string written in this file. There is no sanitising step because there is nothing to sanitise: the untrusted string was used as a _key_, and keys that don't match simply aren't there. Compare it with the `WHERE` clauses above, which build text from `.map(() => "?")` and bind every value — two different techniques, same rule, which is that nothing from outside is ever concatenated into SQL.
-
-**`Record<BlunderSort, string>` makes the compiler keep the two lists in step.** `SORTS` in constants is what the UI offers; `SORT_ORDER_BY` here is what the database will do about it. They live in different files for a good reason, and that is exactly the kind of pair that drifts. Typing the record by the union means adding `{ id: "recent" }` to `SORTS` breaks this file until `recent` has an ordering — the error arrives at the moment the mistake is made, rather than as an empty page months later.
-
-**The tie-breaker is not a tidiness fix; it is what makes paging mean anything.** `LIMIT 50 OFFSET 250` asks for "rows 251 to 300 of _the_ list", which only refers to something if there is exactly one list. With ties unbroken, there are many valid lists, and SQLite picks one per query plan — a detail you do not control, and which changes under you when an index is added, when statistics are refreshed, or when the SQLite version moves.
-
-In this database there are 60 magnitudes shared by two or more decisions inside a single category, covering 138 decisions in all; 56 of those magnitudes are distinct values, and the largest single pile-up is a sixteen-way tie at `0.1016` in `middle_game`. Two of those tie groups straddle a fifty-row page boundary, and one of them makes the failure concrete. In `blitz`, two checker decisions share a magnitude of `0.0802` and sit at sorted positions 300 and 301 — the last row of page 6 and the first row of page 7:
-
-```
-plan A (as the database ships)   pos300 = 11376644   pos301 = 15071730
-plan B (after an ordinary index) pos300 = 15071730   pos301 = 11376644
-```
-
-Both orderings satisfy `ORDER BY d.error_magnitude DESC` completely. Read page 6 under one and page 7 under the other — a deploy between two clicks is enough — and blunder `11376644` appears on both pages while `15071730` appears on neither. You see 302 of 303 rows, twice told one of them, and nothing logs an error, because nothing went wrong. With `TIE_BREAKER` appended, all 303 arrive exactly once under either plan.
-
-**Why `d.blunder_id, d.kind` and not just `d.blunder_id`.** A blunder stored as `kind = 'both'` becomes two rows in `decisions`, one checker and one cube, sharing an id. `blunder_id` alone leaves those two tied with each other. The pair is unique across all 1,399 decisions, which is the property being bought: a tie-breaker that still permits ties is not one.
-
-**It is appended to both sorts, not spelled out twice.** `ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}` keeps the tie-breaker ascending regardless of the direction above it. It does not need to mirror the sort — it is not there to be meaningful, only to be consistent, and any fixed rule does that job.
-
-**The count query is left alone.** `COUNT(*)` has no order to break, and adding one would make SQLite sort rows it is about to discard.
-
----
-
-## 3. `apps/web/app/[category]/layout.tsx`
+## 2. `apps/web/app/[category]/layout.tsx`
 
 ### The change
 
@@ -3175,7 +3088,7 @@ await queryClient
 
 ---
 
-## 4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
+## 3. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
 
 ### The change
 
@@ -3231,7 +3144,7 @@ params.set("page", String(n));
 
 ### The pieces
 
-**This component is modified before the one that renders it, on purpose.** `sort` is a required prop now, so the moment you save this file, `blunder-list.tsx` fails to compile for not passing it — and section 5 is that fix. Doing it the other way round means passing a prop to a component that does not accept one, which is the same amount of broken with the error in the less useful place.
+**This component is modified before the one that renders it, on purpose.** `sort` is a required prop now, so the moment you save this file, `blunder-list.tsx` fails to compile for not passing it — and section 4 is that fix. Doing it the other way round means passing a prop to a component that does not accept one, which is the same amount of broken with the error in the less useful place.
 
 **Both edits are the same fact written twice, and they have to agree.** The `href` is where a click goes; the `queryOptions` is what a hover fetches. If the link carries the sort and the prefetch does not, hovering warms the cache for a view nobody is about to visit, and the click then waits for a fetch that hover was supposed to have already done. Nothing breaks. It is just slower in exactly the situation the prefetch exists to make faster.
 
@@ -3239,7 +3152,7 @@ params.set("page", String(n));
 
 ---
 
-## 5. `apps/web/app/[category]/blunder-list.tsx`
+## 4. `apps/web/app/[category]/blunder-list.tsx`
 
 ### The change
 
@@ -3288,7 +3201,7 @@ And the pager gets its new prop, which is what puts this file back into compilin
 
 ---
 
-## 6. `apps/web/app/[category]/blunder-filters.tsx`
+## 5. `apps/web/app/[category]/blunder-filters.tsx`
 
 ### The change
 
@@ -3428,159 +3341,29 @@ Then **Part 6**, mutations.
 
 # Part 5.7 — Counts From the Database
 
+**Already done for you, before this part starts.** `byCategory` now returns `counts` beside `blunders` and `total`: one `{ kind, direction, severity, count }` for every bucket of the list that has anything in it, counted across the whole filtered category rather than the page. `BucketCount` is exported from `server/router.ts` so the components can type it. The SQL isn't reproduced here, but three facts about it are what the rest of this part relies on:
+
+- **Same `WHERE` as the list.** The counts use the identical filter and bound values, so they describe exactly the set the list is a page of. Tick "Severe" and the checker total is the severe checker decisions, not all of them.
+- **Same bands as the browser.** The severity buckets are generated from `SEVERITY_BANDS` rather than hand-written thresholds, so the database counts the same buckets `severityOf` sorts rows into.
+- **`direction` is null for checker rows.** A checker decision isn't on a side of the cube, so only cube buckets carry `"offer"` or `"receive"`.
+
 ## The one idea
 
 `Checker plays (39)` is a true statement about the wrong thing. The number is `blunders.length` — the checker rows in the fifty that happen to be loaded — and it has been that since Part 3, quietly meaning something different on every page. Part 4.6 noticed and left it; this is the part that pays it off.
 
 The fix is not a bigger page. It is noticing that the list is being asked two different questions and has only ever answered one of them. "What is on this page" is a fact about fifty rows, and the component holding them is the right thing to ask. "How many are there" is a fact about the whole filtered category, and nothing in the browser has ever seen that set — the only thing that has is the database, which threw the answer away after `LIMIT 50`.
 
-So the count comes back from a second query over the same `WHERE`, grouped the way the list is grouped. And the grouping is the part worth slowing down for: the buckets already exist twice, once as `severityOf` sorting rows in the browser and once as the bands `SEVERITY_BANDS` describes. A `GROUP BY` that hard-codes its own thresholds makes a third copy, and three copies of a boundary is a bug with a date on it. Generating the `CASE` from the same constant is what keeps the number in the heading describing the rows under it.
+So the count comes back from the database, grouped the way the list is grouped, and the component's job changes from counting rows to handing each heading the counts that belong to it. That is the part worth slowing down for, because the list is a tree — kind, then direction, then severity — and `mild` names three different buckets depending on which path you took to reach it.
 
-There is a pleasing symmetry with Part 5.6 hiding in that `CASE`. A sort could not be bound, because `DESC` is part of the statement's shape. A severity band is a threshold and a label — both values — so every piece of this one binds, and the generated SQL does not vary with its input at all. Same constant, same generator, opposite answer to "can this be a `?`", and the reason is structural rather than a matter of taste.
-
-| file                                   | job                                                    |
-| -------------------------------------- | ------------------------------------------------------ |
-| `server/router.ts`                     | the `GROUP BY`, and the bands as a generated `CASE`    |
-| `subcomponents/blunder-list-group.tsx` | a total per bucket, worked out where buckets are built |
-| `app/[category]/blunder-list.tsx`      | the kind headings, and handing counts down             |
+| file                                   | job                                                     |
+| -------------------------------------- | ------------------------------------------------------- |
+| `server/router.ts`                     | the counts, grouped like the list — already done, above |
+| `subcomponents/blunder-list-group.tsx` | a total per bucket, worked out where buckets are built  |
+| `app/[category]/blunder-list.tsx`      | the kind headings, and handing counts down              |
 
 ---
 
-## 1. `apps/web/server/router.ts`
-
-### The change
-
-A shape for one bucket, above `decision`:
-
-```ts
-/**
- * How many decisions fall in one bucket of the list, across the whole filtered
- * category rather than the page in front of you. `direction` is null on checker
- * buckets, which have no cube side to be on.
- */
-const bucketCount = z.object({
-  kind: z.enum(KINDS),
-  direction: z.enum(DIRECTIONS).nullable(),
-  severity: z.enum(SEVERITIES),
-  count: z.number(),
-});
-```
-
-Exported beside `Blunder`, because the components need it:
-
-```ts
-export type BucketCount = z.infer<typeof bucketCount>;
-```
-
-Then the two generators, below `TIE_BREAKER`:
-
-```ts
-/**
- * The severity bands as a `CASE`, generated from `SEVERITY_BANDS` so the buckets
- * the database counts are the same ones `severityOf` puts rows into. Note the
- * contrast with `SORT_ORDER_BY` above: a threshold and a label are *values*, so
- * every one of them binds as `?` and none of this string depends on its input.
- * The bands are already ordered high to low, so the first `WHEN` that matches is
- * the right one and the lowest band becomes the `ELSE`.
- */
-function severityCase(): { sql: string; params: (string | number)[] } {
-  const params: (string | number)[] = [];
-  const whens = SEVERITY_BANDS.slice(0, -1).map((band) => {
-    params.push(band.min, band.id);
-    return "WHEN d.error_magnitude >= ? THEN ?";
-  });
-  params.push(SEVERITY_BANDS[SEVERITY_BANDS.length - 1]!.id);
-  return { sql: `CASE ${whens.join(" ")} ELSE ? END`, params };
-}
-
-/**
- * Which side of the cube a decision was on, as a `CASE`. A checker decision has
- * no cube action and so no direction at all, which is null rather than a third
- * direction — the list has no bucket for it.
- */
-function directionCase(): { sql: string; params: string[] } {
-  const receiving = CUBE_ACTION.filter((action) => cubeDirection(action) === "receive");
-  return {
-    sql: `CASE WHEN d.kind = 'cube' AND b.cube_action IN (${receiving.map(() => "?").join(", ")})
-               THEN 'receive'
-               WHEN d.kind = 'cube' THEN 'offer'
-               ELSE NULL END`,
-    params: [...receiving],
-  };
-}
-```
-
-The procedure promises one more thing:
-
-```ts
-      .output(
-        z.object({
-          blunders: z.array(blunder),
-          total: z.number(),
-          counts: z.array(bucketCount),
-        }),
-      )
-```
-
-And the query itself, just before the `return`:
-
-```ts
-// One row per bucket that has anything in it, over the whole filtered
-// category, so a heading can say "39 of 245" instead of counting what it
-// happens to be holding. The SELECT runs before the WHERE, so its bound
-// values go in front of the filter's.
-//
-// Unlike the ORDER BY above, every part of these two CASE expressions is
-// a value, so all of it binds and none of the SQL depends on the input.
-//
-// "GROUP BY d.kind", not "kind": both joined tables have a column of that
-// name and so does the SELECT, which makes the bare alias ambiguous.
-const direction = directionCase();
-const severity = severityCase();
-
-const counts = ctx.db
-  .prepare(
-    `${WITH_DECISIONS}
-             SELECT d.kind AS kind,
-                    ${direction.sql} AS direction,
-                    ${severity.sql} AS severity,
-                    COUNT(*) AS count
-             FROM decisions d
-             JOIN blunders b ON b.blunder_id = d.blunder_id
-             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-             WHERE ${filter}
-             GROUP BY d.kind, direction, severity`,
-  )
-  .all(...direction.params, ...severity.params, ...params);
-```
-
-The return statement grows a third member:
-
-```ts
-return {
-  blunders: rows as unknown as Blunder[],
-  total,
-  counts: counts as unknown as BucketCount[],
-};
-```
-
-### The pieces
-
-**`${filter}` is the same string the list query used, and that is the entire correctness argument.** The counts are built from the identical conditions with the identical bound values, so they describe exactly the set the list is a page of. Tick "Severe" and `Checker plays (40 of 44)` is 44 severe checker decisions, not 245. Any other arrangement — counting the unfiltered category, say — produces two numbers in the same pair of brackets that are answers to different questions, which is worse than the page-local count it replaced.
-
-**`GROUP BY d.kind` rather than `kind` is not a style preference.** `blunders` has a `kind` column, `decisions` has a `kind` column, and the `SELECT` introduces an output alias called `kind`. SQLite refuses the statement outright with `ambiguous column name: kind`. Worth knowing where that error surfaces, which is section 3's gotcha: the layout prefetch swallows it, the page ships `Loading...`, and you find out from the browser.
-
-**`direction` and `severity` in the `GROUP BY` are output aliases, and those are fine.** SQLite resolves a `GROUP BY` name against the output columns as well as the inputs, which is what lets a generated `CASE` be grouped by without repeating the whole expression. `kind` is the one that breaks, and only because a real column shares the name.
-
-**The generators return their params with their SQL, deliberately as one value.** A function that returned only a string would leave the caller guessing how many `?` it contained and in what order — which is the kind of guess that is right until someone adds a band. Handing back `{ sql, params }` makes the pair inseparable, and the spread at the call site reads in the order the statement does: `...direction.params, ...severity.params, ...params`. Bound values are positional, so "the order the statement does" is not a nicety, it is the whole contract, and a `SELECT` that binds is a reminder that position is about text order rather than about clause importance.
-
-**`slice(0, -1)` and the `ELSE` are the same claim `severityOf` makes.** The lowest band's `min` is 0 and a magnitude is never negative, so the final `WHEN` could never fail to match and is written as the `ELSE` instead. That mirrors `severityOf`'s `?? "mild"` exactly: both say "the bottom band is where everything else lands", and both would need changing together if a band with a floor above zero ever arrived.
-
-**`direction` is null for checker rows, not `""` or `"none"`.** A checker decision is not on a side of the cube — the question does not apply, and null is the value that means that. It also makes the lookup in the next section a plain equality against a `CubeDirection`, with no sentinel to remember.
-
----
-
-## 2. `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`
+## 1. `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`
 
 ### The change
 
@@ -3673,7 +3456,7 @@ export function groupsOf(
 
 ---
 
-## 3. `apps/web/app/[category]/blunder-list.tsx`
+## 2. `apps/web/app/[category]/blunder-list.tsx`
 
 ### The change
 
@@ -3718,7 +3501,7 @@ And the call that was waiting for a third argument:
 
 ### A broken query on the server looks like a slow one
 
-The `GROUP BY kind` ambiguity above is worth walking through, because of where the error is _not_. The layout prefetches with `.catch(noop)`, which exists so a database hiccup degrades to client-side fetching instead of a 500 — and it swallows a genuinely broken statement just as happily. The page ships with `Loading...` in it and no error anywhere in the HTML, the server logs nothing, and the failure only becomes visible when the browser re-runs the same query and has nowhere to hide it. If a change to these queries makes the list go quiet, look at the client, not the server log.
+While the counts query was being written, `GROUP BY kind` instead of `GROUP BY d.kind` was ambiguous — two joined tables and the `SELECT` alias all share the name — and SQLite refused the statement. Where that error is _not_ is the lesson. The layout prefetches with `.catch(noop)`, which exists so a database hiccup degrades to client-side fetching instead of a 500 — and it swallows a genuinely broken statement just as happily. The page ships with `Loading...` in it and no error anywhere in the HTML, the server logs nothing, and the failure only becomes visible when the browser re-runs the same query and has nowhere to hide it. If a change to these queries makes the list go quiet, look at the client, not the server log.
 
 ### The heading counts what matches, not what exists
 

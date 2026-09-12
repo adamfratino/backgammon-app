@@ -1,13 +1,16 @@
 import { z } from "zod";
 
 import {
+  type BlunderSort,
   CUBE_ACTION,
   cubeDirection,
+  DEFAULT_SORT,
   DIRECTIONS,
   KINDS,
   PER_PAGE,
   SEVERITIES,
   SEVERITY_BANDS,
+  SORT_IDS,
 } from "@/lib/constants";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
@@ -86,6 +89,18 @@ const boardPosition = z.object({
   opponent: boardSide,
 });
 
+/**
+ * How many decisions fall in one bucket of the list, across the whole filtered
+ * category rather than one page. `direction` is null on checker buckets, which
+ * have no side of the cube to be on.
+ */
+const bucketCount = z.object({
+  kind: z.enum(KINDS),
+  direction: z.enum(DIRECTIONS).nullable(),
+  severity: z.enum(SEVERITIES),
+  count: z.number(),
+});
+
 /** One thing that went wrong in a position, and what it cost. */
 const decision = z.object({
   kind: z.enum(KINDS),
@@ -122,6 +137,7 @@ const blunderDetail = probabilities.extend({
 
 type Category = z.infer<typeof category>;
 export type Blunder = z.infer<typeof blunder>;
+export type BucketCount = z.infer<typeof bucketCount>;
 type BlunderDetail = z.infer<typeof blunderDetail>;
 
 /** Read straight from `blunders`; the board is derived from the position id. */
@@ -147,6 +163,52 @@ const WITH_DECISIONS = `
     FROM blunders
     WHERE kind IN ('cube', 'both')
   )`;
+
+/**
+ * What each sort means in SQL. A keyword can't be bound like a value, so this is
+ * the one place something from the URL picks SQL text — safe only because
+ * `.input()` has already narrowed it to a key of this record. Typed by
+ * `BlunderSort`, so a new entry in `SORTS` won't compile until it has one here.
+ */
+const SORT_ORDER_BY: Record<BlunderSort, string> = {
+  worst: "d.error_magnitude DESC",
+  mildest: "d.error_magnitude ASC",
+};
+
+/**
+ * Magnitudes tie, and SQLite may return tied rows in a different order on each
+ * query, so a tie across a page boundary can repeat one row and skip another.
+ * `blunder_id` with `kind` is unique in `decisions`, which makes the order total.
+ */
+const TIE_BREAKER = "d.blunder_id ASC, d.kind ASC";
+
+/**
+ * The severity bands as a `CASE`, generated from `SEVERITY_BANDS` so the database
+ * counts the same buckets `severityOf` sorts rows into. Unlike `SORT_ORDER_BY`,
+ * thresholds and labels are values, so all of it binds. The bands run high to
+ * low, so the first match wins and the lowest band is the `ELSE`.
+ */
+function severityCase(): { sql: string; params: (string | number)[] } {
+  const params: (string | number)[] = [];
+  const whens = SEVERITY_BANDS.slice(0, -1).map((band) => {
+    params.push(band.min, band.id);
+    return "WHEN d.error_magnitude >= ? THEN ?";
+  });
+  params.push(SEVERITY_BANDS[SEVERITY_BANDS.length - 1]!.id);
+  return { sql: `CASE ${whens.join(" ")} ELSE ? END`, params };
+}
+
+/** Which side of the cube a decision was on; null for a checker decision. */
+function directionCase(): { sql: string; params: string[] } {
+  const receiving = CUBE_ACTION.filter((action) => cubeDirection(action) === "receive");
+  return {
+    sql: `CASE WHEN d.kind = 'cube' AND b.cube_action IN (${receiving.map(() => "?").join(", ")})
+               THEN 'receive'
+               WHEN d.kind = 'cube' THEN 'offer'
+               ELSE NULL END`,
+    params: [...receiving],
+  };
+}
 
 export const appRouter = router({
   categories: router({
@@ -176,9 +238,16 @@ export const appRouter = router({
           kinds: z.array(z.enum(KINDS)).default([]),
           severities: z.array(z.enum(SEVERITIES)).default([]),
           directions: z.array(z.enum(DIRECTIONS)).default([]),
+          sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
         }),
       )
-      .output(z.object({ blunders: z.array(blunder), total: z.number() }))
+      .output(
+        z.object({
+          blunders: z.array(blunder),
+          total: z.number(),
+          counts: z.array(bucketCount),
+        }),
+      )
       .query(({ ctx, input }) => {
         // Conditions are assembled here; every value they compare against is
         // bound, so nothing from the URL is ever part of the SQL itself.
@@ -230,7 +299,7 @@ export const appRouter = router({
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
              LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
              WHERE ${filter}
-             ORDER BY d.error_magnitude DESC
+             ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}
              LIMIT ? OFFSET ?`,
           )
           .all(...params, PER_PAGE, (input.page - 1) * PER_PAGE);
@@ -246,9 +315,35 @@ export const appRouter = router({
           )
           .get(...params) as { total: number };
 
-        // The driver hands back untyped rows. This assertion is safe only
+        // One row per non-empty bucket over the whole filtered category, so a
+        // heading can say "39 of 245". Binding is positional, so the SELECT's
+        // values go in front of the filter's. `GROUP BY d.kind`, not `kind`: two
+        // joined tables and the SELECT alias all share that name.
+        const direction = directionCase();
+        const severity = severityCase();
+
+        const counts = ctx.db
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT d.kind AS kind,
+                    ${direction.sql} AS direction,
+                    ${severity.sql} AS severity,
+                    COUNT(*) AS count
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             WHERE ${filter}
+             GROUP BY d.kind, direction, severity`,
+          )
+          .all(...direction.params, ...severity.params, ...params);
+
+        // The driver hands back untyped rows. These assertions are safe only
         // because `.output()` re-checks the real shape at runtime.
-        return { blunders: rows as unknown as Blunder[], total };
+        return {
+          blunders: rows as unknown as Blunder[],
+          total,
+          counts: counts as unknown as BucketCount[],
+        };
       }),
 
     /**
