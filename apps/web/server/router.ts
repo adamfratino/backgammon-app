@@ -78,6 +78,12 @@ const boardPosition = z.object({
   opponent: boardSide,
 });
 
+/** One thing that went wrong in a position, and what it cost. */
+const decision = z.object({
+  kind: z.enum(KINDS),
+  error_magnitude: z.number(),
+});
+
 /**
  * Everything needed to study one position. Deliberately separate from the list
  * shape above: folding candidates, cube equities and the board into
@@ -86,13 +92,10 @@ const boardPosition = z.object({
  */
 const blunderDetail = probabilities.extend({
   blunder_id: z.number(),
-  kind: z.enum(KINDS),
   cube_action: z.enum(CUBE_ACTION).nullable(),
   color: z.string().nullable(),
   die_1: z.number().nullable(),
   die_2: z.number().nullable(),
-  error_magnitude: z.number(),
-  error_severity: z.string().nullable(),
   crawford_state: z.string().nullable(),
   played_notation: z.string().nullable(),
   best_notation: z.string().nullable(),
@@ -103,6 +106,7 @@ const blunderDetail = probabilities.extend({
   score_white: z.number().nullable(),
   cube_value: z.number().nullable(),
   source_xgid: z.string().nullable(),
+  decisions: z.array(decision),
   board: boardPosition.nullable(),
   candidates: z.array(candidate),
   cube: cubeDecision.nullable(),
@@ -114,12 +118,27 @@ type BlunderDetail = z.infer<typeof blunderDetail>;
 
 /** Read straight from `blunders`; the board is derived from the position id. */
 const DETAIL_COLUMNS = `
-  b.blunder_id, b.kind, b.cube_action, b.color, b.die_1, b.die_2,
-  b.error_magnitude, b.error_severity, b.crawford_state, b.played_notation,
-  b.best_notation, b.played_rank, b.candidate_count, b.match_length,
-  b.score_black, b.score_white, b.cube_value, b.source_xgid,
+  b.blunder_id, b.cube_action, b.color, b.die_1, b.die_2, b.crawford_state,
+  b.played_notation, b.best_notation, b.played_rank, b.candidate_count,
+  b.match_length, b.score_black, b.score_white, b.cube_value, b.source_xgid,
   b.source_position_value, b.win, b.win_gammon, b.win_backgammon, b.lose,
   b.lose_gammon, b.lose_backgammon`;
+
+/**
+ * A blunder stored as `both` is two unrelated mistakes — a wrong cube, then a
+ * wrong play — so it becomes one decision of each kind, each measured by its
+ * own error. Every query that counts or lists starts from here.
+ */
+const WITH_DECISIONS = `
+  WITH decisions AS (
+    SELECT blunder_id, 'checker' AS kind, error_magnitude, played_notation, best_notation
+    FROM blunders
+    WHERE kind IN ('checker', 'both')
+    UNION ALL
+    SELECT blunder_id, 'cube', ABS(cube_raw_error), NULL, NULL
+    FROM blunders
+    WHERE kind IN ('cube', 'both')
+  )`;
 
 export const appRouter = router({
   categories: router({
@@ -127,10 +146,12 @@ export const appRouter = router({
     list: publicProcedure.output(z.array(category)).query(({ ctx }) => {
       const rows = ctx.db
         .prepare(
-          `SELECT category, COUNT(*) AS count
-           FROM blunder_categories
-           GROUP BY category
-           ORDER BY count DESC, category ASC`,
+          `${WITH_DECISIONS}
+           SELECT bc.category, COUNT(*) AS count
+           FROM decisions d
+           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+           GROUP BY bc.category
+           ORDER BY count DESC, bc.category ASC`,
         )
         .all();
 
@@ -145,21 +166,29 @@ export const appRouter = router({
       .query(({ ctx, input }) => {
         const rows = ctx.db
           .prepare(
-            `SELECT b.blunder_id, b.kind, b.cube_action, b.error_magnitude,
-                    b.error_severity, b.played_notation, b.best_notation,
+            `${WITH_DECISIONS}
+             SELECT d.blunder_id, d.kind, b.cube_action, d.error_magnitude,
+                    b.error_severity, d.played_notation, d.best_notation,
                     b.match_length, b.score_black, b.score_white,
                     c.doublers_best_action, c.receivers_best_action
-             FROM blunders b
-             JOIN blunder_categories bc ON bc.blunder_id = b.blunder_id
-             LEFT JOIN cube_decisions c ON c.blunder_id = b.blunder_id
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
              WHERE bc.category = ?
-             ORDER BY b.error_magnitude DESC
+             ORDER BY d.error_magnitude DESC
              LIMIT ? OFFSET ?`,
           )
           .all(input.category, PER_PAGE, (input.page - 1) * PER_PAGE);
 
         const { total } = ctx.db
-          .prepare(`SELECT COUNT(*) AS total FROM blunder_categories WHERE category = ?`)
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT COUNT(*) AS total
+             FROM decisions d
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             WHERE bc.category = ?`,
+          )
           .get(input.category) as { total: number };
 
         // The driver hands back untyped rows. This assertion is safe only
@@ -186,6 +215,14 @@ export const appRouter = router({
           .get(input.blunder_id, input.category);
 
         if (!row) return null;
+
+        // One row for most positions; two for a blunder stored as `both`.
+        const decisions = ctx.db
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT kind, error_magnitude FROM decisions WHERE blunder_id = ? ORDER BY kind`,
+          )
+          .all(input.blunder_id);
 
         const cube = ctx.db
           .prepare(
@@ -214,6 +251,7 @@ export const appRouter = router({
         return {
           ...rest,
           source_xgid,
+          decisions,
           board: describeBoard(
             typeof source_position_value === "string" ? source_position_value : null,
           ),

@@ -1,13 +1,13 @@
 export const PER_PAGE = 50;
 
-export const KINDS = ["checker", "cube", "both"] as const;
+/** No `both`: the query splits one of those into a checker decision and a cube decision. */
+export const KINDS = ["checker", "cube"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
 
 export const KIND_LABELS: Record<BlunderKind, string> = {
   checker: "Checker plays",
   cube: "Cube decisions",
-  both: "Both checker and cube",
 };
 
 export const SEVERITY_BANDS = [

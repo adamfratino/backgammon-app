@@ -4,6 +4,8 @@ Reference notes written while building this app. Aimed at a frontend-leaning eng
 
 Each part follows the same shape: **the whole file**, then **the pieces** broken down, then **gotchas**. Type the files, read the breakdown, skim the gotchas until one bites you.
 
+Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB_PATH` pointing at the scraped database in the main checkout. The file is gitignored and exists in exactly one place, so without it every page throws while SQLite tries to open a file that isn't there — which reads like broken code rather than a missing database.
+
 ## Contents
 
 - [Part 1 — tRPC](#part-1--trpc)
@@ -81,6 +83,14 @@ Each part follows the same shape: **the whole file**, then **the pieces** broken
   - [`apps/web/app/[category]/blunder-list.tsx`](#appswebappcategoryblunder-listtsx-1)
   - [Gotchas](#gotchas-4)
   - [Still open](#still-open-1)
+- [Part 5 — Filters](#part-5--filters)
+  - [The one idea](#the-one-idea-11)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts)
+  - [2. `apps/web/server/router.ts`](#2-appswebserverrouterts-3)
+  - [3. `apps/web/app/[category]/layout.tsx`](#3-appswebappcategorylayouttsx)
+  - [4. `apps/web/app/[category]/blunder-list.tsx`](#4-appswebappcategoryblunder-listtsx)
+  - [Gotchas](#gotchas-5)
+  - [Still open](#still-open-2)
 
 ---
 
@@ -2175,3 +2185,413 @@ Six links and a hover is fine. A loop that warms all six on mount is six queries
 The pager describes the category, but the buckets inside it still describe the page: `Checker plays (37)` means 37 of _these fifty_, not 37 of 300. Every heading count comes from `.length` on whatever happens to be loaded. Fixing that means counts computed by the database rather than by the component — which is really a filtering question, and that's Part 5.
 
 From here: **Part 5** simple filters, **Part 6** mutations — a scratchpad textarea for notes on a blunder, which needs writing back to the database.
+
+# Part 5 — Filters
+
+**Already done for you, before this part starts.** A blunder stored as `kind = 'both'` used to be a single row holding two unrelated mistakes: a wrong cube decision, and then a wrong checker play on the same roll — filed together and measured by the checker error, so the cube half was sorted by the wrong number. Those nineteen rows are now split in the query into one checker decision and one cube decision each, so a row is one thing somebody got wrong. The change is already in your files: `KINDS` lost `both`, `server/router.ts` gained a `WITH_DECISIONS` clause that its queries start from, and the analysis panel prints one error line per decision. Nothing below depends on how that works — it matters here only because the kind filter now has two honest options instead of three.
+
+## The one idea
+
+Hiding the mild blunders, or showing only cube decisions, looks like a job for the list component. It has the rows right there and `filter` is one line.
+
+It isn't, and the reason is Part 4. The database already decides which fifty rows you get, so filtering in the browser filters those fifty:
+
+| `/middle_game`        | page 1 | the whole category |
+| --------------------- | ------ | ------------------ |
+| catastrophic / severe | 9 / 41 | 9 / 53             |
+| moderate / mild       | 0 / 0  | 166 / 72           |
+| cube decisions        | 11     | 59                 |
+
+"Only mild" would empty page 1 while the pager still offered six pages, because the first mild row is on page 5. Anything that changes _which rows qualify_ has to run where the pagination runs.
+
+That puts the filter values on the far side of the wire, so they have to travel with the request — and Part 2.7 already chose where that kind of state lives. The URL. It survives a refresh, it survives opening a blunder, and you can send it to someone. Part 4's `proxy.ts` forwards the whole query string to the layout already, and said at the time that the next param would cost nothing here. This is that bill arriving.
+
+| file                              | job                                                     |
+| --------------------------------- | ------------------------------------------------------- |
+| `lib/constants.ts`                | one parser for `?kind=`, `?severity=` and `?direction=` |
+| `server/router.ts`                | turns them into a `WHERE`                               |
+| `app/[category]/layout.tsx`       | prefetches the page that was actually asked for         |
+| `app/[category]/blunder-list.tsx` | reads the URL and asks for what it says                 |
+
+---
+
+## 1. `apps/web/lib/constants.ts`
+
+### The whole file
+
+```ts
+export const PER_PAGE = 50;
+
+/** No `both`: the query splits one of those into a checker decision and a cube decision. */
+export const KINDS = ["checker", "cube"] as const;
+
+export type BlunderKind = (typeof KINDS)[number];
+
+export const KIND_LABELS: Record<BlunderKind, string> = {
+  checker: "Checker plays",
+  cube: "Cube decisions",
+};
+
+export const SEVERITY_BANDS = [
+  { id: "catastrophic", label: "Catastrophic", min: 0.4 },
+  { id: "severe", label: "Severe", min: 0.2 },
+  { id: "moderate", label: "Moderate", min: 0.1 },
+  { id: "mild", label: "Mild", min: 0 },
+] as const;
+
+export type BlunderSeverity = (typeof SEVERITY_BANDS)[number]["id"];
+
+export function severityOf(errorMagnitude: number): BlunderSeverity {
+  const band = SEVERITY_BANDS.find(({ min }) => errorMagnitude >= min);
+  return band?.id ?? "mild";
+}
+
+export const CUBE_ACTION = [
+  "double_accepted",
+  "double_requested",
+  "double_rejected",
+  "dice_rolled",
+] as const;
+
+export type BlunderCubeAction = (typeof CUBE_ACTION)[number] | null;
+
+export const CUBE_DIRECTIONS = [
+  { id: "offer", label: "Offering the cube" },
+  { id: "receive", label: "Being offered the cube" },
+] as const;
+
+export type CubeDirection = (typeof CUBE_DIRECTIONS)[number]["id"];
+
+export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
+  if (direction === "double_accepted" || direction === "double_rejected") return "receive";
+  return "offer";
+}
+
+/** The ids on their own: the filter validates against these, and so does the router. */
+export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
+export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
+
+/** An empty group means no filter on it, so this is also what "unfiltered" looks like. */
+export interface BlunderFilters {
+  kinds: BlunderKind[];
+  severities: BlunderSeverity[];
+  directions: CubeDirection[];
+}
+
+/** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
+export function pageFrom(value: string | null): number {
+  const page = Number(value);
+  return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+
+/**
+ * The filters, read from `?kind=&severity=&direction=`. Anything that isn't one
+ * of ours is dropped, and each group comes back in the constants' own order —
+ * which is what lets the browser and the server build the same cache key from
+ * the same URL. Takes anything with `getAll`, so the read-only search params in
+ * the browser and a plain `URLSearchParams` on the server both fit.
+ */
+export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFilters {
+  const pick = <T extends string>(key: string, allowed: readonly T[]): T[] => {
+    const chosen = new Set(params.getAll(key));
+    return allowed.filter((value) => chosen.has(value));
+  };
+
+  return {
+    kinds: pick("kind", KINDS),
+    severities: pick("severity", SEVERITIES),
+    directions: pick("direction", DIRECTIONS),
+  };
+}
+```
+
+### The pieces
+
+**`pick` walks the allowed list, not the URL.** That's the whole validation: `?severity=banana` contributes nothing, because `banana` isn't in `SEVERITIES` to be found. Nothing throws and nothing 400s — a filter nobody understands is no filter, which is the right answer for a value anyone can type.
+
+**The order comes from the constants, not the query string.** `?severity=severe&severity=mild` and `?severity=mild&severity=severe` both produce `["severe", "mild"]`, so both make the same cache key. Walking the URL instead would give two keys for one list — see the gotcha.
+
+**One parser, both sides.** `Pick<URLSearchParams, "getAll">` is the smallest thing that works: the browser hands it `ReadonlyURLSearchParams`, the layout hands it a real `URLSearchParams`, and neither is imported here. Same argument as `pageFrom` in Part 4, one level up.
+
+**`SEVERITIES` and `DIRECTIONS` are derived, not typed out again.** They are the ids of lists that already exist, so a new band or direction shows up in the filter, in `z.enum` on the server, and in the UI without being added anywhere by hand.
+
+---
+
+## 2. `apps/web/server/router.ts`
+
+### The change
+
+An existing file, so only the changed part. `byCategory` takes three arrays and builds its `WHERE` from them — `WITH_DECISIONS` and the `decisions` join are already there from the preface, and stay exactly as they are:
+
+```ts
+byCategory: publicProcedure
+  .input(
+    z.object({
+      category: z.string(),
+      page: z.number().int().min(1).default(1),
+      kinds: z.array(z.enum(KINDS)).default([]),
+      severities: z.array(z.enum(SEVERITIES)).default([]),
+      directions: z.array(z.enum(DIRECTIONS)).default([]),
+    }),
+  )
+  .output(z.object({ blunders: z.array(blunder), total: z.number() }))
+  .query(({ ctx, input }) => {
+    // Conditions are assembled here; every value they compare against is
+    // bound, so nothing from the URL is ever part of the SQL itself.
+    const where = ["bc.category = ?"];
+    const params: (string | number)[] = [input.category];
+
+    if (input.kinds.length > 0) {
+      where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
+      params.push(...input.kinds);
+    }
+
+    if (input.severities.length > 0) {
+      // A band runs from its own `min` up to the next one above it, and the
+      // top band has no ceiling.
+      const clauses = SEVERITY_BANDS.filter((band) => input.severities.includes(band.id)).map(
+        (band) => {
+          const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
+          params.push(band.min);
+          if (!above) return "d.error_magnitude >= ?";
+          params.push(above.min);
+          return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
+        },
+      );
+      where.push(`(${clauses.join(" OR ")})`);
+    }
+
+    if (input.directions.length > 0) {
+      // A checker decision has no cube action, so asking for a direction is
+      // also asking for cube decisions.
+      const actions = CUBE_ACTION.filter((action) =>
+        input.directions.includes(cubeDirection(action)),
+      );
+      where.push(`d.kind = 'cube'`);
+      where.push(`b.cube_action IN (${actions.map(() => "?").join(", ")})`);
+      params.push(...actions);
+    }
+
+    const filter = where.join(" AND ");
+
+    const rows = ctx.db
+      .prepare(
+        `${WITH_DECISIONS}
+         SELECT d.blunder_id, d.kind, b.cube_action, d.error_magnitude,
+                b.error_severity, d.played_notation, d.best_notation,
+                b.match_length, b.score_black, b.score_white,
+                c.doublers_best_action, c.receivers_best_action
+         FROM decisions d
+         JOIN blunders b ON b.blunder_id = d.blunder_id
+         JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+         LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
+         WHERE ${filter}
+         ORDER BY d.error_magnitude DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, PER_PAGE, (input.page - 1) * PER_PAGE);
+
+    const { total } = ctx.db
+      .prepare(
+        `${WITH_DECISIONS}
+         SELECT COUNT(*) AS total
+         FROM decisions d
+         JOIN blunders b ON b.blunder_id = d.blunder_id
+         JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+         WHERE ${filter}`,
+      )
+      .get(...params) as { total: number };
+
+    // The driver hands back untyped rows. This assertion is safe only
+    // because `.output()` re-checks the real shape at runtime.
+    return { blunders: rows as unknown as Blunder[], total };
+  }),
+```
+
+The imports grow to match:
+
+```ts
+import {
+  CUBE_ACTION,
+  cubeDirection,
+  DIRECTIONS,
+  KINDS,
+  PER_PAGE,
+  SEVERITIES,
+  SEVERITY_BANDS,
+} from "@/lib/constants";
+```
+
+### The pieces
+
+**The `WHERE` is built, but the values are bound.** `where` collects condition strings and `params` collects the values, in the same order. The only thing interpolated into the SQL is `?`, one per value, which is why `?severity=' OR 1=1 --` is a filter that matches nothing rather than an incident.
+
+**The bands become ranges.** `SEVERITY_BANDS` is the same list the UI groups by, ordered from worst down, so the ceiling of a band is the smallest `min` above it — `filter(…).at(-1)` — and the top band has none. Thresholds stay defined in exactly one place, and SQL never learns the word "catastrophic".
+
+**Filtering by direction filters to cube decisions.** `cubeDirection` already maps a cube action to a side; running it over `CUBE_ACTION` inverts it, turning "offering" into the actions that mean it. A checker decision has no cube action at all, so it can't match — see the gotcha.
+
+**One `filter` string, two queries.** The rows and the total have to agree on what they're counting, so they share the string and the params. The count query joins `blunders` even when nothing needs it, because the direction condition mentions `b.cube_action` and a condition can't reference a table that isn't there.
+
+---
+
+## 3. `apps/web/app/[category]/layout.tsx`
+
+### The change
+
+```tsx
+import { filtersFrom, pageFrom } from "@/lib/constants";
+
+const search = new URLSearchParams((await headers()).get("x-search") ?? "");
+const page = pageFrom(search.get("page"));
+const filters = filtersFrom(search);
+
+await queryClient
+  .query(trpc.blunders.byCategory.queryOptions({ category, page, ...filters }))
+  .catch(noop);
+```
+
+The comment above those lines, about layouts getting headers instead of `searchParams`, stays exactly as Part 4 left it.
+
+### The pieces
+
+**The header is parsed once into `URLSearchParams`**, and `pageFrom` and `filtersFrom` both read it. Part 4 called `new URLSearchParams(search)` inline for one param; with four it is worth a name.
+
+**`...filters` has to spread on both sides.** The prefetch key and the component's key are built from what was passed, and Part 4's gotcha applies unchanged: miss a param here and the browser silently refetches data that was already in the HTML. Nothing breaks, it is just slower, and only the HTML tells you.
+
+---
+
+## 4. `apps/web/app/[category]/blunder-list.tsx`
+
+### The whole file
+
+```tsx
+"use client";
+
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+
+import { filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
+import { useTRPC } from "@/trpc/client";
+
+import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
+import { BlunderListGroup, groupsOf } from "./subcomponents/blunder-list-group";
+
+interface BlunderListProps {
+  category: string;
+}
+
+export function BlunderList({ category }: BlunderListProps) {
+  const trpc = useTRPC();
+
+  const selected = useSelectedLayoutSegment();
+  const searchParams = useSearchParams();
+  const page = pageFrom(searchParams.get("page"));
+  const filters = filtersFrom(searchParams);
+
+  const { isPending, isPlaceholderData, error, data } = useQuery({
+    ...trpc.blunders.byCategory.queryOptions({ category, page, ...filters }),
+    placeholderData: keepPreviousData,
+  });
+
+  if (isPending) return <p>Loading...</p>;
+  if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
+  if (data.total === 0) {
+    const filtered = Object.values(filters).some(({ length }) => length > 0);
+    return <p>{filtered ? "No blunders match these filters." : "No blunders in this category."}</p>;
+  }
+
+  const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
+
+  return (
+    <div aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
+      <BlunderListPagination page={page} total={data.total} category={category} />
+      {KINDS.map((kind) => {
+        const blunders = byKind[kind];
+        if (!blunders) return null;
+
+        return (
+          <section key={kind}>
+            <h2 style={{ margin: 0 }}>
+              {KIND_LABELS[kind]} <data value={blunders.length}>({blunders.length})</data>
+            </h2>
+
+            {groupsOf(kind, blunders).map((group) => {
+              return (
+                <BlunderListGroup
+                  key={group.id}
+                  group={group}
+                  category={category}
+                  selected={selected}
+                  page={page}
+                  depth={0}
+                />
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+### The pieces
+
+**Three lines do all of it.** Read the search params once, parse the page, parse the filters, spread them into the query input. The grouping, the buckets and the pager below are untouched — they were always rendering whatever the query returned, and now the query returns less.
+
+**`data.total === 0` had to learn the difference** between a category with nothing in it and a filter that matches nothing, because they look identical from here and mean opposite things. `Object.values(filters).some(({ length }) => length > 0)` asks whether any group has a selection in it.
+
+**Empty is not an error.** No `role="alert"`, no retry: the server answered, the answer is zero rows, and the pager vanishes on its own because `total / PER_PAGE` rounds up to zero pages.
+
+---
+
+## Gotchas
+
+### Build the condition, bind the value
+
+The rule is one line long: the SQL string may be assembled, but every value in it is a `?`.
+
+```ts
+where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
+params.push(...input.kinds);
+```
+
+The `IN` list has to be built, because its length depends on the input and there is no placeholder for "an array". What gets built is punctuation — `?, ?` — and the values still travel separately, where the driver can never mistake them for SQL. The version that ends up in incident reports is `IN ('${input.kinds.join("','")}')`, which is the same idea with the quotes in the wrong place.
+
+`z.enum` narrows the input before any of this runs, so by the time these values reach the query they are already known strings. Both layers are worth having: the enum is what makes it _correct_, the placeholders are what make it _safe_.
+
+### Array order is part of the cache key
+
+The key is built from the input object, and `["mild", "severe"]` and `["severe", "mild"]` are different arrays. Both describe the same list, so a reader who ticks the boxes in the other order gets a second cache entry, a second request, and — worse — the server's prefetch key stops matching the client's, which is Part 2.5's silent refetch with a new way in.
+
+Sorting into the constants' order inside `filtersFrom` is what stops that, and it costs nothing because that is where the values are already being checked. The general shape: anything that becomes a cache key wants a canonical form, and the parser is the natural place to impose one.
+
+### A direction filter quietly means "cube"
+
+Asking for `?direction=offer` returns cube decisions only, and no checker plays at all. That isn't a special case in the code — the condition also requires `d.kind = 'cube'`, so nothing else can match.
+
+It is worth knowing that the version without that condition is subtly wrong rather than broken: a checker decision on a roll where the cube was never turned still has an action of `dice_rolled`, which `cubeDirection` maps to "offer", so checker plays would leak into a cube-only filter. Filtering on a field that only some rows have is exactly where this class of bug lives.
+
+### The page you were on may not exist any more
+
+`/middle_game?direction=offer&page=2` renders a heading and nothing else. The filter leaves 50 rows, page 2 starts at row 51, and `OFFSET 50` on a 50-row result is an empty page — with a pager that only offers one page, because the pager is drawn from the filtered total.
+
+Nothing is wrong with the data and nothing throws. It's the same hole `?page=99` has had since Part 4, except filters make it easy to fall into, because narrowing the list is exactly the thing that removes the page you were standing on. Part 5.5 fixes it where it starts: changing a filter puts you back on page 1.
+
+## Still open
+
+The filters work, but only if you type them into the address bar, which is not a feature anyone can use. What follows, in order:
+
+**Part 5.5 — the filter UI.** Checkboxes that write the URL, a page reset when a filter changes (the empty-page trap above), and the pager and row links carrying the params instead of dropping them.
+
+**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` picked from a whitelist because a SQL keyword can't be a bound parameter, and a tie-breaker — 59 magnitudes are tied inside categories, and a sort without a unique tie-breaker can repeat or skip rows at a page boundary.
+
+**Part 5.7 — counts from the database.** A `GROUP BY` so a heading can say `Checker plays (37 of 245)` rather than counting whatever landed on this page. This is what Part 4.6 left open.
+
+**Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, and deleting `pageFrom`, `filtersFrom` and the hand-built query strings. The diff against what you typed here is the lesson.
+
+**Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
+
+Then **Part 6**, mutations.
+
+**Why none of this uses a store.** Part 5 was planned as filters in a global store — zustand rather than React context. It isn't one, because the server needs the filter values to run the query and the URL is how they travel; a store would be a second copy of state that already has a home, and two copies have to be kept in step forever. A store earns its place on state the server never needs and that separate parts of the tree share — a display preference read by both the list, which lives in the layout, and the analysis panel, which lives in the page, with no client component above them in common. That is the shape to look for when it does turn up, along with `persist` and the server/client hydration problem it brings.

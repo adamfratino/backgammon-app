@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import { parseXgid, pipCount } from "@repo/core";
 import { Board } from "@repo/diagram";
 import type { inferRouterOutputs } from "@trpc/server";
 
+import type { BlunderKind } from "@/lib/constants";
 import type { AppRouter } from "@/server/router";
 import { CopyButton } from "./copy-button";
 
@@ -17,6 +19,11 @@ interface BlunderAnalysisProps {
 const term = { fontWeight: "bold" } as const;
 const def = { marginLeft: 0, marginBottom: 8 } as const;
 const section = { marginTop: 24 } as const;
+
+const ERROR_LABELS: Record<BlunderKind, string> = {
+  checker: "Checker error",
+  cube: "Cube error",
+};
 
 /** Engine probabilities are fractions; the UI reads them as percentages. */
 function percent(value: number | null): string {
@@ -70,9 +77,7 @@ function Side({ side, pips }: { side: BoardSide; pips: number | null }) {
 export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
   const {
     blunder_id,
-    kind,
-    error_magnitude,
-    error_severity,
+    decisions,
     score_white,
     score_black,
     match_length,
@@ -93,14 +98,12 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
     <article aria-label={`Blunder ${blunder_id}`} style={{ maxWidth: 560 }}>
       <h2>Blunder {blunder_id}</h2>
       <dl>
-        <dt style={term}>Kind</dt>
-        <dd style={def}>{kind}</dd>
-
-        <dt style={term}>Error</dt>
-        <dd style={def}>{error_magnitude.toFixed(4)}</dd>
-
-        <dt style={term}>Severity</dt>
-        <dd style={def}>{error_severity ?? "—"}</dd>
+        {decisions.map(({ kind, error_magnitude }) => (
+          <Fragment key={kind}>
+            <dt style={term}>{ERROR_LABELS[kind]}</dt>
+            <dd style={def}>{error_magnitude.toFixed(4)}</dd>
+          </Fragment>
+        ))}
 
         <dt style={term}>Score</dt>
         <dd style={def}>
@@ -191,7 +194,7 @@ function CubeEquities({ detail }: BlunderAnalysisProps) {
 
   // On a checker blunder the cube was never actually turned, so these describe
   // the position rather than a decision anyone got wrong.
-  const decided = detail.kind === "cube" || detail.kind === "both";
+  const decided = detail.decisions.some(({ kind }) => kind === "cube");
 
   return (
     <section style={section}>
