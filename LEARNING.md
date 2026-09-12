@@ -95,9 +95,9 @@ Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB
   - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-4)
   - [2. `apps/web/app/[category]/blunder-filters.tsx` — new file](#2-appswebappcategoryblunder-filterstsx--new-file)
   - [3. `apps/web/app/[category]/layout.tsx`](#3-appswebappcategorylayouttsx)
-  - [4. `apps/web/app/[category]/blunder-list.tsx`](#4-appswebappcategoryblunder-listtsx)
-  - [5. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`](#5-appswebappcategorysubcomponentsblunder-list-paginationtsx)
-  - [6. `blunder-list-group.tsx` and `blunder-list-links.tsx`](#6-blunder-list-grouptsx-and-blunder-list-linkstsx)
+  - [4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`](#4-appswebappcategorysubcomponentsblunder-list-paginationtsx)
+  - [5. `blunder-list-group.tsx` and `blunder-list-links.tsx`](#5-blunder-list-grouptsx-and-blunder-list-linkstsx)
+  - [6. `apps/web/app/[category]/blunder-list.tsx`](#6-appswebappcategoryblunder-listtsx)
   - [Gotchas](#gotchas-6)
   - [Still open](#still-open-3)
 
@@ -2505,9 +2505,9 @@ The rule underneath this part: **when the URL is your state, every link is a wri
 | `lib/constants.ts`                                      | `filterParams`, the inverse `filtersFrom` never had              |
 | `app/[category]/blunder-filters.tsx`                    | the checkboxes — the only thing here that navigates              |
 | `app/[category]/layout.tsx`                             | mounts the panel where the list's loading state can't swallow it |
-| `app/[category]/blunder-list.tsx`                       | builds the one suffix every row link carries                     |
 | `subcomponents/blunder-list-pagination.tsx`             | pages _within_ the filters, and prefetches with them             |
-| `subcomponents/blunder-list-group.tsx` and `-links.tsx` | carry that suffix down to the rows                               |
+| `subcomponents/blunder-list-group.tsx` and `-links.tsx` | carry a finished suffix down to the rows                         |
+| `app/[category]/blunder-list.tsx`                       | builds that suffix, and wires the two above together             |
 
 ---
 
@@ -2673,36 +2673,200 @@ The fallback is four lines and, note, re-appends at the end — which quietly mo
 
 ### The change
 
-Two lines — an import, and the panel above the flex row:
+Two lines. An import, next to the one for the list:
 
 ```tsx
 import { BlunderFilterPanel } from "./blunder-filters";
+import { BlunderList } from "./blunder-list";
+```
 
-// …
+and the panel itself, between the heading and the flex row that holds the list and the analysis:
 
+```tsx
 <main>
   <h1>{category}</h1>
   <BlunderFilterPanel category={category} />
-  <div style={{ display: "flex", gap: "3rem" }}>{/* list and analysis, unchanged */}</div>
-</main>;
+  <div style={{ display: "flex", gap: "3rem" }}>
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <BlunderList category={category} />
+    </HydrationBoundary>
+    {children}
+  </div>
+</main>
 ```
+
+The prefetch above it is untouched — Part 5 already taught it to read the filters.
 
 ### The pieces
 
-**It is mounted in the layout, not inside the list.** The list was the tempting place — it already has the parsed filters sitting in a variable. But `BlunderList` returns `<p>Loading...</p>` before it renders anything, so the filter panel would vanish on the first load and reappear a moment later, and the control you just clicked would disappear underneath the pointer. Putting it in the layout costs one prop and makes the panel independent of the query's state.
+**It is mounted in the layout, not inside the list.** The list was the tempting place — it already has the parsed filters sitting in a variable. But `BlunderList` returns `<p>Loading...</p>` before it renders anything, so the filter panel would vanish on the first load and reappear a moment later, and the control you just clicked would disappear from under the pointer. Putting it in the layout costs one prop and makes the panel independent of the query's state.
 
 **It takes no filter props.** The panel is a client component reading `useSearchParams()` for itself, so a server component can mount it without having parsed anything. Two components read the same URL independently and agree, because the URL is the thing they agree on — no context, no store, no drilling.
 
 ---
 
-## 4. `apps/web/app/[category]/blunder-list.tsx`
+## 4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
+
+The next three sections go bottom-up: the two children that gain props are changed first, then the list that passes them. Typing them in that order leaves `blunder-list.tsx` briefly wrong — this section makes `filters` a required prop it does not yet pass, and the next one renames `page` to `query` underneath it. Both errors are in the list, both are expected, and section 6 clears them together. Nothing is broken; the compiler is just reading your unfinished sentence.
+
+### The whole file
+
+```tsx
+"use client";
+
+import { useQueryClient, noop } from "@tanstack/react-query";
+import Link from "next/link";
+
+import { useTRPC } from "@/trpc/client";
+import { filterParams, PER_PAGE, type BlunderFilters } from "@/lib/constants";
+
+interface BlunderListPaginationProps {
+  page: number;
+  total: number;
+  category: string;
+  filters: BlunderFilters;
+}
+
+export function BlunderListPagination({
+  page,
+  category,
+  total,
+  filters,
+}: BlunderListPaginationProps) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  const pageCount = Math.ceil(total / PER_PAGE);
+  if (pageCount <= 1) return null;
+
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => {
+          // Rebuilt per link: a page number belongs to one page, the filters to all of them.
+          const params = filterParams(filters);
+          params.set("page", String(n));
+
+          return (
+            <li key={n}>
+              <Link
+                href={`?${params}`}
+                aria-current={n === page ? "page" : undefined}
+                onMouseEnter={() =>
+                  queryClient
+                    .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters }))
+                    .catch(noop)
+                }
+              >
+                {n}
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+```
+
+### The pieces
+
+**`href={`?page=${n}`}` was the bug this part exists to fix.** It is a correct-looking link that silently clears every filter, and the failure mode is the worst kind: page 1 is right, so nothing seems wrong until page 2, by which point the list has changed under you and the URL looks like something you might have typed on purpose.
+
+**The params are rebuilt inside the map.** `filterParams` returns a fresh mutable object and `params.set("page", …)` mutates it, so hoisting the call above the loop would leave every link pointing at whichever page was rendered last. Building one per iteration is a line of waste and a class of bug avoided.
+
+**The prefetch key grew too, and that one is silent.** `queryOptions({ category, page: n, ...filters })` has to spread the filters for the same reason Part 2.5's prefetch did: the key is built from the input, so a prefetch without filters warms a cache entry the component will never ask for. Nothing errors — the hover simply stops doing anything, and the page you were promised instantly arrives at normal speed. The only way to notice is to watch for the request you were trying to avoid.
+
+**Every pager link names its page, including page 1.** `?kind=cube&page=1` is redundant but honest, and `pageFrom` reads it as 1 either way. The alternative — omitting it, and so emitting a bare `?` for the unfiltered first page — costs more than the six characters it saves.
+
+---
+
+## 5. `blunder-list-group.tsx` and `blunder-list-links.tsx`
 
 ### The change
 
+The same rename in both files: the `page: number` prop becomes `query: string`. In `blunder-list-group.tsx` that touches the props interface and the destructure:
+
+```tsx
+interface BlunderListGroupProps {
+  group: BlunderListGroup;
+  category: string;
+  selected: string | null;
+  query: string;
+  depth: number;
+}
+
+export function BlunderListGroup({
+  group,
+  category,
+  selected,
+  query,
+  depth,
+}: BlunderListGroupProps) {
+```
+
+and the two places it hands the value on — the recursive `<BlunderListGroup>` and the `<BlunderListLinks>` below it — each swap `page={page}` for `query={query}`. Nothing else in that file changes.
+
+`blunder-list-links.tsx` is short enough to show whole, and the link is where the value is finally spent:
+
+```tsx
+import Link from "next/link";
+
+import type { Blunder } from "@/server/router";
+
+interface BlunderListLinkProps {
+  blunders: Blunder[];
+  category: string;
+  selected: string | null;
+  query: string;
+}
+
+export function BlunderListLinks({ blunders, category, selected, query }: BlunderListLinkProps) {
+  return (
+    <ol>
+      {blunders.map(({ blunder_id, error_magnitude, played_notation, cube_action, kind }) => (
+        <li key={blunder_id}>
+          <Link
+            href={`/${category}/${blunder_id}${query}`}
+            aria-current={String(blunder_id) === selected ? "page" : undefined}
+          >
+            [{error_magnitude.toFixed(3)}] {played_notation ? `${played_notation}` : null}{" "}
+            {kind !== "checker" ? cube_action : null}
+          </Link>
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+### The pieces
+
+**The leaf never wanted a page number.** It wanted a URL suffix, and `page` was the only ingredient back when the suffix had one ingredient. Passing the built string instead of the parts means adding a fourth filter group later touches `filterParams` and nothing else — the group component recurses past this value without ever knowing it changed shape.
+
+**Prop drilling is the right call at this depth.** `query` passes through `BlunderListGroup`'s recursion untouched, which is the classic context-shaped itch. It is two levels and one string, and every component in the chain is already a client component that could call `useSearchParams()` for itself — which would be a third place parsing the URL and a third chance to spell it differently. One value, computed once, handed down.
+
+---
+
+## 6. `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+Three edits, all inside `BlunderList`. The import gains `filterParams`:
+
 ```tsx
 import { filterParams, filtersFrom, KINDS, KIND_LABELS, pageFrom } from "@/lib/constants";
+```
 
-// …
+The link suffix is built once, directly under the two lines Part 5 added — shown with its neighbours so there is no guessing where it goes:
+
+```tsx
+const selected = useSelectedLayoutSegment();
+const searchParams = useSearchParams();
+const page = pageFrom(searchParams.get("page"));
+const filters = filtersFrom(searchParams);
 
 // What every link out of this list has to carry to come back to this view.
 const params = filterParams(filters);
@@ -2710,94 +2874,39 @@ if (page > 1) params.set("page", String(page));
 const query = params.size > 0 ? `?${params}` : "";
 ```
 
-`<BlunderListPagination>` gains a `filters={filters}` prop, and `<BlunderListGroup>`'s `page={page}` becomes `query={query}`. Nothing else in the file moves.
+Then the two children each take one more prop — the ones sections 4 and 5 just taught to accept them:
+
+```tsx
+<BlunderListPagination page={page} total={data.total} category={category} filters={filters} />
+```
+
+```tsx
+<BlunderListGroup
+  key={group.id}
+  group={group}
+  category={category}
+  selected={selected}
+  query={query}
+  depth={0}
+/>
+```
+
+Nothing else in the file moves.
 
 ### The pieces
 
-**One suffix, built once, for every row link below.** Each row wants "the URL I came from" so the back trip lands on the same page of the same filtered list. That string is identical for all fifty of them, so it is built here rather than fifty times in the leaf.
+**Why the pager gets `filters` but the groups get `query`.** The two props look inconsistent and are not. They build different numbers of URLs. The pager builds one href per page — seven links, seven different `?page=` values, the same filters running through all of them — so it needs the ingredients and assembles each link itself. Every row link points at the view you are on right now: same page, same filters, one identical suffix repeated fifty times. So the list builds that string once and hands it down finished. Pass the finished value when there is exactly one; pass the parts when the child has to make several things out of them.
 
-**`page` is written only when it isn't 1.** Same rule Part 4 set: page 1 is the absence of `?page=`, not `?page=1`. It keeps the common URL short and keeps one spelling for one view, which matters because this string ends up in the address bar and in people's links.
+**One suffix, built once, for every row link below.** Each row wants "the URL I came from", so that opening a blunder and coming back lands on the same page of the same filtered list. Building it here rather than in the leaf also means the leaf never learns what a filter is.
 
-**`params.size` is newer than it looks.** `URLSearchParams` had no `size` until 2023 — before that the idiom was `[...params].length`, or `params.toString() === ""` for this exact test:
+**`page` is written only when it isn't 1.** Same rule Part 4 set: page 1 is the absence of `?page=`, not `?page=1`. It keeps the common URL short and keeps one spelling for one view, which matters because this string ends up in the address bar and in shared links.
+
+**`params.size` is newer than it looks.** `URLSearchParams` had no `size` until 2023 — before that the idiom was `[...params].length`, or `toString()` for this exact test:
 
 ```ts
 const query = params.size > 0 ? `?${params}` : ""; // today
 const query = params.toString() ? `?${params}` : ""; // works anywhere, and reads fine
 ```
-
-**`${params}` stringifies without `.toString()`.** Template interpolation calls it for you. Worth pointing at only because the explicit call appears two files away in `blunder-filters.tsx`, where the result is tested before it is interpolated.
-
----
-
-## 5. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
-
-### The change
-
-```tsx
-import { filterParams, PER_PAGE, type BlunderFilters } from "@/lib/constants";
-
-// …props gain `filters: BlunderFilters`
-
-{
-  pages.map((n) => {
-    // Rebuilt per link: a page number belongs to one page, the filters to all of them.
-    const params = filterParams(filters);
-    params.set("page", String(n));
-
-    return (
-      <li key={n}>
-        <Link
-          href={`?${params}`}
-          aria-current={n === page ? "page" : undefined}
-          onMouseEnter={() =>
-            queryClient
-              .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters }))
-              .catch(noop)
-          }
-        >
-          {n}
-        </Link>
-      </li>
-    );
-  });
-}
-```
-
-### The pieces
-
-**`href={`?page=${n}`}` was the bug this part exists to fix.** It is a correct-looking link that silently clears every filter, and the failure mode is the worst kind: page 1 is right, so you don't notice until page 2, by which point the list has changed under you and the URL looks like something you might have typed.
-
-**The params are rebuilt inside the map.** `filterParams` returns a fresh mutable object and `params.set("page", …)` mutates it, so hoisting the call above the loop would leave every link pointing at the last page rendered. Building per iteration is a line of waste and a class of bug avoided.
-
-**The prefetch key grew too, and that one is silent.** `queryOptions({ category, page: n, ...filters })` has to spread the filters for the same reason Part 2.5's prefetch did: the key is built from the input, so a prefetch without filters warms a cache entry the component will never ask for. Nothing errors — the hover just stops doing anything, and the page you were promised instantly arrives at normal speed. The only way to catch it is to notice the request you were trying to avoid.
-
-**Every pager link names its page, including page 1.** `?kind=cube&page=1` is redundant but honest, and `pageFrom` reads it as 1 either way. The alternative — omitting it and emitting a bare `?` for the unfiltered first page — costs more than the six characters it saves.
-
----
-
-## 6. `blunder-list-group.tsx` and `blunder-list-links.tsx`
-
-### The change
-
-In both files, one prop is renamed and retyped:
-
-```diff
--  page: number;
-+  query: string;
-```
-
-and the link that consumed it gets shorter:
-
-```diff
--            href={`/${category}/${blunder_id}${page > 1 ? `?page=${page}` : ""}`}
-+            href={`/${category}/${blunder_id}${query}`}
-```
-
-### The pieces
-
-**The leaf never wanted a page number.** It wanted a URL suffix, and `page` was the only ingredient it needed back when the suffix had one ingredient. Passing the built string instead of the parts means adding a fourth filter group later touches `filterParams` and nothing else — the group component recurses past this value without ever knowing it changed shape.
-
-**Prop drilling is the right call at this depth.** `query` passes through `BlunderListGroup`'s recursion untouched, which is the classic context-shaped itch. It is two levels and one string, and every component in the chain is already a client component that could call `useSearchParams()` for itself — which would be a third place parsing the URL and a third chance to spell it differently. One value, computed once, handed down.
 
 ---
 
