@@ -54,13 +54,19 @@ export function BlunderList({ category }: BlunderListProps) {
         const blunders = byKind[kind];
         if (!blunders) return null;
 
+        const counts = data.counts.filter((bucket) => bucket.kind === kind);
+        const total = counts.reduce((running, { count }) => running + count, 0);
+
         return (
           <section key={kind}>
             <h2 style={{ margin: 0 }}>
-              {KIND_LABELS[kind]} <data value={blunders.length}>({blunders.length})</data>
+              {KIND_LABELS[kind]}{" "}
+              <data value={total}>
+                ({blunders.length} of {total})
+              </data>
             </h2>
 
-            {groupsOf(kind, blunders).map((group) => {
+            {groupsOf(kind, blunders, counts).map((group) => {
               return (
                 <BlunderListGroup
                   key={group.id}

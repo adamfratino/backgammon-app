@@ -1,4 +1,4 @@
-import type { Blunder } from "@/server/router";
+import type { Blunder, BucketCount } from "@/server/router";
 import {
   CUBE_DIRECTIONS,
   SEVERITY_BANDS,
@@ -13,6 +13,7 @@ interface BlunderListGroup {
   id: string;
   label: string;
   blunders: Blunder[];
+  total: number;
   groups: BlunderListGroup[];
 }
 
@@ -37,7 +38,10 @@ export function BlunderListGroup({
   return (
     <section>
       <Heading>
-        {group.label} <data value={group.blunders.length}>({group.blunders.length})</data>
+        {group.label}{" "}
+        <data value={group.total}>
+          ({group.blunders.length} of {group.total})
+        </data>
       </Heading>
 
       {group.groups.length > 0 ? (
@@ -63,13 +67,16 @@ export function BlunderListGroup({
   );
 }
 
+const sum = (counts: BucketCount[]) => counts.reduce((running, { count }) => running + count, 0);
+
 /** Severity bands, the level every kind ends on. */
-function bandsOf(blunders: Blunder[]): BlunderListGroup[] {
+function bandsOf(blunders: Blunder[], counts: BucketCount[]): BlunderListGroup[] {
   const bySeverity = Object.groupBy(blunders, ({ error_magnitude }) => severityOf(error_magnitude));
 
   return SEVERITY_BANDS.flatMap(({ id, label }) => {
     const banded = bySeverity[id];
-    return banded ? [{ id, label, blunders: banded, groups: [] }] : [];
+    const total = sum(counts.filter(({ severity }) => severity === id));
+    return banded ? [{ id, label, blunders: banded, total, groups: [] }] : [];
   });
 }
 
@@ -78,13 +85,30 @@ function bandsOf(blunders: Blunder[]): BlunderListGroup[] {
  * much did this cost", but which side of the cube you were on is the thing that
  * makes two of them comparable.
  */
-export function groupsOf(kind: BlunderKind, blunders: Blunder[]): BlunderListGroup[] {
-  if (kind !== "cube") return bandsOf(blunders);
+export function groupsOf(
+  kind: BlunderKind,
+  blunders: Blunder[],
+  counts: BucketCount[],
+): BlunderListGroup[] {
+  const mine = counts.filter((bucket) => bucket.kind === kind);
+  if (kind !== "cube") return bandsOf(blunders, mine);
 
   const byDirection = Object.groupBy(blunders, ({ cube_action }) => cubeDirection(cube_action));
 
   return CUBE_DIRECTIONS.flatMap(({ id, label }) => {
     const facing = byDirection[id];
-    return facing ? [{ id, label, blunders: facing, groups: bandsOf(facing) }] : [];
+    const facingCounts = mine.filter(({ direction }) => direction === id);
+
+    return facing
+      ? [
+          {
+            id,
+            label,
+            blunders: facing,
+            total: sum(facingCounts),
+            groups: bandsOf(facing, facingCounts),
+          },
+        ]
+      : [];
   });
 }
