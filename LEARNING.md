@@ -2191,7 +2191,7 @@ Six links and a hover is fine. A loop that warms all six on mount is six queries
 
 ## Still open
 
-The pager describes the category, but the buckets inside it still describe the page: `Checker plays (37)` means 37 of _these fifty_, not 37 of 300. Every heading count comes from `.length` on whatever happens to be loaded. Fixing that means counts computed by the database rather than by the component — which is really a filtering question, and that's Part 5.
+The pager describes the category, but the buckets inside it still describe the page: `Checker plays (37)` means 37 of _these fifty_, not 37 of 300. Every heading count comes from `.length` on whatever happens to be loaded. Fixing that means counts computed by the database rather than by the component — which is really a filtering question, so it waits for the filters to exist: Part 5 builds them and **Part 5.7** finally settles this.
 
 From here: **Part 5** simple filters, **Part 6** mutations — a scratchpad textarea for notes on a blunder, which needs writing back to the database.
 
@@ -2478,9 +2478,9 @@ The filters work, but only if you type them into the address bar, which is not a
 
 **Part 5.5 — the filter UI.** Checkboxes that write the URL, a page reset when a filter changes (the empty-page trap above), and the pager and row links carrying the params instead of dropping them.
 
-**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` picked from a whitelist because a SQL keyword can't be a bound parameter, and a tie-breaker — 59 magnitudes are tied inside categories, and a sort without a unique tie-breaker can repeat or skip rows at a page boundary.
+**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` picked from a whitelist because a SQL keyword can't be a bound parameter, and a tie-breaker — 60 magnitudes are shared by two or more decisions inside a single category, and a sort without a unique tie-breaker can repeat or skip rows at a page boundary.
 
-**Part 5.7 — counts from the database.** A `GROUP BY` so a heading can say `Checker plays (37 of 245)` rather than counting whatever landed on this page. This is what Part 4.6 left open.
+**Part 5.7 — counts from the database.** A `GROUP BY` so a heading can say `Checker plays (39 of 245)` rather than counting whatever landed on this page. This is what Part 4.6 left open.
 
 **Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, and deleting `pageFrom`, `filtersFrom` and the hand-built query strings. The diff against what you typed here is the lesson.
 
@@ -2936,11 +2936,809 @@ A deliberate choice, made in one line, and the one most likely to feel wrong lat
 
 The filters now work by pointing and clicking, and nothing about them survives leaving the category. What's left, in order:
 
-**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` chosen from a whitelist because a SQL keyword cannot be a bound parameter, and a tie-breaker: 59 magnitudes are tied inside categories, and a sort without a unique tie-breaker can repeat or skip rows across a page boundary.
+**Part 5.6 — sort.** `?sort=worst|mildest`, an `ORDER BY` chosen from a whitelist because a SQL keyword cannot be a bound parameter, and a tie-breaker: 60 magnitudes are shared by two or more decisions inside a single category, and a sort without a unique tie-breaker can repeat or skip rows across a page boundary.
 
-**Part 5.7 — counts from the database.** `Checker plays (37 of 245)` needs a `GROUP BY`, because every heading count in the list is still `.length` on whatever page happens to be loaded. This is the thread Part 4.6 left hanging.
+**Part 5.7 — counts from the database.** `Checker plays (39 of 245)` needs a `GROUP BY`, because every heading count in the list is still `.length` on whatever page happens to be loaded. This is the thread Part 4.6 left hanging.
 
 **Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, then deleting `pageFrom`, `filtersFrom`, `filterParams` and every hand-built query string in this part. Diffing that against what you typed here is the lesson.
+
+**Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
+
+Then **Part 6**, mutations.
+
+# Part 5.6 — Sort
+
+## The one idea
+
+Every filter in Part 5 is a value compared against a column. `d.kind IN (?, ?)` ships to SQLite as a statement with holes in it, and the things from the URL go into the holes — never into the statement. That separation is the whole reason none of Part 5 needed escaping, quoting, or trust.
+
+Sort is the first thing the URL asks for that a hole cannot hold. `ORDER BY ?` is not a query waiting for a value; it is a query that will never compile, because a keyword and a column name are part of the statement's _shape_, and the shape has to be settled before a single value is bound. A placeholder is a slot for data. `DESC` is not data.
+
+So this is the one place in the app where something from the URL chooses SQL _text_. What keeps that safe is not escaping it. It is that the URL never supplies text at all: it supplies a key, and the key looks up a string this repository wrote. The difference between a whitelist and sanitisation is that a whitelist cannot fail open — there is no clever input, because input is not what gets used.
+
+The second idea costs one line and is the easier one to skip, because nothing appears to be wrong without it. `ORDER BY d.error_magnitude DESC` is not an order over these rows. It is most of an order, with the ties left to the database's discretion — and paging silently assumes that discretion is identical on every request, which nothing anywhere promises.
+
+| file                                        | job                                                 |
+| ------------------------------------------- | --------------------------------------------------- |
+| `lib/constants.ts`                          | the sorts the UI offers, and `sortFrom` to read one |
+| `server/router.ts`                          | what each sort means in SQL, and the tie-breaker    |
+| `app/[category]/layout.tsx`                 | prefetches with the sort in the key                 |
+| `subcomponents/blunder-list-pagination.tsx` | pages _within_ a sort, and prefetches with it       |
+| `app/[category]/blunder-list.tsx`           | reads it, queries with it, hands it down            |
+| `app/[category]/blunder-filters.tsx`        | the radios — the only thing here that navigates     |
+
+---
+
+## 1. `apps/web/lib/constants.ts`
+
+### The change
+
+Three additions and one rename. First the whitelist, below `cubeDirection`:
+
+```ts
+/**
+ * The orderings offered in the UI. Only the ids travel — in the URL, and as the
+ * procedure's input. The SQL each one means lives on the server, in `router.ts`,
+ * so no fragment of a query is ever shipped to the browser.
+ */
+export const SORTS = [
+  { id: "worst", label: "Worst first" },
+  { id: "mildest", label: "Mildest first" },
+] as const;
+
+export type BlunderSort = (typeof SORTS)[number]["id"];
+```
+
+Then the derived list, beside the two that are already there, and the default:
+
+```ts
+export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
+export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
+export const SORT_IDS = SORTS.map(({ id }) => id);
+
+/** Worst first — what the list did before it could be sorted at all. */
+export const DEFAULT_SORT: BlunderSort = "worst";
+```
+
+Then the reader, directly under `pageFrom`:
+
+```ts
+/**
+ * `?sort=` is a single choice out of a whitelist, not a set, so unlike the
+ * filters it has a default rather than an empty state: anything that isn't one
+ * of ours — missing, misspelled, or repeated — is the default ordering.
+ */
+export function sortFrom(value: string | null): BlunderSort {
+  return SORT_IDS.find((id) => id === value) ?? DEFAULT_SORT;
+}
+```
+
+And finally `filterParams` becomes `viewParams`, one argument wider:
+
+```ts
+/**
+ * Everything a link has to carry to land on the view you are already looking at:
+ * the filters, in the constants' own order, and the sort. It writes no `?page=`,
+ * so a link built from it starts the list at the beginning.
+ *
+ * `sort` is a required argument rather than an optional one on purpose. Adding a
+ * member to URL state should break every link that writes the URL until each one
+ * has been told what to do about it — an optional parameter would instead let
+ * every existing caller keep compiling while quietly clearing the sort.
+ */
+export function viewParams(
+  { kinds, severities, directions }: BlunderFilters,
+  sort: BlunderSort,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const kind of kinds) params.append("kind", kind);
+  for (const severity of severities) params.append("severity", severity);
+  for (const direction of directions) params.append("direction", direction);
+  // The default is what you get by saying nothing, so saying it would only make
+  // every URL longer without changing what it means.
+  if (sort !== DEFAULT_SORT) params.set("sort", sort);
+  return params;
+}
+```
+
+Save this file and the project stops compiling in three places. That is the point of the next few sections; work through them in order and it comes back.
+
+### The pieces
+
+**`SORTS` holds ids and labels, and no SQL.** The shape matches `SEVERITY_BANDS` and `CUBE_DIRECTIONS` deliberately, so the panel in section 6 can render it with the component it already has. What it does not hold is the `ORDER BY` each id means. That lives in `router.ts`, because this file is imported by client components, and a string of SQL in a client component is a string of SQL in the JavaScript bundle — harmless here, but it is the sort of thing that is only ever harmless until the day it isn't. The ids are the shared vocabulary; the SQL is an implementation detail of one side.
+
+**`sortFrom` has a default where `filtersFrom` has an empty array, and that asymmetry is the concept.** A filter is a set: choosing nothing is a coherent answer meaning "don't narrow anything". A sort is a choice out of a closed list, and there is no such thing as an unsorted list — the rows come back in _some_ order whether you picked one or not. So the absent case is not empty, it is `worst`, and every invalid case collapses onto it too. `SORT_IDS.find((id) => id === value)` returns `undefined` for a missing param, a misspelled one and a repeated one alike, and `?? DEFAULT_SORT` turns all three into the same answer without a single branch mentioning any of them.
+
+**The rename is the interesting part of this section.** `filterParams` was an honest name for a function that wrote filters. The moment it also writes a sort, the name is a small lie, and small lies in a function that four call sites depend on are how a param goes missing. Renaming costs three compile errors; keeping the name costs a reader somewhere down the line assuming it does what it says.
+
+**Making `sort` required rather than optional is the same instinct, enforced by the compiler.** Part 5.5's rule was that every link is a write, and a link that omits a param clears it. An optional `sort?: BlunderSort` would let all four existing call sites keep compiling unchanged, and all four would then quietly reset the sort to `worst` on every click — the exact bug, reintroduced, with no error to find it. A required argument turns "I added something to URL state" into "the build is broken until every writer of that URL has been told what to do", which is what you actually want it to mean.
+
+**The default is read, never written.** `if (sort !== DEFAULT_SORT)` keeps `?sort=worst` out of every URL in the app, because it would mean precisely what the empty string already means. The round trip still holds: `viewParams` drops it, `sortFrom` puts it back, and the radio in section 6 reads `worst` either way.
+
+---
+
+## 2. `apps/web/server/router.ts`
+
+### The change
+
+Two constants, above `appRouter`:
+
+```ts
+/**
+ * What each sort means in SQL. A keyword is not a value, so `ORDER BY ?` is not
+ * a thing SQLite will bind — which makes this the one place where something
+ * from the URL chooses SQL *text* rather than being compared against it. That is
+ * safe only because the choice is a key into this record and can be nothing else:
+ * `.input()` rejects an unknown sort before it ever reaches here.
+ *
+ * Typed as a `Record<BlunderSort, ...>`, so adding a sort to `SORTS` fails to
+ * compile until it is given an ordering here.
+ */
+const SORT_ORDER_BY: Record<BlunderSort, string> = {
+  worst: "d.error_magnitude DESC",
+  mildest: "d.error_magnitude ASC",
+};
+
+/**
+ * Magnitude alone is not a total order — 60 magnitudes are shared by two or more
+ * decisions inside a single category. SQLite is free to return tied rows in any
+ * order it likes, and it need not pick the same one twice, so a tie spanning a
+ * page boundary can show the same decision on both pages and drop another
+ * entirely. `blunder_id` with `kind` is unique in `decisions` (each arm of the
+ * union emits at most one row per blunder), so appending it makes the order
+ * total and every page a clean slice of one stable list.
+ */
+const TIE_BREAKER = "d.blunder_id ASC, d.kind ASC";
+```
+
+The import grows to match:
+
+```ts
+import {
+  type BlunderSort,
+  CUBE_ACTION,
+  cubeDirection,
+  DEFAULT_SORT,
+  DIRECTIONS,
+  KINDS,
+  PER_PAGE,
+  SEVERITIES,
+  SEVERITY_BANDS,
+  SORT_IDS,
+} from "@/lib/constants";
+```
+
+One line joins the input, below `directions`:
+
+```ts
+sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
+```
+
+And the list query's `ORDER BY` stops being a constant:
+
+```ts
+             WHERE ${filter}
+             ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}
+             LIMIT ? OFFSET ?`,
+```
+
+### The pieces
+
+**`z.enum(SORT_IDS)` is the whole security story, and it runs before any of this code does.** By the time `input.sort` exists, it is one of two strings, because tRPC parsed it against the schema and rejected the request otherwise. `SORT_ORDER_BY[input.sort]` is then a lookup that cannot miss and cannot return anything but a string written in this file. There is no sanitising step because there is nothing to sanitise: the untrusted string was used as a _key_, and keys that don't match simply aren't there. Compare it with the `WHERE` clauses above, which build text from `.map(() => "?")` and bind every value — two different techniques, same rule, which is that nothing from outside is ever concatenated into SQL.
+
+**`Record<BlunderSort, string>` makes the compiler keep the two lists in step.** `SORTS` in constants is what the UI offers; `SORT_ORDER_BY` here is what the database will do about it. They live in different files for a good reason, and that is exactly the kind of pair that drifts. Typing the record by the union means adding `{ id: "recent" }` to `SORTS` breaks this file until `recent` has an ordering — the error arrives at the moment the mistake is made, rather than as an empty page months later.
+
+**The tie-breaker is not a tidiness fix; it is what makes paging mean anything.** `LIMIT 50 OFFSET 250` asks for "rows 251 to 300 of _the_ list", which only refers to something if there is exactly one list. With ties unbroken, there are many valid lists, and SQLite picks one per query plan — a detail you do not control, and which changes under you when an index is added, when statistics are refreshed, or when the SQLite version moves.
+
+In this database there are 60 magnitudes shared by two or more decisions inside a single category, covering 138 decisions in all; 56 of those magnitudes are distinct values, and the largest single pile-up is a sixteen-way tie at `0.1016` in `middle_game`. Two of those tie groups straddle a fifty-row page boundary, and one of them makes the failure concrete. In `blitz`, two checker decisions share a magnitude of `0.0802` and sit at sorted positions 300 and 301 — the last row of page 6 and the first row of page 7:
+
+```
+plan A (as the database ships)   pos300 = 11376644   pos301 = 15071730
+plan B (after an ordinary index) pos300 = 15071730   pos301 = 11376644
+```
+
+Both orderings satisfy `ORDER BY d.error_magnitude DESC` completely. Read page 6 under one and page 7 under the other — a deploy between two clicks is enough — and blunder `11376644` appears on both pages while `15071730` appears on neither. You see 302 of 303 rows, twice told one of them, and nothing logs an error, because nothing went wrong. With `TIE_BREAKER` appended, all 303 arrive exactly once under either plan.
+
+**Why `d.blunder_id, d.kind` and not just `d.blunder_id`.** A blunder stored as `kind = 'both'` becomes two rows in `decisions`, one checker and one cube, sharing an id. `blunder_id` alone leaves those two tied with each other. The pair is unique across all 1,399 decisions, which is the property being bought: a tie-breaker that still permits ties is not one.
+
+**It is appended to both sorts, not spelled out twice.** `ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}` keeps the tie-breaker ascending regardless of the direction above it. It does not need to mirror the sort — it is not there to be meaningful, only to be consistent, and any fixed rule does that job.
+
+**The count query is left alone.** `COUNT(*)` has no order to break, and adding one would make SQLite sort rows it is about to discard.
+
+---
+
+## 3. `apps/web/app/[category]/layout.tsx`
+
+### The change
+
+An import, a line, and a spread:
+
+```tsx
+import { filtersFrom, pageFrom, sortFrom } from "@/lib/constants";
+```
+
+```tsx
+const page = pageFrom(search.get("page"));
+const filters = filtersFrom(search);
+const sort = sortFrom(search.get("sort"));
+
+await queryClient
+  .query(trpc.blunders.byCategory.queryOptions({ category, page, ...filters, sort }))
+  .catch(noop);
+```
+
+### The pieces
+
+**This is half of a key that has to be written identically in two files.** Part 5.5 called this out as a permanent hazard, and adding a sort is the first chance to feel it: the server prefetches under `{ category, page, ...filters, sort }` and the browser, in the next section, has to ask for exactly that. Miss it here and the page still works — it just fetches everything twice, once on the server into HTML nobody uses and once in the browser to replace it. The symptom of getting this wrong is not an error; it is a request you have to be looking for.
+
+**`sortFrom` takes `search.get("sort")`, not the whole object.** `filtersFrom` needs `getAll` because a filter can repeat. A sort cannot, so `get` is the honest accessor: it returns the first value and ignores the rest, and `sortFrom` was written to accept `string | null` precisely so both the server's `URLSearchParams` and the browser's read-only params fit without a wrapper.
+
+---
+
+## 4. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
+
+### The change
+
+The import swaps `filterParams` for `viewParams` and picks up a type:
+
+```tsx
+import { PER_PAGE, viewParams, type BlunderFilters, type BlunderSort } from "@/lib/constants";
+```
+
+The props gain one member, and the signature destructures it:
+
+```tsx
+interface BlunderListPaginationProps {
+  page: number;
+  total: number;
+  category: string;
+  filters: BlunderFilters;
+  sort: BlunderSort;
+}
+
+export function BlunderListPagination({
+  page,
+  category,
+  total,
+  filters,
+  sort,
+}: BlunderListPaginationProps) {
+```
+
+Then the two places a page link is built — the `href` and the prefetch beside it:
+
+```tsx
+// Rebuilt per link: a page number belongs to one page, the filters and
+// the sort to all of them.
+const params = viewParams(filters, sort);
+params.set("page", String(n));
+```
+
+```tsx
+                onMouseEnter={() =>
+                  queryClient
+                    .query(
+                      trpc.blunders.byCategory.queryOptions({
+                        category,
+                        page: n,
+                        ...filters,
+                        sort,
+                      }),
+                    )
+                    .catch(noop)
+                }
+```
+
+### The pieces
+
+**This component is modified before the one that renders it, on purpose.** `sort` is a required prop now, so the moment you save this file, `blunder-list.tsx` fails to compile for not passing it — and section 5 is that fix. Doing it the other way round means passing a prop to a component that does not accept one, which is the same amount of broken with the error in the less useful place.
+
+**Both edits are the same fact written twice, and they have to agree.** The `href` is where a click goes; the `queryOptions` is what a hover fetches. If the link carries the sort and the prefetch does not, hovering warms the cache for a view nobody is about to visit, and the click then waits for a fetch that hover was supposed to have already done. Nothing breaks. It is just slower in exactly the situation the prefetch exists to make faster.
+
+**`viewParams` writes no page, and then the pager writes one.** Unchanged from Part 5.5, and worth re-reading in the new light: the function's inability to write `?page=` is what makes it reusable by a component whose entire job is writing `?page=`. It hands back a `URLSearchParams` with everything else already correct, and `params.set("page", String(n))` finishes the sentence.
+
+---
+
+## 5. `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+The import line, rewritten:
+
+```tsx
+import { filtersFrom, KINDS, KIND_LABELS, pageFrom, sortFrom, viewParams } from "@/lib/constants";
+```
+
+The read, the suffix and the query:
+
+```tsx
+const filters = filtersFrom(searchParams);
+const sort = sortFrom(searchParams.get("sort"));
+
+// What every link out of this list has to carry to come back to this view.
+const params = viewParams(filters, sort);
+if (page > 1) params.set("page", String(page));
+const query = params.size > 0 ? `?${params}` : "";
+
+const { isPending, isPlaceholderData, error, data } = useQuery({
+  ...trpc.blunders.byCategory.queryOptions({ category, page, ...filters, sort }),
+  placeholderData: keepPreviousData,
+});
+```
+
+And the pager gets its new prop, which is what puts this file back into compiling order:
+
+```tsx
+<BlunderListPagination
+  page={page}
+  total={data.total}
+  category={category}
+  filters={filters}
+  sort={sort}
+/>
+```
+
+### The pieces
+
+**The same three lines as the layout, against a different params object.** `useSearchParams` in the browser and `URLSearchParams` on the server are different types with the same two methods, which is why `pageFrom`, `sortFrom` and `filtersFrom` were all written against the narrowest interface that works. The two files read the same URL, build the same input and land on the same cache key, without sharing anything but the constants.
+
+**`query` is the suffix every row link carries, and it now carries one more thing for free.** Nothing in `blunder-list-group.tsx` or `blunder-list-links.tsx` changes in this part. They were handed a finished string in Part 5.5 and they are handed a slightly longer finished string now — which is the return on that decision. A row link that had to know what a sort was would be a third place to forget one.
+
+**`params.size > 0` still guards the bare `?`.** With the default sort and no filters, `viewParams` returns an empty object and `query` is the empty string, so a row link stays `/middle_game/16802471`.
+
+---
+
+## 6. `apps/web/app/[category]/blunder-filters.tsx`
+
+### The change
+
+The import block, rewritten:
+
+```tsx
+import {
+  type BlunderSort,
+  CUBE_DIRECTIONS,
+  filtersFrom,
+  KINDS,
+  KIND_LABELS,
+  SEVERITY_BANDS,
+  SORTS,
+  sortFrom,
+  viewParams,
+} from "@/lib/constants";
+```
+
+The panel reads the sort, and the navigation the two controls share is lifted into one function:
+
+```tsx
+const filters = filtersFrom(searchParams);
+const sort = sortFrom(searchParams.get("sort"));
+
+/** Navigates to the view these params describe, always from page 1. */
+function show(params: URLSearchParams) {
+  const query = params.toString();
+  router.push(query ? `/${category}?${query}` : `/${category}`);
+}
+
+function toggle(param: string, value: string, checked: boolean) {
+  const params = new URLSearchParams(searchParams);
+  if (checked) params.append(param, value);
+  else params.delete(param, value);
+
+  // Re-read rather than edit: the checkbox knows one param changed, but the
+  // URL it writes has to spell out every one of them, sort included.
+  show(viewParams(filtersFrom(params), sortFrom(params.get("sort"))));
+}
+
+/**
+ * Re-sorting drops you back to page 1, for the reason a filter does: page 7 of
+ * "worst first" is a different set of rows from page 7 of "mildest first", so
+ * staying put would keep the number and silently change everything under it.
+ */
+function choose(next: BlunderSort) {
+  show(viewParams(filters, next));
+}
+```
+
+The new group goes in beside the three that are there:
+
+```tsx
+      <SortGroup sort={sort} onChoose={choose} />
+    </div>
+```
+
+And the component itself, at the bottom of the file:
+
+```tsx
+interface SortGroupProps {
+  sort: BlunderSort;
+  onChoose: (sort: BlunderSort) => void;
+}
+
+/**
+ * Radios, not checkboxes, because a sort is one choice rather than a set — and
+ * because one of them is always on, there is no "nothing selected" state to
+ * represent. That is the whole difference between `sortFrom` and `filtersFrom`,
+ * made visible in the markup.
+ */
+function SortGroup({ sort, onChoose }: SortGroupProps) {
+  return (
+    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+      <legend>Sort</legend>
+      {SORTS.map(({ id, label }) => (
+        <label key={id} style={{ display: "block" }}>
+          <input
+            type="radio"
+            name="sort"
+            value={id}
+            checked={sort === id}
+            onChange={() => onChoose(id)}
+          />{" "}
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+```
+
+### The pieces
+
+**`toggle` has to re-read the sort it never touched.** This is the subtlest line in the part. A checkbox knows one thing changed, and the temptation is to edit the URL in place — which `new URLSearchParams(searchParams)` does. But the value that goes to `router.push` comes from `viewParams`, which builds a URL from scratch out of the arguments it is given, so anything not passed in is not omitted, it is _deleted_. Passing `sortFrom(params.get("sort"))` is how the sort survives someone ticking "Severe". Forget it, and every checkbox is also a "reset the sort" button — the Part 5.5 bug, one level up.
+
+**Radios rather than a `<select>`, and rather than checkboxes.** Checkboxes would be a lie about the model: `sortFrom` cannot return two sorts and the query cannot apply two orderings. Radios say "exactly one of these" in markup, get keyboard support and a group label for free from `fieldset`/`legend`, and share the shape of the three groups above them. A `<select>` would be equally correct and takes less room, which starts to matter at four sorts rather than two.
+
+**`show` exists because two controls now navigate.** `choose` and `toggle` disagree about how to work out the params and agree about everything after: stringify, guard the bare `?`, push to the category root. Pulling that out is a small thing that stops the two from drifting — the same reason `viewParams` exists one level down.
+
+**`checked={sort === id}` reads the URL, like everything else in this panel.** Still no `useState` in the file. The radio is on because the URL says so, and clicking it navigates, and the navigation re-renders the panel with a new `sort`. The control has no opinion of its own to get out of step.
+
+---
+
+## Gotchas
+
+### The sort orders the query, not the screen
+
+Switch to "Mildest first" and the top of the page is not the mildest blunder. The list groups what it receives by kind, then direction, then severity, and it does that _after_ the page arrives — so the first row on screen is the first row of the checker bucket, whatever the sort. On `middle_game` the worst decision in the category is a cube blunder at `0.8232`, and it renders below thirty-nine checker rows on page 1 because cube is the second bucket.
+
+What the sort actually decides is which fifty rows the page contains, and the order inside each bucket. That is a real feature — "mildest first" genuinely gets you the near-misses — but it is not the feature the words on the radio suggest. Sorting and grouping are answering different questions at the same time, and the grouping wins the argument about what you see first. Part 5.7 makes this stranger before it makes it better.
+
+### A page number is a promise about a list, not about rows
+
+`?page=7` does not identify any rows. It identifies a window onto an ordering, and it is only stable while that ordering is. This is why re-sorting resets to page 1 and why the tie-breaker is not optional — they are the same concern approached from the two ends. Anything that changes the ordering invalidates every page number that was computed under the old one, whether the change came from a radio button or from a query planner.
+
+### `?sort=worst` is a URL you should never see
+
+The default is never written, so the sort is absent from the URL until you pick the non-default one. Two consequences worth holding: a link someone shares while on "worst first" carries no sort at all and is therefore immune to you later changing what the default is, and `sortFrom` returning `worst` for `null` is what makes the radio render correctly on a URL that says nothing. The default lives in exactly one place, and the URL is not it.
+
+### Changing the sort closes the open blunder
+
+`show` pushes `/${category}`, so re-sorting while reading a blunder navigates away from it, exactly as ticking a filter does. Here the justification is thinner than it was for filters: a filter can remove the row you are reading from the list, but a sort only moves it. Keeping it open is `router.push(\`?${query}\`)`— but then`show`needs to stop being shared with`toggle`, because the two controls would no longer agree about where they are going.
+
+## Still open
+
+Sorting works, and the URL now carries three kinds of thing — a page, a set of filters, and a single choice with a default — each read by a hand-written function and written by a second one that has to remember all of them.
+
+**Part 5.7 — counts from the database.** `Checker plays (39 of 245)` needs a `GROUP BY`, because every heading count in the list is still `.length` on whatever page happens to be loaded. This is the thread Part 4.6 left hanging, and it is what makes the grouping gotcha above legible rather than merely odd.
+
+**Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, then deleting `pageFrom`, `sortFrom`, `filtersFrom`, `viewParams` and every hand-built query string in this part. Diffing that against what you typed here is the lesson.
+
+**Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
+
+Then **Part 6**, mutations.
+
+# Part 5.7 — Counts From the Database
+
+## The one idea
+
+`Checker plays (39)` is a true statement about the wrong thing. The number is `blunders.length` — the checker rows in the fifty that happen to be loaded — and it has been that since Part 3, quietly meaning something different on every page. Part 4.6 noticed and left it; this is the part that pays it off.
+
+The fix is not a bigger page. It is noticing that the list is being asked two different questions and has only ever answered one of them. "What is on this page" is a fact about fifty rows, and the component holding them is the right thing to ask. "How many are there" is a fact about the whole filtered category, and nothing in the browser has ever seen that set — the only thing that has is the database, which threw the answer away after `LIMIT 50`.
+
+So the count comes back from a second query over the same `WHERE`, grouped the way the list is grouped. And the grouping is the part worth slowing down for: the buckets already exist twice, once as `severityOf` sorting rows in the browser and once as the bands `SEVERITY_BANDS` describes. A `GROUP BY` that hard-codes its own thresholds makes a third copy, and three copies of a boundary is a bug with a date on it. Generating the `CASE` from the same constant is what keeps the number in the heading describing the rows under it.
+
+There is a pleasing symmetry with Part 5.6 hiding in that `CASE`. A sort could not be bound, because `DESC` is part of the statement's shape. A severity band is a threshold and a label — both values — so every piece of this one binds, and the generated SQL does not vary with its input at all. Same constant, same generator, opposite answer to "can this be a `?`", and the reason is structural rather than a matter of taste.
+
+| file                                   | job                                                    |
+| -------------------------------------- | ------------------------------------------------------ |
+| `server/router.ts`                     | the `GROUP BY`, and the bands as a generated `CASE`    |
+| `subcomponents/blunder-list-group.tsx` | a total per bucket, worked out where buckets are built |
+| `app/[category]/blunder-list.tsx`      | the kind headings, and handing counts down             |
+
+---
+
+## 1. `apps/web/server/router.ts`
+
+### The change
+
+A shape for one bucket, above `decision`:
+
+```ts
+/**
+ * How many decisions fall in one bucket of the list, across the whole filtered
+ * category rather than the page in front of you. `direction` is null on checker
+ * buckets, which have no cube side to be on.
+ */
+const bucketCount = z.object({
+  kind: z.enum(KINDS),
+  direction: z.enum(DIRECTIONS).nullable(),
+  severity: z.enum(SEVERITIES),
+  count: z.number(),
+});
+```
+
+Exported beside `Blunder`, because the components need it:
+
+```ts
+export type BucketCount = z.infer<typeof bucketCount>;
+```
+
+Then the two generators, below `TIE_BREAKER`:
+
+```ts
+/**
+ * The severity bands as a `CASE`, generated from `SEVERITY_BANDS` so the buckets
+ * the database counts are the same ones `severityOf` puts rows into. Note the
+ * contrast with `SORT_ORDER_BY` above: a threshold and a label are *values*, so
+ * every one of them binds as `?` and none of this string depends on its input.
+ * The bands are already ordered high to low, so the first `WHEN` that matches is
+ * the right one and the lowest band becomes the `ELSE`.
+ */
+function severityCase(): { sql: string; params: (string | number)[] } {
+  const params: (string | number)[] = [];
+  const whens = SEVERITY_BANDS.slice(0, -1).map((band) => {
+    params.push(band.min, band.id);
+    return "WHEN d.error_magnitude >= ? THEN ?";
+  });
+  params.push(SEVERITY_BANDS[SEVERITY_BANDS.length - 1]!.id);
+  return { sql: `CASE ${whens.join(" ")} ELSE ? END`, params };
+}
+
+/**
+ * Which side of the cube a decision was on, as a `CASE`. A checker decision has
+ * no cube action and so no direction at all, which is null rather than a third
+ * direction — the list has no bucket for it.
+ */
+function directionCase(): { sql: string; params: string[] } {
+  const receiving = CUBE_ACTION.filter((action) => cubeDirection(action) === "receive");
+  return {
+    sql: `CASE WHEN d.kind = 'cube' AND b.cube_action IN (${receiving.map(() => "?").join(", ")})
+               THEN 'receive'
+               WHEN d.kind = 'cube' THEN 'offer'
+               ELSE NULL END`,
+    params: [...receiving],
+  };
+}
+```
+
+The procedure promises one more thing:
+
+```ts
+      .output(
+        z.object({
+          blunders: z.array(blunder),
+          total: z.number(),
+          counts: z.array(bucketCount),
+        }),
+      )
+```
+
+And the query itself, just before the `return`:
+
+```ts
+// One row per bucket that has anything in it, over the whole filtered
+// category, so a heading can say "39 of 245" instead of counting what it
+// happens to be holding. The SELECT runs before the WHERE, so its bound
+// values go in front of the filter's.
+//
+// Unlike the ORDER BY above, every part of these two CASE expressions is
+// a value, so all of it binds and none of the SQL depends on the input.
+//
+// "GROUP BY d.kind", not "kind": both joined tables have a column of that
+// name and so does the SELECT, which makes the bare alias ambiguous.
+const direction = directionCase();
+const severity = severityCase();
+
+const counts = ctx.db
+  .prepare(
+    `${WITH_DECISIONS}
+             SELECT d.kind AS kind,
+                    ${direction.sql} AS direction,
+                    ${severity.sql} AS severity,
+                    COUNT(*) AS count
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             WHERE ${filter}
+             GROUP BY d.kind, direction, severity`,
+  )
+  .all(...direction.params, ...severity.params, ...params);
+```
+
+The return statement grows a third member:
+
+```ts
+return {
+  blunders: rows as unknown as Blunder[],
+  total,
+  counts: counts as unknown as BucketCount[],
+};
+```
+
+### The pieces
+
+**`${filter}` is the same string the list query used, and that is the entire correctness argument.** The counts are built from the identical conditions with the identical bound values, so they describe exactly the set the list is a page of. Tick "Severe" and `Checker plays (40 of 44)` is 44 severe checker decisions, not 245. Any other arrangement — counting the unfiltered category, say — produces two numbers in the same pair of brackets that are answers to different questions, which is worse than the page-local count it replaced.
+
+**`GROUP BY d.kind` rather than `kind` is not a style preference.** `blunders` has a `kind` column, `decisions` has a `kind` column, and the `SELECT` introduces an output alias called `kind`. SQLite refuses the statement outright with `ambiguous column name: kind`. Worth knowing where that error surfaces, which is section 3's gotcha: the layout prefetch swallows it, the page ships `Loading...`, and you find out from the browser.
+
+**`direction` and `severity` in the `GROUP BY` are output aliases, and those are fine.** SQLite resolves a `GROUP BY` name against the output columns as well as the inputs, which is what lets a generated `CASE` be grouped by without repeating the whole expression. `kind` is the one that breaks, and only because a real column shares the name.
+
+**The generators return their params with their SQL, deliberately as one value.** A function that returned only a string would leave the caller guessing how many `?` it contained and in what order — which is the kind of guess that is right until someone adds a band. Handing back `{ sql, params }` makes the pair inseparable, and the spread at the call site reads in the order the statement does: `...direction.params, ...severity.params, ...params`. Bound values are positional, so "the order the statement does" is not a nicety, it is the whole contract, and a `SELECT` that binds is a reminder that position is about text order rather than about clause importance.
+
+**`slice(0, -1)` and the `ELSE` are the same claim `severityOf` makes.** The lowest band's `min` is 0 and a magnitude is never negative, so the final `WHEN` could never fail to match and is written as the `ELSE` instead. That mirrors `severityOf`'s `?? "mild"` exactly: both say "the bottom band is where everything else lands", and both would need changing together if a band with a floor above zero ever arrived.
+
+**`direction` is null for checker rows, not `""` or `"none"`.** A checker decision is not on a side of the cube — the question does not apply, and null is the value that means that. It also makes the lookup in the next section a plain equality against a `CubeDirection`, with no sentinel to remember.
+
+---
+
+## 2. `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`
+
+### The change
+
+The type import picks up the new shape:
+
+```tsx
+import type { Blunder, BucketCount } from "@/server/router";
+```
+
+A group knows its own total:
+
+```tsx
+interface BlunderListGroup {
+  id: string;
+  label: string;
+  blunders: Blunder[];
+  /** How many decisions are in this bucket across the whole filtered category. */
+  total: number;
+  groups: BlunderListGroup[];
+}
+```
+
+The heading says both numbers:
+
+```tsx
+<Heading>
+  {group.label}{" "}
+  <data value={group.total}>
+    ({group.blunders.length} of {group.total})
+  </data>
+</Heading>
+```
+
+And the two builders take the counts that belong to them:
+
+```tsx
+/** Adds up the buckets handed in — the database has already counted them. */
+const sum = (counts: BucketCount[]) => counts.reduce((running, { count }) => running + count, 0);
+
+/** Severity bands, the level every kind ends on. */
+function bandsOf(blunders: Blunder[], counts: BucketCount[]): BlunderListGroup[] {
+  const bySeverity = Object.groupBy(blunders, ({ error_magnitude }) => severityOf(error_magnitude));
+
+  return SEVERITY_BANDS.flatMap(({ id, label }) => {
+    const banded = bySeverity[id];
+    const total = sum(counts.filter(({ severity }) => severity === id));
+    return banded ? [{ id, label, blunders: banded, total, groups: [] }] : [];
+  });
+}
+```
+
+```tsx
+export function groupsOf(
+  kind: BlunderKind,
+  blunders: Blunder[],
+  counts: BucketCount[],
+): BlunderListGroup[] {
+  const mine = counts.filter((bucket) => bucket.kind === kind);
+  if (kind !== "cube") return bandsOf(blunders, mine);
+
+  const byDirection = Object.groupBy(blunders, ({ cube_action }) => cubeDirection(cube_action));
+
+  return CUBE_DIRECTIONS.flatMap(({ id, label }) => {
+    const facing = byDirection[id];
+    const facingCounts = mine.filter(({ direction }) => direction === id);
+    return facing
+      ? [
+          {
+            id,
+            label,
+            blunders: facing,
+            total: sum(facingCounts),
+            groups: bandsOf(facing, facingCounts),
+          },
+        ]
+      : [];
+  });
+}
+```
+
+### The pieces
+
+**The total is worked out where the bucket is built, not where it is rendered.** `BlunderListGroup` the component gains one field to print and no logic at all — it does not know what a `BucketCount` is, does not filter anything, and cannot get the lookup wrong. That matters because it is recursive: a component that looked its own total up would need to know its full path from the root to do it, since `mild` names three different buckets depending on whether you arrived via checker, via offering, or via being offered. Building the tree top-down means the path is just the recursion, and each level hands its children the slice that is already theirs.
+
+**`counts.filter(...)` narrowing at each level is that path, expressed as data.** `groupsOf` filters to one kind, `groupsOf` again to one direction, `bandsOf` to one severity. By the time a band asks for its number, the array it is summing contains exactly the buckets that belong to it, and the ambiguity never arises because it was removed one level at a time on the way down.
+
+**Summing rather than looking up survives a bucket the database has never heard of.** `sum` of an empty array is 0, so a band with no rows anywhere gets 0 rather than `undefined` and the heading never reads `(3 of undefined)`. It also means the direction level does not need its own `GROUP BY` — the direction's total is the sum of its bands, which is a consequence of the buckets being disjoint rather than a coincidence worth a second query.
+
+**`flatMap` still drops buckets with nothing on this page, and now that is visible.** A band only becomes a group if `bySeverity[id]` has rows in the loaded fifty. On page 1 of `middle_game` sorted worst-first, the checker section shows `Catastrophic (5 of 5)` and `Severe (34 of 44)` and then stops — the moderate and mild bands have 131 and 65 decisions between them and no heading at all, because none of them are on this page. That is the pre-existing behaviour, unchanged; it is just newly conspicuous next to a total that knows better. See the gotcha below.
+
+---
+
+## 3. `apps/web/app/[category]/blunder-list.tsx`
+
+### The change
+
+Inside the `KINDS.map`, above the `return`:
+
+```tsx
+const blunders = byKind[kind];
+if (!blunders) return null;
+
+const counts = data.counts.filter((bucket) => bucket.kind === kind);
+const total = counts.reduce((running, { count }) => running + count, 0);
+```
+
+The heading:
+
+```tsx
+<h2 style={{ margin: 0 }}>
+  {KIND_LABELS[kind]}{" "}
+  <data value={total}>
+    ({blunders.length} of {total})
+  </data>
+</h2>
+```
+
+And the call that was waiting for a third argument:
+
+```tsx
+            {groupsOf(kind, blunders, counts).map((group) => {
+```
+
+### The pieces
+
+**This file does the first narrowing and `groupsOf` does the rest.** It filters the counts to one kind for its own heading, and the array it passes down is already the right slice for the groups beneath it — so `groupsOf`'s own `filter` by kind is belt and braces rather than the load-bearing line. Keeping it there means `groupsOf` is still correct when called with everything, which is worth more than the microseconds.
+
+**`<data value={total}>` carries the total, not the page count.** The visible text is `(39 of 245)`; the machine-readable value is 245, because the total is the fact about the category and the 39 is a fact about a scroll position. Nothing consumes these attributes yet. They cost nothing and they are the difference between markup that means something and markup that looks right.
+
+**Everything else in the list is unchanged.** The empty state still keys off `data.total`, the pager still takes `data.total`, and the row links still take the suffix from Part 5.6. The counts are additive — they answer a question nothing else in the file was asking.
+
+---
+
+## Gotchas
+
+### A broken query on the server looks like a slow one
+
+The `GROUP BY kind` ambiguity above is worth walking through, because of where the error is _not_. The layout prefetches with `.catch(noop)`, which exists so a database hiccup degrades to client-side fetching instead of a 500 — and it swallows a genuinely broken statement just as happily. The page ships with `Loading...` in it and no error anywhere in the HTML, the server logs nothing, and the failure only becomes visible when the browser re-runs the same query and has nowhere to hide it. If a change to these queries makes the list go quiet, look at the client, not the server log.
+
+### The heading counts what matches, not what exists
+
+Every number here moves with the filters. `Checker plays (245)` becomes `(44)` the moment you tick "Severe", because both halves of `(40 of 44)` describe the filtered set. This is the right answer, and it is worth saying out loud because the other one is defensible too: greying out the counts you have filtered away is a real design, and it needs a second query with a different `WHERE` rather than this one. Two numbers next to each other have to answer the same question, and the fastest way to get that wrong is to compute them from two different sets.
+
+### A bucket with a total and no rows on this page has no heading
+
+`Checker plays (39 of 245)` on page 1, with only `Catastrophic` and `Severe` beneath it, is telling you about 206 decisions it then declines to mention. The buckets are built from the rows that arrived, so a band with nothing on this page is absent rather than empty — which was invisible when the heading only counted the page and reads as a gap now that it doesn't.
+
+Rendering the empty ones is a few characters: build the groups from `SEVERITY_BANDS` rather than from what `Object.groupBy` returned, and let `blunders` be `[]`. It is left as it is because `Moderate (0 of 131)` on five consecutive pages is its own kind of noise, and because the honest fix is the one Part 5.6 pointed at — a list sorted by magnitude and grouped by magnitude band is showing you the same axis twice, and the bands are really a filter wearing a heading. That is a Part 6 conversation.
+
+### `total` is now the sum of the counts
+
+The separate `COUNT(*)` query and `counts` are two statements answering one question: add up the eleven buckets `middle_game` returns and you get 304, which is exactly `total`. Keeping both is a deliberate redundancy — the pager wants one number and should not care how the list is bucketed, and collapsing them would couple pagination to a grouping scheme that Part 6 may well change. It is worth knowing it is there, because the day the two disagree, one of them has a different `WHERE`.
+
+## Still open
+
+The list finally describes itself honestly: every heading knows how big its bucket is, and Part 4.6's loose thread is tied off. Both remaining parts in this stretch are about the URL rather than the data.
+
+**Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, then deleting `pageFrom`, `sortFrom`, `filtersFrom`, `viewParams` and every hand-built query string in Parts 5 through 5.7. Diffing that against what you typed here is the lesson.
 
 **Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
 
