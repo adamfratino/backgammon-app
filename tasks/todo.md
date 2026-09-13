@@ -9,7 +9,7 @@ BG-16 · branch `bg-16` · full detail in [tasks/plan.md](plan.md)
 ## Phase 1 — Save one note and read it back
 
 - [x] **Task 1 — The notes store behind an interface.** `server/notes.ts`: async `get` / `save` / `remove` / `ids`, lazy open, WAL, `CREATE TABLE IF NOT EXISTS`. Opened beside `blunders.db` in `server/db.ts`, wired as `ctx.notes`. _(S · `server/notes.ts`, `server/db.ts`, `server/trpc.ts`, `scripts/setup-worktree.ts` · deps: none)_
-- [ ] **Task 2 — Read and write procedures.** `notes.byBlunder`, `notes.save`, `notes.ids`, each with `.output()`; a blank body calls `remove`, so that rule lives once rather than per backend; `NOT_FOUND` for an unknown blunder; `Map`-backed swap proves the seam. _(S · `server/router.ts` · deps: 1)_
+- [x] **Task 2 — Read and write procedures.** `notes.byBlunder`, `notes.save`, `notes.ids`, each with `.output()`; a blank body calls `remove`, so that rule lives once rather than per backend; `NOT_FOUND` for an unknown blunder; `Map`-backed swap proves the seam. _(S · `server/router.ts` · deps: 1)_
 - [ ] **Task 3 — A textarea that saves.** Prefetched and hydrated `NoteEditor` on the blunder page; `useMutation`, pending and error states, `setQueryData`. _(S · `[blunderId]/page.tsx`, `note-editor.tsx` · deps: 2)_
 
 ### Checkpoint: Phase 1

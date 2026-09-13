@@ -1,5 +1,11 @@
 export const PER_PAGE = 50;
 
+/**
+ * A note is a scratchpad, not a document. The server rejects anything longer,
+ * and the textarea stops typing there.
+ */
+export const NOTE_MAX_LENGTH = 2000;
+
 export const KINDS = ["checker", "cube"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
