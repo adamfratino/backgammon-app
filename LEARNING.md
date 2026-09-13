@@ -41,7 +41,7 @@ Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB
   - [Two ways to silently get nothing](#two-ways-to-silently-get-nothing)
 - [Part 2.7 — Routing to a Blunder](#part-27--routing-to-a-blunder)
   - [The one idea](#the-one-idea-4)
-  - [The shape](#the-shape)
+  - [The shape](#the-shape-1)
   - [1. `apps/web/server/router.ts`](#1-appswebserverrouterts)
   - [2. `apps/web/app/[category]/analysis.tsx`](#2-appswebappcategoryanalysistsx)
   - [3. `apps/web/app/[category]/[blunderId]/page.tsx` — new file](#3-appswebappcategoryblunderidpagetsx--new-file)
@@ -85,7 +85,7 @@ Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB
   - [Still open](#still-open-1)
 - [Part 5 — Filters](#part-5--filters)
   - [The one idea](#the-one-idea-11)
-  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-3)
   - [2. `apps/web/app/[category]/layout.tsx`](#2-appswebappcategorylayouttsx)
   - [3. `apps/web/app/[category]/blunder-list.tsx`](#3-appswebappcategoryblunder-listtsx-2)
   - [Gotchas](#gotchas-5)
@@ -100,6 +100,33 @@ Running it in a fresh git worktree needs `apps/web/.env.local` with `BLUNDERS_DB
   - [6. `apps/web/app/[category]/blunder-list.tsx`](#6-appswebappcategoryblunder-listtsx)
   - [Gotchas](#gotchas-6)
   - [Still open](#still-open-3)
+- [Part 5.6 — Sort](#part-56--sort)
+  - [The one idea](#the-one-idea-13)
+  - [1. `apps/web/lib/constants.ts`](#1-appsweblibconstantsts-5)
+  - [2. `apps/web/app/[category]/layout.tsx`](#2-appswebappcategorylayouttsx-1)
+  - [3. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`](#3-appswebappcategorysubcomponentsblunder-list-paginationtsx)
+  - [4. `apps/web/app/[category]/blunder-list.tsx`](#4-appswebappcategoryblunder-listtsx)
+  - [5. `apps/web/app/[category]/blunder-filters.tsx`](#5-appswebappcategoryblunder-filterstsx)
+  - [Gotchas](#gotchas-7)
+  - [Still open](#still-open-4)
+- [Part 5.7 — Counts From the Database](#part-57--counts-from-the-database)
+  - [The one idea](#the-one-idea-14)
+  - [1. `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`](#1-appswebappcategorysubcomponentsblunder-list-grouptsx)
+  - [2. `apps/web/app/[category]/blunder-list.tsx`](#2-appswebappcategoryblunder-listtsx-2)
+  - [Gotchas](#gotchas-8)
+  - [Still open](#still-open-5)
+- [Part 5.8 — The URL on a Library](#part-58--the-url-on-a-library)
+  - [The one idea](#the-one-idea-15)
+  - [1. `apps/web/app/layout.tsx`](#1-appswebapplayouttsx)
+  - [2. `apps/web/lib/search-params.ts` — new file](#2-appsweblibsearch-paramsts--new-file)
+  - [3. `apps/web/app/[category]/blunder-filters.tsx`](#3-appswebappcategoryblunder-filterstsx)
+  - [4. `apps/web/app/[category]/layout.tsx`](#4-appswebappcategorylayouttsx)
+  - [5. `blunder-list-links.tsx` and `blunder-list-group.tsx`](#5-blunder-list-linkstsx-and-blunder-list-grouptsx)
+  - [6. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`](#6-appswebappcategorysubcomponentsblunder-list-paginationtsx)
+  - [7. `apps/web/app/[category]/blunder-list.tsx`](#7-appswebappcategoryblunder-listtsx)
+  - [8. `apps/web/lib/constants.ts`](#8-appsweblibconstantsts)
+  - [Gotchas](#gotchas-9)
+  - [Still open](#still-open-6)
 
 ---
 
@@ -2930,6 +2957,8 @@ Worth saying plainly because the instinct runs the other way: a checkbox whose `
 
 ### Changing a filter closes the open blunder
 
+_Reversed in Part 5.8: an open blunder now stays open when the filters change._
+
 A deliberate choice, made in one line, and the one most likely to feel wrong later. Ticking "cube decisions" while reading a checker blunder navigates away from it, because the row you are reading is no longer in the list beside you. Keeping it open is defensible too — it's `router.push(\`?${query}\`)`instead — but then the analysis panel and the list disagree about what you're looking at, and`aria-current` points at a row that isn't rendered.
 
 ## Still open
@@ -3325,6 +3354,8 @@ The default is never written, so the sort is absent from the URL until you pick 
 
 ### Changing the sort closes the open blunder
 
+_Reversed in Part 5.8: an open blunder now stays open when the sort changes._
+
 `show` pushes `/${category}`, so re-sorting while reading a blunder navigates away from it, exactly as ticking a filter does. Here the justification is thinner than it was for filters: a filter can remove the row you are reading from the list, but a sort only moves it. Keeping it open is `router.push(\`?${query}\`)`— but then`show`needs to stop being shared with`toggle`, because the two controls would no longer agree about where they are going.
 
 ## Still open
@@ -3524,5 +3555,633 @@ The list finally describes itself honestly: every heading knows how big its buck
 **Part 5.8 — the URL on a library.** `nuqs`, defining each param once for the browser, the layout's prefetch and every link, then deleting `pageFrom`, `sortFrom`, `filtersFrom`, `viewParams` and every hand-built query string in Parts 5 through 5.7. Diffing that against what you typed here is the lesson.
 
 **Part 5.9 — filters follow you.** The sidebar carries the filters and the sort into the next category but never the page, which needs the link — and only the link — to become a client component inside the server-rendered nav.
+
+Then **Part 6**, mutations.
+
+# Part 5.8 — The URL on a Library
+
+## The one idea
+
+Since Part 4 the URL has been the list's state, and every param has been paid for four times: a function to read it, a function to write it, the query input spelled out by hand in the layout and again in the browser, and a suffix threaded down to every link. Part 5.5 called the input "two places, forever". Adding the sort in Part 5.6 meant touching all of them again, and the only thing that stopped a link from quietly dropping it was a required argument you remembered to add.
+
+`nuqs` replaces all four with one description. Each param is declared once — its type, its default, how it is written — and everything else is derived from that declaration: `createLoader` reads it on the server, `useQueryStates` reads and writes it in the browser, and `createSerializer` turns it into an `href`. Nothing about how the URL looks changes. What changes is that the knowledge of what the URL means lives in one file instead of eight.
+
+That makes this part mostly deletions, and the diff against what you typed in Parts 5 through 5.7 is the lesson. Each hand-written piece has a one-line replacement:
+
+| you wrote                                                   | now                                                                        |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `pageFrom(search.get("page"))`                              | `page: parseAsPage.withDefault(1)`                                         |
+| `sortFrom(search.get("sort"))`                              | `sort: parseAsStringLiteral(SORT_IDS).withDefault(DEFAULT_SORT)`           |
+| `filtersFrom(search)`                                       | `kinds: parseAsNativeArrayOf(parseAsStringLiteral(KINDS)).withDefault([])` |
+| `viewParams(filters, sort)`, then `params.set("page", …)`   | `serializeView({ ...view, page: n })`                                      |
+| `useSearchParams()` and three readers                       | `const [view] = useView()`                                                 |
+| `router.push(…)` with a query you built                     | `setView({ severities, page: null })`                                      |
+| `{ category, page, ...filters, sort }`, written three times | `{ category, ...view }`                                                    |
+
+One thing changes on screen, on purpose. **An open blunder now stays open when you change the filters or the sort.** Before this part, ticking "Severe" while reading a blunder closed it. Now the blunder stays where it is and the list beside it moves to page 1 of the new filters. If the blunder is still in the list it stays highlighted; if it isn't, nothing is. Back undoes one change at a time. This reverses the "closes the open blunder" gotchas from Parts 5.5 and 5.6, and it falls out of the tool: the `nuqs` setter only rewrites the query string, so the page you are on is never part of the change.
+
+| file                                                    | job                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------- |
+| `app/layout.tsx`                                        | installs `nuqs` and mounts its adapter                      |
+| `lib/search-params.ts`                                  | every param, defined once                                   |
+| `app/[category]/blunder-filters.tsx`                    | the checkboxes and radios write through the setter          |
+| `app/[category]/layout.tsx`                             | the prefetch reads through the loader                       |
+| `subcomponents/blunder-list-links.tsx` and `-group.tsx` | row links build their own `href`, and the `query` prop goes |
+| `subcomponents/blunder-list-pagination.tsx`             | the pager reads the URL instead of taking it as props       |
+| `app/[category]/blunder-list.tsx`                       | reads the view, passes less down                            |
+| `lib/constants.ts`                                      | the URL functions are deleted                               |
+
+---
+
+## 1. `apps/web/app/layout.tsx`
+
+### The install
+
+```sh
+pnpm --filter web add nuqs
+```
+
+### The whole file
+
+```tsx
+import { NuqsAdapter } from "nuqs/adapters/next/app";
+
+import { CategoryNav } from "./category-nav";
+import { TRPCReactProvider } from "@/trpc/client";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body style={{ display: "flex", gap: "3rem" }}>
+        <NuqsAdapter>
+          <TRPCReactProvider>
+            {/* Rendered on the server once. Next reuses it across navigations
+                between categories, so it is not re-fetched on every click. */}
+            <CategoryNav />
+            {children}
+          </TRPCReactProvider>
+        </NuqsAdapter>
+      </body>
+    </html>
+  );
+}
+```
+
+### The pieces
+
+**The adapter is how the hooks find the router.** `nuqs` works with several frameworks, and none of its hooks know which one they are running in. `NuqsAdapter` from `nuqs/adapters/next/app` is the App Router's implementation: it reads the URL with `useSearchParams` and writes it with the history API. Every `useView` below reaches up the tree for it, so it has to sit above anything that reads the URL.
+
+**It wraps the sidebar too, on purpose.** Nothing in the nav reads the URL yet. Part 5.9 makes the category links carry the filters, and those links live here in the root layout rather than under `[category]` — mounting the adapter at the root now means that part adds a component and nothing else.
+
+---
+
+## 2. `apps/web/lib/search-params.ts` — new file
+
+### The whole file
+
+```ts
+import {
+  createLoader,
+  createParser,
+  createSerializer,
+  parseAsNativeArrayOf,
+  parseAsStringLiteral,
+  type UrlKeys,
+} from "nuqs/server";
+import { useQueryStates } from "nuqs";
+
+import { DEFAULT_SORT, DIRECTIONS, KINDS, SEVERITIES, SORT_IDS } from "./constants";
+
+/** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
+const parseAsPage = createParser({
+  parse: (value) => {
+    const page = Number(value);
+    return Number.isInteger(page) && page >= 1 ? page : null;
+  },
+  serialize: String,
+});
+
+/**
+ * Every param the list reads, defined once. The keys are the procedure's input
+ * names, so the parsed view spreads straight into `queryOptions`, and their order
+ * here is the order they are written into the URL.
+ */
+export const viewParsers = {
+  kinds: parseAsNativeArrayOf(parseAsStringLiteral(KINDS)).withDefault([]),
+  severities: parseAsNativeArrayOf(parseAsStringLiteral(SEVERITIES)).withDefault([]),
+  directions: parseAsNativeArrayOf(parseAsStringLiteral(DIRECTIONS)).withDefault([]),
+  sort: parseAsStringLiteral(SORT_IDS).withDefault(DEFAULT_SORT),
+  page: parseAsPage.withDefault(1),
+};
+
+/** The URL keeps its singular names; the code keeps plural ones. */
+export const viewUrlKeys: UrlKeys<typeof viewParsers> = {
+  kinds: "kind",
+  severities: "severity",
+  directions: "direction",
+};
+
+export const loadView = createLoader(viewParsers, { urlKeys: viewUrlKeys });
+export const serializeView = createSerializer(viewParsers, { urlKeys: viewUrlKeys });
+
+/**
+ * The view in the browser, and a setter that writes it back to the URL. Each
+ * change is a new history entry, so the back button undoes it.
+ */
+export const useView = () => useQueryStates(viewParsers, { urlKeys: viewUrlKeys, history: "push" });
+```
+
+### The pieces
+
+**The keys are the procedure's input names, so the view is the query input.** `kinds`, `severities`, `directions`, `sort` and `page` are exactly what `byCategory` takes. Whatever reads this map gets back an object that spreads straight into `queryOptions({ category, ...view })`. That is the end of "two places, forever": the layout and the browser no longer spell the input out, they hand over the same parsed object, and a param added here arrives in both keys without either file changing.
+
+**`urlKeys` lets the URL keep its old names.** The code wants plurals because the values are arrays. The URL has said `?kind=` since Part 5, and so does every link anyone has shared. `urlKeys` maps one to the other, so nothing outside this file ever sees the singular spelling.
+
+**`withDefault` is the `?? DEFAULT_SORT` you used to write.** A parser on its own returns `null` for a missing or unusable value, and `.withDefault(...)` returns the default instead. It also decides what gets written: a value equal to its default is left out of the URL, which is how `?sort=worst` and `?page=1` stay invisible without anyone checking for them.
+
+**`parseAsNativeArrayOf`, not `parseAsArrayOf`.** Most `nuqs` examples use `parseAsArrayOf`, which reads one comma-separated value: `?kind=cube,checker`. This app has always written arrays as repeated keys, and given `?kind=cube&kind=checker` the comma parser returns `["cube"]` — the second filter silently gone from every URL already out there. `parseAsNativeArrayOf` reads repeated keys. Inside it, `parseAsStringLiteral(KINDS)` is the whitelist: anything not in `KINDS` is dropped, the job `filtersFrom` used to do.
+
+**The page parser is written by hand, because the stock one is wrong for this app.** `parseAsInteger` exists, and it turns `?page=0` into `0`, `?page=-3` into `-3` and `?page=2.5` into `2`. The first two reach the router's `.min(1)`, and the list renders "Could not load blunders". `createParser` takes a `parse` and a `serialize`, and `parse` here is `pageFrom`'s body with one change: it returns `null` instead of `1`, and `withDefault(1)` supplies the 1. The library knows what an integer is. It can't know what a page is.
+
+**The order of the keys is the order of the URL.** `serializeView` writes params in the order they appear in this object. `page` is last because `viewParams` wrote the filters and the sort and then the page was appended — with `page` last, every URL this app generates is character for character the one it generated before.
+
+**Three consumers, one map.** `loadView` is a plain function for the server: give it a query string, get the view. `serializeView` goes the other way: give it a view — and optionally a path to put it on — and get an `href`. `useView` is `useState` for the URL: the view, and a setter that writes it. It bundles `urlKeys` and `history: "push"` so no call site can forget either; `"push"` makes each change its own step for the back button, where the default would overwrite the current one.
+
+**Two import paths in one file.** `nuqs/server` holds everything that is safe to run on the server: parsers, the loader, the serializer. The hook comes from `nuqs`, whose entry point is marked `"use client"`. The server layout imports this file too, but only ever calls `loadView`, so the hook is never run there, and the build is fine with it.
+
+---
+
+## 3. `apps/web/app/[category]/blunder-filters.tsx`
+
+### The whole file
+
+```tsx
+"use client";
+
+import {
+  type BlunderSort,
+  CUBE_DIRECTIONS,
+  KINDS,
+  SORTS,
+  KIND_LABELS,
+  SEVERITY_BANDS,
+} from "@/lib/constants";
+import { useView } from "@/lib/search-params";
+
+export function BlunderFilterPanel() {
+  const [view, setView] = useView();
+
+  return (
+    <div style={{ display: "flex", gap: "2rem" }}>
+      <FilterGroup
+        legend="Kind"
+        param="kind"
+        options={KINDS.map((id) => ({ id, label: KIND_LABELS[id] }))}
+        chosen={view.kinds}
+        onChange={(kinds) => setView({ kinds, page: null })}
+      />
+      <FilterGroup
+        legend="Severity"
+        param="severity"
+        options={SEVERITY_BANDS}
+        chosen={view.severities}
+        onChange={(severities) => setView({ severities, page: null })}
+      />
+      <FilterGroup
+        legend="Cube"
+        param="direction"
+        options={CUBE_DIRECTIONS}
+        chosen={view.directions}
+        onChange={(directions) => setView({ directions, page: null })}
+      />
+      <SortGroup sort={view.sort} onChoose={(sort) => setView({ sort, page: null })} />
+    </div>
+  );
+}
+
+interface FilterGroupProps<T extends string> {
+  legend: string;
+  param: string;
+  options: readonly { id: T; label: string }[];
+  chosen: readonly T[];
+  onChange: (chosen: T[]) => void;
+}
+
+/**
+ * One group of checkboxes. The next selection is built by walking the options
+ * rather than editing the current one, so it always comes out in the constants'
+ * order with no duplicates — whatever order the URL it was read from was in.
+ */
+function FilterGroup<T extends string>({
+  legend,
+  param,
+  options,
+  chosen,
+  onChange,
+}: FilterGroupProps<T>) {
+  function toggle(id: T, checked: boolean) {
+    onChange(
+      options
+        .map((option) => option.id)
+        .filter((each) => (each === id ? checked : chosen.includes(each))),
+    );
+  }
+
+  return (
+    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+      <legend>{legend}</legend>
+      {options.map(({ id, label }) => (
+        <label key={id} style={{ display: "block" }}>
+          <input
+            type="checkbox"
+            name={param}
+            value={id}
+            checked={chosen.includes(id)}
+            onChange={(event) => toggle(id, event.currentTarget.checked)}
+          />{" "}
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+interface SortGroupProps {
+  sort: BlunderSort;
+  onChoose: (sort: BlunderSort) => void;
+}
+
+/**
+ * Radios, not checkboxes, because a sort is one choice rather than a set — and
+ * because one of them is always on, there is no "nothing selected" state to
+ * represent. That is the whole difference between the sort's parser and the
+ * filters', made visible in the markup.
+ */
+function SortGroup({ sort, onChoose }: SortGroupProps) {
+  return (
+    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
+      <legend>Sort</legend>
+      {SORTS.map(({ id, label }) => (
+        <label key={id} style={{ display: "block" }}>
+          <input
+            type="radio"
+            name="sort"
+            value={id}
+            checked={sort === id}
+            onChange={() => onChoose(id)}
+          />{" "}
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+```
+
+### The pieces
+
+**No router, no category, no `URLSearchParams`.** The panel used to copy the search params, append or delete one value, launder the result through `filtersFrom` and `viewParams`, and push a full path it built itself. Now each control hands the setter only what changed: `setView({ severities, page: null })`. Everything it doesn't mention — the other filters, the sort — is kept. That is the opposite of Part 5.5's rule that a link which forgets a param resets it.
+
+**`page: null` is the page reset.** In Part 5.5 the reset was a side effect of `viewParams` being unable to write a page. Here it is said out loud: `null` removes the param, and a missing page is page 1.
+
+**The next selection is built from the options, not from the current one.** `toggle` walks `options` in their own order and keeps each id that should be ticked, so what it writes is in the constants' order with no duplicates, whatever order the URL was in. `filtersFrom` used to guarantee that on every read. Now the only code that writes filters guarantees it on write, and a hand-typed URL is read as it is.
+
+**The blunder stays open because nothing here knows the path.** The old `show` built `/${category}?…` and pushed it, and navigating to `/${category}` is what closed the open blunder. The setter only replaces the query string on whatever page you are on. See the first gotcha.
+
+---
+
+## 4. `apps/web/app/[category]/layout.tsx`
+
+### The whole file
+
+```tsx
+import { headers } from "next/headers";
+import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
+
+import { loadView } from "@/lib/search-params";
+import { getQueryClient, trpc } from "@/trpc/server";
+
+import { BlunderList } from "./blunder-list";
+import { BlunderFilterPanel } from "./blunder-filters";
+
+interface CategoryLayoutProps {
+  params: Promise<{ category: string }>;
+  children: React.ReactNode;
+}
+
+export default async function CategoryLayout({ params, children }: CategoryLayoutProps) {
+  const { category } = await params;
+
+  const queryClient = getQueryClient();
+
+  const view = loadView((await headers()).get("x-search") ?? "");
+
+  await queryClient.query(trpc.blunders.byCategory.queryOptions({ category, ...view })).catch(noop);
+
+  return (
+    <main>
+      <h1>{category}</h1>
+      <BlunderFilterPanel />
+      <div style={{ display: "flex", gap: "3rem" }}>
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <BlunderList category={category} />
+        </HydrationBoundary>
+        {children}
+      </div>
+    </main>
+  );
+}
+```
+
+### The pieces
+
+**The header string goes straight in.** `loadView` accepts a query string with or without its `?`, so there is no `URLSearchParams` here any more and no three reader calls. One line produces the whole view, and the next spreads it into the prefetch.
+
+**`proxy.ts` stays exactly as it is.** Layouts still aren't given `searchParams`, and `nuqs` doesn't change that. Its other server helper, `createSearchParamsCache`, is built around a page's `searchParams` prop and has nothing to parse in a layout. `createLoader` is the one that takes a string, which is what the `x-search` header is.
+
+**`BlunderFilterPanel` has lost its prop.** It only needed `category` to build the path it pushed.
+
+---
+
+## 5. `blunder-list-links.tsx` and `blunder-list-group.tsx`
+
+### `apps/web/app/[category]/subcomponents/blunder-list-links.tsx`
+
+```tsx
+import Link from "next/link";
+
+import { serializeView, useView } from "@/lib/search-params";
+import type { Blunder } from "@/server/router";
+
+interface BlunderListLinkProps {
+  blunders: Blunder[];
+  category: string;
+  selected: string | null;
+}
+
+export function BlunderListLinks({ blunders, category, selected }: BlunderListLinkProps) {
+  const [view] = useView();
+
+  return (
+    <ol>
+      {blunders.map(({ blunder_id, error_magnitude, played_notation, cube_action, kind }) => (
+        <li key={blunder_id}>
+          <Link
+            href={serializeView(`/${category}/${blunder_id}`, view)}
+            aria-current={String(blunder_id) === selected ? "page" : undefined}
+          >
+            [{error_magnitude.toFixed(3)}] {played_notation ? `${played_notation}` : null}{" "}
+            {kind !== "checker" ? cube_action : null}
+          </Link>
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+### `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`
+
+Only the `query` prop goes. The props and the signature:
+
+```tsx
+interface BlunderListGroupProps {
+  group: BlunderListGroup;
+  category: string;
+  selected: string | null;
+  depth: number;
+}
+
+/** One bucket. Renders its rows, or its child buckets if it has any. */
+export function BlunderListGroup({ group, category, selected, depth }: BlunderListGroupProps) {
+```
+
+And the two places it was passed on:
+
+```tsx
+          <BlunderListGroup
+            key={child.id}
+            group={child}
+            category={category}
+            selected={selected}
+            depth={depth + 1}
+          />
+        ))
+      ) : (
+        <BlunderListLinks blunders={group.blunders} category={category} selected={selected} />
+      )}
+```
+
+### The pieces
+
+**The link reads the URL where the link is.** Part 5.5 built the suffix once at the top of the list and passed a finished string through the group, because reading the URL meant three reader calls and writing it meant `viewParams` — not something to repeat in every leaf. `useView` is one line, so the component that renders the `href` can just ask, and the group in between stops carrying something it never used.
+
+**`serializeView` takes the path as its first argument.** `/${category}/${blunder_id}` plus the current view is a row link that keeps the filters, the sort and the page — the page only when it isn't 1, because 1 is the default and defaults aren't written. The `params.size > 0` guard against a bare `?` goes for the same reason: an empty view serializes to the path alone.
+
+**This file calls a hook and has no `"use client"`.** It doesn't need one. It is only ever rendered from inside `blunder-list.tsx`, which is already a client component, so it runs in the browser. The directive marks where the client boundary starts, not every file behind it — import this from a server component and it would fail.
+
+---
+
+## 6. `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`
+
+### The whole file
+
+```tsx
+"use client";
+
+import { useQueryClient, noop } from "@tanstack/react-query";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+import { useTRPC } from "@/trpc/client";
+import { PER_PAGE } from "@/lib/constants";
+import { serializeView, useView } from "@/lib/search-params";
+
+interface BlunderListPaginationProps {
+  total: number;
+  category: string;
+}
+
+export function BlunderListPagination({ category, total }: BlunderListPaginationProps) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const pathname = usePathname();
+  const [view] = useView();
+
+  const pageCount = Math.ceil(total / PER_PAGE);
+  if (pageCount <= 1) return null;
+
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  return (
+    <nav aria-label="Pagination">
+      <ol style={{ display: "flex", gap: "0.5rem", listStyle: "none", padding: 0 }}>
+        {pages.map((n) => (
+          <li key={n}>
+            <Link
+              href={serializeView(pathname, { ...view, page: n })}
+              aria-current={n === view.page ? "page" : undefined}
+              onMouseEnter={() =>
+                queryClient
+                  .query(trpc.blunders.byCategory.queryOptions({ category, ...view, page: n }))
+                  .catch(noop)
+              }
+            >
+              {n}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+```
+
+### The pieces
+
+**The props shrink to what isn't in the URL.** `total` comes from the query result and `category` from the route, so those still arrive as props. `page`, `filters` and `sort` were only ever the URL handed down, and the pager reads it itself now.
+
+**The `href` and the prefetch come from the same object.** `{ ...view, page: n }` goes into `serializeView` for where the click lands and into `queryOptions` for what the hover fetches. Part 5.6 warned that those two had to agree and were written separately. Now there is one object, so they can't disagree.
+
+**The link is built on `usePathname()`, not on a bare `?`.** The old `href` was `?page=2`, which the browser resolves against the current page — that is what kept an open blunder open while paging. The serializer leaves defaults out, so page 1 with no filters would serialize to an empty string, and an empty `href` links to exactly where you already are, page number and all. Giving it the pathname keeps the old behaviour: `/middle_game` for page 1 of the bare list, and the blunder's own path when one is open.
+
+---
+
+## 7. `apps/web/app/[category]/blunder-list.tsx`
+
+### The whole file
+
+```tsx
+"use client";
+
+import { useSelectedLayoutSegment } from "next/navigation";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+
+import { KINDS, KIND_LABELS } from "@/lib/constants";
+import { useView } from "@/lib/search-params";
+import { useTRPC } from "@/trpc/client";
+
+import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
+import { BlunderListGroup, groupsOf } from "./subcomponents/blunder-list-group";
+
+interface BlunderListProps {
+  category: string;
+}
+
+export function BlunderList({ category }: BlunderListProps) {
+  const trpc = useTRPC();
+
+  const selected = useSelectedLayoutSegment();
+  const [view] = useView();
+
+  const { isPending, isPlaceholderData, error, data } = useQuery({
+    ...trpc.blunders.byCategory.queryOptions({ category, ...view }),
+    placeholderData: keepPreviousData,
+  });
+
+  if (isPending) return <p>Loading...</p>;
+  if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
+  if (data.total === 0) {
+    const filtered = [view.kinds, view.severities, view.directions].some(
+      ({ length }) => length > 0,
+    );
+    return <p>{filtered ? "No blunders match these filters." : "No blunders in this category."}</p>;
+  }
+
+  const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
+
+  return (
+    <div aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
+      <BlunderListPagination total={data.total} category={category} />
+      {KINDS.map((kind) => {
+        const blunders = byKind[kind];
+        if (!blunders) return null;
+
+        const counts = data.counts.filter((bucket) => bucket.kind === kind);
+        const total = counts.reduce((running, { count }) => running + count, 0);
+
+        return (
+          <section key={kind}>
+            <h2 style={{ margin: 0 }}>
+              {KIND_LABELS[kind]}{" "}
+              <data value={total}>
+                ({blunders.length} of {total})
+              </data>
+            </h2>
+
+            {groupsOf(kind, blunders, counts).map((group) => {
+              return (
+                <BlunderListGroup
+                  key={group.id}
+                  group={group}
+                  category={category}
+                  selected={selected}
+                  depth={0}
+                />
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+### The pieces
+
+**One line of reading where there were eight.** `useSelectedLayoutSegment` still says which blunder is open. `useView` replaces `useSearchParams`, the three readers and the block that built the suffix. `[view]` ignores the setter, because this component only reads.
+
+**The query key is the layout's, character for character.** `{ category, ...view }` here and `{ category, ...view }` there, both from the same map reading the same URL. That is what the prefetch needs to hydrate instead of refetch, and it no longer depends on two files being kept in step by hand.
+
+**The empty-state check names the three filter arrays.** It used to be `Object.values(filters)`, which only worked because `filters` held nothing else. `view` also holds `sort` and `page`, so the check has to say which fields it means.
+
+---
+
+## 8. `apps/web/lib/constants.ts`
+
+### The change
+
+Delete everything after `DEFAULT_SORT`: `BlunderFilters`, `pageFrom`, `sortFrom`, `filtersFrom` and `viewParams`. The file now ends:
+
+```ts
+export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
+export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
+export const SORT_IDS = SORTS.map(({ id }) => id);
+
+export const DEFAULT_SORT: BlunderSort = "worst";
+```
+
+### The pieces
+
+**Last, so the compiler checks the work.** After section 7 nothing in the app imports these five. If something still did, this is where it would fail to compile, pointing at the file that was missed.
+
+**The whitelists stay.** `KINDS`, `SEVERITIES`, `DIRECTIONS`, `SORT_IDS` and `DEFAULT_SORT` are facts about backgammon, and the router still validates against them. The parsers in `search-params.ts` are facts about the URL, built on top of them. That split is the shape of the whole part.
+
+---
+
+## Gotchas
+
+### The open blunder stays open, and the list may not contain it
+
+Open a checker blunder on page 2 and tick "Cube": the analysis stays, the list becomes cube decisions only, and nothing in it is highlighted, because the blunder you are reading isn't one of them. Parts 5.5 and 5.6 closed the blunder to avoid exactly that. This part chooses the other way, so the blunder you are studying survives you narrowing the list around it. Back walks the changes in reverse, and the last step brings back the list you started from, highlight and all.
+
+Getting the old behaviour back would mean pushing a new path through the router rather than calling the setter, because the path is exactly the part of the URL the setter never touches.
+
+### A filter click doesn't ask the server any more
+
+Measured on the same clicks before and after this part: ticking "Moderate" used to send a request for the server to render `/middle_game?severity=moderate` and then a data fetch from the browser. Now it sends only the data fetch. `router.push` is a navigation, so Next asked the server for the route again, and the browser fetched the data anyway once it arrived. The setter updates the URL in place — `nuqs` calls this a shallow update, and it is the default — so only the list's query key changes, and TanStack Query fetches with `keepPreviousData` holding the old rows on screen, the same way paging already worked.
+
+### Links now keep the URL's order
+
+`filtersFrom` sorted every read into the constants' order, which tidied up a messy URL: load `?kind=cube&kind=checker` and every link on the page said `?kind=checker&kind=cube`. `nuqs` reads what is there, so those links now say `?kind=cube&kind=checker`. And when the setter adds a param the URL didn't have, it goes on the end: tick "Cube" on `?severity=severe&sort=mildest` and you get `?severity=severe&sort=mildest&kind=cube`, not the parser map's order.
+
+None of it changes what you see — the rows are identical — and TanStack Query doesn't care what order an object's keys are in. The one real cost is that the same filters in a different _array_ order are two cache entries, and only hand-typed URLs can produce that, because the checkboxes always write the constants' order.
+
+## Still open
+
+The URL has one definition now. Adding a param is a line in `search-params.ts`, and the loader, the hook, every link and both cache keys pick it up.
+
+**Part 5.9 — filters follow you.** The sidebar's category links carry the filters and the sort into the next category, and never the page. After this part that link is `serializeView(`/${category}`, { ...view, page: null })` inside a small client component in the server-rendered nav. One wrinkle is already known: the component reads the URL from the root layout, which static pages like the 404 also render, so without a `<Suspense>` around it `pnpm build` fails with `useSearchParams() should be wrapped in a suspense boundary at page "/404"`.
 
 Then **Part 6**, mutations.
