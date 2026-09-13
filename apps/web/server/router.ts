@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import {
@@ -7,6 +8,7 @@ import {
   DEFAULT_SORT,
   DIRECTIONS,
   KINDS,
+  NOTE_MAX_LENGTH,
   PER_PAGE,
   SEVERITIES,
   SEVERITY_BANDS,
@@ -133,6 +135,13 @@ const blunderDetail = probabilities.extend({
   board: boardPosition.nullable(),
   candidates: z.array(candidate),
   cube: cubeDecision.nullable(),
+});
+
+/** A note on one blunder. `updated_at` is ISO 8601. */
+const note = z.object({
+  blunder_id: z.number(),
+  body: z.string(),
+  updated_at: z.string(),
 });
 
 type Category = z.infer<typeof category>;
@@ -409,6 +418,52 @@ export const appRouter = router({
           candidates: candidates.map((c) => ({ ...c, move_played: c.move_played === 1 })),
           cube: cube ?? null,
         } as unknown as BlunderDetail;
+      }),
+  }),
+
+  /**
+   * Notes are the one thing the app writes. They live in their own store, which
+   * these procedures reach only through `ctx.notes` — so where notes are kept can
+   * change without anything below, or anything in the browser, noticing.
+   */
+  notes: router({
+    /** The note on one blunder, or null if it has none. */
+    byBlunder: publicProcedure
+      .input(z.object({ blunder_id: z.number().int() }))
+      .output(note.nullable())
+      .query(({ ctx, input }) => ctx.notes.get(input.blunder_id)),
+
+    /**
+     * Every blunder with a note, so the list can mark them. It is matched to the
+     * list in the browser rather than joined in SQL: no store notes might move to
+     * can join against the blunders file.
+     */
+    ids: publicProcedure.output(z.array(z.number())).query(({ ctx }) => ctx.notes.ids()),
+
+    /**
+     * Writes a note and returns what is now stored. A blank body deletes it and
+     * returns null — decided here rather than in each store, so the rule can't
+     * drift between backends.
+     */
+    save: publicProcedure
+      .input(z.object({ blunder_id: z.number().int(), body: z.string().max(NOTE_MAX_LENGTH) }))
+      .output(note.nullable())
+      .mutation(async ({ ctx, input }) => {
+        // No foreign key can guard this, since the notes file can't reference the
+        // blunders file, so the check happens here against the read-only side.
+        const exists = ctx.db
+          .prepare("SELECT 1 FROM blunders WHERE blunder_id = ?")
+          .get(input.blunder_id);
+        if (!exists) {
+          throw new TRPCError({ code: "NOT_FOUND", message: `No blunder ${input.blunder_id}` });
+        }
+
+        if (input.body.trim() === "") {
+          await ctx.notes.remove(input.blunder_id);
+          return null;
+        }
+
+        return ctx.notes.save(input.blunder_id, input.body);
       }),
   }),
 });

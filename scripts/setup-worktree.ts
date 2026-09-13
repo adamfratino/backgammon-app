@@ -7,6 +7,11 @@
  * there, and every page throws inside `node:sqlite` — which reads like broken
  * application code rather than a missing database.
  *
+ * The notes file sits beside whichever database is open (`apps/web/server/db.ts`),
+ * so this also points the checkout at the main checkout's notes. That is on
+ * purpose: a worktree is deleted when its branch merges, and its notes would go
+ * with it.
+ *
  * Runs on `postinstall`, or by hand with `pnpm setup:worktree`. It only ever
  * creates the file: an existing `.env.local` is left untouched, since it may be
  * pointing at a scratch copy on purpose.
@@ -70,7 +75,9 @@ function main(): void {
       "# Written by `pnpm setup:worktree`: this checkout has no scraped database of",
       "# its own, because packages/galaxy-scraper/data/ is gitignored and the database",
       "# lives only in the main checkout. It is opened read-only, so sharing it across",
-      "# checkouts is safe. Delete this file once you have scraped a database here.",
+      "# checkouts is safe. notes.db beside it is writable and shared on purpose, so",
+      "# notes outlive this worktree. Delete this file once you have scraped a database",
+      "# here — and notes will then be written beside that one instead.",
       `BLUNDERS_DB_PATH="${dbPath}"`,
       "",
     ].join("\n"),

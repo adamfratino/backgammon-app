@@ -1,5 +1,5 @@
 import { initTRPC } from "@trpc/server";
-import { db } from "@/server/db";
+import { db, notes } from "@/server/db";
 
 /**
  * The context is built fresh for every request and handed to every procedure.
@@ -7,7 +7,7 @@ import { db } from "@/server/db";
  * the request headers.
  */
 export function createContext() {
-  return { db };
+  return { db, notes };
 }
 
 type Context = ReturnType<typeof createContext>;
