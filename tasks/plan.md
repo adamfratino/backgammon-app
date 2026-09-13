@@ -1,294 +1,311 @@
-# Implementation Plan: Parts 5.6 (sort) and 5.7 (counts from the database)
+# Implementation Plan: Part 6 — Mutations (notes on a blunder)
 
-Linear: [BG-14](https://linear.app/uiid/issue/BG-14/wire-up-part-56-and-57-from-learningmd) · branch `bg-14` · base `main` @ `6541712`
+Linear: [BG-16](https://linear.app/uiid/issue/BG-16/begin-spec-for-phase-6-mutations) · branch `bg-16` · base `main` @ `3f0a6d4`
 
 ## Overview
 
-Parts 5.6 and 5.7 do not exist in `LEARNING.md` yet. They exist only as two paragraphs in the "Still open" section at the end of Part 5 (`LEARNING.md:2939-2941`), which is the entire spec — the Linear ticket body is empty. **Scope, decided:** Adam wires up the code himself. This session's deliverable is the two doc sections and nothing else. Both features still get built end to end here — but only to prove every snippet works against the real database and a running app — and the app changes are reverted before the PR, which carries `LEARNING.md` alone. This is the BG-12 pattern.
+Part 6 is the app's first write. The feature is the one `LEARNING.md:2196` already named: a scratchpad textarea for notes on a blunder. The mutation itself is small. Most of this plan is the storage decision, because that is the part that is expensive to undo — the ticket asks that it survive a move to IndexedDB, to Supabase, or staying on SQLite.
 
-Part 5.6 adds `?sort=worst|mildest`. The lesson is that a SQL keyword cannot be a bound parameter, so `ORDER BY` has to be picked from a whitelist rather than interpolated — the one place in this codebase where a value from the URL chooses SQL text instead of being bound as a value. Underneath it sits a subtler bug: `ORDER BY d.error_magnitude DESC` alone is not a total order, and rows tied on magnitude can repeat or vanish across a page boundary.
+Delivery follows the house pattern. Claude builds and ships the server side (store, context, procedures), and the Part opens with an "Already done for you" preface. The client side is built in a scratch worktree only to verify the doc's snippets, preserved on a local reference branch, reverted, and typed by Adam from `LEARNING.md`.
 
-Part 5.7 replaces every heading count in the list. Today `Checker plays (37)` means 37 of _this page_, because the count is `.length` on whatever loaded (`blunder-list.tsx:53`, `blunder-list-group.tsx:40`). It should read `Checker plays (37 of 245)`, with the second number coming from a `GROUP BY` over the whole filtered set. This is the thread Part 4.6 left hanging (`LEARNING.md:2194`) and it is called out there by name.
+## The storage decision
 
-## What the codebase already gives us
+### Recommendation: a separate store, not just a separate table
 
-Part 5 and Part 5.5 landed together in PR #13, so the pattern both new parts must follow is already in the files:
+The instinct in the ticket — don't pollute the scraped data — is right, and it goes one step further than a new table: notes belong in **their own database file**, not inside `blunders.db`. Three reasons, each verified this session in scratch SQLite (`node:sqlite`, SQLite 3.50.4):
 
-- `lib/constants.ts` owns every whitelist (`KINDS`, `SEVERITY_BANDS`, `CUBE_DIRECTIONS`) plus the URL reader `filtersFrom` and its inverse `filterParams`. Both new parts extend this file first.
-- `server/router.ts` builds `WHERE` conditions as text while binding every value (`router.ts:183-219`). Sort follows the same discipline, except the text is chosen by key rather than assembled.
-- `WITH_DECISIONS` (`router.ts:140-149`) is the base every counting or listing query starts from, and it splits a `kind = 'both'` blunder into one checker decision and one cube decision.
-- `layout.tsx:24-26` prefetches with a key the browser must reproduce exactly in `blunder-list.tsx:30`. Any new query input has to be added to both or the prefetch is wasted — Part 5.5 already flagged this as "the prefetch key and the query key are two places, forever".
+1. **`blunders.db` is a disposable artifact.** Everything in it is regenerated from `raw/` by `load`, and BG-7's settled direction replaces the file wholesale — drag a fresh `blunders.db` into the app. Anything written inside it dies at the next import. Notes are the only data in the system that cannot be regenerated, so they cannot share a lifecycle with data that can.
+2. **The textbook schema deletes notes on every load.** The scraper writes with `INSERT OR REPLACE` under `PRAGMA foreign_keys = ON` (`packages/galaxy-scraper/src/db.ts:126,145`). REPLACE is a delete followed by an insert, so `notes.blunder_id REFERENCES blunders(blunder_id) ON DELETE CASCADE` — the schema anyone would reach for — emptied the notes table the moment its blunder was re-loaded. Without `CASCADE` the note survived. A same-file design is only safe as long as nobody ever adds the obvious constraint.
+3. **`blunders.db` stays read-only.** `apps/web/server/db.ts` opens it `{ readOnly: true }`, which guarantees no request can damage scraped data. `ATTACH`ing a writable file does not get around that: the attach succeeded, and the first write to it threw `attempt to write a readonly database`. A writable table means giving up that guarantee or opening a second connection — and a second connection is a separate store already.
 
-## Verified against the real database
+**What it costs:** no SQL `JOIN` between notes and blunders. Anything combining them — a "has a note" marker in the list — joins in JavaScript on `blunder_id`. That is not a loss of flexibility; it is the only join that works across every backend on the table. IndexedDB cannot join at all, and a Supabase notes table cannot join a local blunders file.
 
-Everything below was run read-only against `packages/galaxy-scraper/data/blunders.db` in the main checkout, and it corrects the "Still open" sketch in two places:
+### Shape of the data
 
-- **The "59 magnitudes are tied" claim in `LEARNING.md:2939` is wrong.** 59 is the number of cube decisions in `middle_game`, not a tie count. The real figures: 60 `(category, magnitude)` groups contain a tie, covering 138 decisions; 56 distinct magnitudes tie somewhere. The largest is a 16-way tie at `0.1016` in `middle_game`, occupying sorted rows 212-227.
-- **Only 2 tie groups actually straddle a 50-row page boundary today**, both 2-row ties. The bug is real but currently rare — worth stating honestly rather than implying it is everywhere, because the point is that it is invisible until it isn't.
-- `middle_game` has 245 checker decisions and 59 cube decisions, so the doc's `Checker plays (37 of 245)` example is drawn from a real category. Page 1 sorted worst-first actually holds 39 checker rows and 11 cube rows, not 37 — recompute before writing it down.
-- The full bucket breakdown for `middle_game` is: checker moderate 131, mild 65, severe 44, catastrophic 5; cube/offer moderate 32, mild 9, severe 8, catastrophic 1; cube/receive severe 3, moderate 3, catastrophic 3. Useful as the expected output when checking Task 4.
+- **One table:** `notes (blunder_id INTEGER PRIMARY KEY, body TEXT NOT NULL, updated_at TEXT NOT NULL)`. One row per blunder, keyed by id, so every candidate backend holds it natively: a SQLite or Postgres table, an IndexedDB object store with `keyPath: "blunder_id"`, or a JSON file.
+- **Keyed on `blunder_id`,** which is Galaxy's own event id (`transform.ts:181`), not a number the scraper invents — stable across re-scrapes and re-imports. **No foreign key**, deliberately (reason 2). A note whose blunder disappears is an orphan that is never shown.
+- **`updated_at`** is ISO 8601 text written by the store. Part 6's UI never reads it, but it is the one column a later sync (last write wins between devices) needs, and it cannot be backfilled.
+- **Clearing a note deletes the row** rather than storing `""`, so "has a note" means "row exists" in every backend.
+- **Save is an upsert:** `INSERT … ON CONFLICT (blunder_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at` — verified in SQLite, and valid Postgres as written (only the placeholders differ, `?` vs `$1`). IndexedDB's `put()` is an upsert natively.
+- **Future user data** (reviewed flags, spaced repetition) gets its own table in the same store when it arrives. No generic "annotations" table in advance.
 
-## Architecture decisions
+### The seam that keeps it flexible
 
-- **Sort is a single-valued param, unlike every filter.** `filtersFrom` returns arrays because a filter is a set; sort is one choice out of a whitelist with a default. It gets its own reader (`sortFrom`) rather than being folded into `BlunderFilters`, so the "no sort chosen" case stays a default rather than an empty array.
-- **`ORDER BY` text comes from a keyed record, never from string assembly.** `SORTS = { worst: "...DESC", mildest: "...ASC" }`. The input is `z.enum` over its keys, so an unknown sort is rejected by Zod before it can reach SQL, and the only strings that can ever land in the query are ones written in this repo.
-- **The tie-breaker is `d.blunder_id, d.kind`, and it is not optional.** `(blunder_id, kind)` is unique in the `decisions` CTE — each branch of the `UNION ALL` emits at most one row per blunder — so appending it makes the order total. Without it SQLite's order among equal magnitudes is unspecified and a paged read can repeat or skip a row.
-- **The severity `CASE` expression is built from `SEVERITY_BANDS`, not hand-written.** Part 5 already derives its `WHERE` bands from that constant; 5.7 deriving its `GROUP BY` bands from the same place keeps one source of truth, and the symmetry between the two is itself the teachable moment.
-- **Counts respect the active filters.** `(37 of 245)` means 37 on this page, 245 matching the current filters across the whole category — not the unfiltered category total. A count that ignored the filters would contradict the list it labels.
-- **Doc sections are written from code that was run**, per the house rule that has already caught wrong claims in this doc. Every snippet in Parts 5.6 and 5.7 must come out of a worktree where `check-types`, `lint` and `build` passed and the page was actually loaded.
+Two boundaries already exist; notes add one thin third.
+
+1. **tRPC** — the browser never knows what the store is. Already true.
+2. **`ctx`** — procedures reach storage only through `createContext()`. Already true for `db`.
+3. **New: a `NotesStore` interface** — `get`, `save`, `remove`, `ids` — with one SQLite implementation in `server/notes.ts`, opened in `server/db.ts` and injected as `ctx.notes`. The router never contains notes SQL, and rules that don't vary by backend (a blank body means delete) live in the router rather than in every store. Moving to Supabase or IndexedDB is one new file implementing four functions and one changed line in `db.ts`.
+
+Two details make that seam real rather than decorative:
+
+- **The interface returns Promises even though `node:sqlite` is synchronous.** Supabase and IndexedDB are async-only. A synchronous interface would make the swap touch every call site; an async one makes it touch none, and `async` on a synchronous implementation costs nothing.
+- **The file opens lazily, on first use,** not at module load. `/` is prerendered at build time and imports the context, so the build should neither create nor require a notes file.
+
+**Why not use `ctx.db.prepare()` as the portable layer, the way BG-7 plans to for blunders:** that bet is "SQL everywhere" via sqlite-wasm, which suits query-heavy blunder data with CTEs and joins. Notes are a key-value lookup. Tying them to SQL would rule out the raw-IndexedDB and plain Supabase-client options the ticket wants kept open, and buy nothing.
+
+### Deliberately not doing
+
+- **No ORM or query builder** (Drizzle, Kysely). One table and three statements do not pay for a dependency.
+- **No migration tool.** `CREATE TABLE IF NOT EXISTS` on open; `PRAGMA user_version` is the hook for when a second schema change arrives.
+- **No auth or RLS.** Single user, local — the same line BG-2 drew.
+- **No Server Actions for the write.** Under BG-7's direction the router may run in the browser against a local store, and a Server Action needs a server; a tRPC mutation works in both worlds. Server Actions still appear in the doc as the comparison.
+
+## What Part 6 teaches (client side, Adam's)
+
+- `useMutation(trpc.notes.save.mutationOptions())` — `mutate`, `isPending`, `isError`; unlike a query, a mutation is not cached and does not run on mount.
+- After a write the cache is wrong: `setQueryData` with the returned row versus `invalidateQueries` and a refetch.
+- The note is prefetched on the blunder page and hydrated (Part 2.5's pattern), so the textarea's first paint already has the saved text. `BlunderAnalysis` stays a Server Component; the editor is a client island beside it.
+- Optimistic UI, modern and older: render the mutation's `variables` while pending (v5), versus an `onMutate` snapshot, `setQueryData`, and rollback in `onError`. House rule: implement the modern one, explain both.
+- Autosave: debounce, then `scope: { id }` so saves for one blunder run one at a time (present in the installed query-core 5.102.8). Without it, a slow earlier save can land after a later one and overwrite it.
+- Invalidating something else: the list's "has a note" marker reads `notes.ids`, and saving invalidates it — a write in one component correcting a read in another.
+- The same save written as a Server Action with `useActionState`, and why this app does not use one.
 
 ## Dependency graph
 
 ```
-lib/constants.ts
-  SORTS + DEFAULT_SORT + sortFrom        severityCase() (SQL CASE from SEVERITY_BANDS)
-        │                                        │
-        ├──> server/router.ts ORDER BY ──┐       └──> server/router.ts counts GROUP BY
-        │    (Task 1)                    │            (Task 4)
-        │                                │                   │
-        ├──> layout.tsx prefetch key ────┤                   │
-        │    blunder-list.tsx query key  │                   │
-        │    (Task 2)                    │                   │
-        │                                │                   v
-        └──> blunder-filters.tsx (writes ?sort=)      blunder-list.tsx headings
-             pagination + row links (carry it)        blunder-list-group.tsx headings
-             (Task 3)                                 (Task 5)
-                     │                                        │
-                     └────────────> LEARNING.md <─────────────┘
-                                    Part 5.6 (Tasks 6)  Part 5.7 (Task 7)
-                                    surrounding threads (Task 8)
+server/notes.ts   NotesStore interface + SQLite impl (lazy open, WAL, schema)
+      │
+      └──> server/trpc.ts   ctx.notes
+                 │
+                 └──> server/router.ts   notes.byBlunder · notes.save · notes.ids
+                           │                              │
+                           v                              v
+        [blunderId]/page.tsx prefetch          layout.tsx prefetches notes.ids
+        note-editor.tsx (client)               blunder-list.tsx builds a Set
+        useMutation, save, cache update        blunder-list-links.tsx marker
+        (Task 3)                               (Task 5)
+                 │                                        ^
+                 v                                        │
+        optimistic autosave, scope (Task 4) ── save invalidates notes.ids
+                                  │
+                                  v
+                    LEARNING.md Part 6 (Tasks 7-8)
 ```
-
-Part 5.6 and Part 5.7 touch the same three files but never the same lines, and 5.7's counts do not depend on sort. They could be built in parallel; they are ordered 5.6 first because the doc numbers them that way and because Task 3 settles how a new param rides on every link, which Task 5 then does not have to rethink.
 
 ---
 
-## Phase 1 — Part 5.6, sort
+## Phase 1 — Slice: save one note and read it back
 
-### Task 1: Sort the query from a whitelist, with a total order
+### Task 1: The notes store behind an interface
 
-**Description:** Add the `SORTS` whitelist to constants and teach `blunders.byCategory` to accept a `sort` input, choosing its `ORDER BY` text by key and appending the `blunder_id, kind` tie-breaker. No UI and no URL yet — the procedure gains an input with a default, so every existing caller keeps working unchanged.
+**Description:** Add `server/notes.ts` exporting a `NotesStore` type and a SQLite implementation that opens its file lazily, enables WAL, creates the table if missing, and implements `get`, `save`, `remove` and `ids` as async functions. `server/db.ts` resolves its path beside the open `blunders.db` and caches it on `globalThis` like `db`; `createContext()` exposes it as `notes`. The blunders connection is untouched.
 
 **Acceptance criteria:**
 
-- [ ] `SORTS` maps `worst` and `mildest` to `ORDER BY` fragments; `DEFAULT_SORT` is `worst`, matching today's behavior.
-- [ ] The procedure input is `z.enum` over the `SORTS` keys with `.default(DEFAULT_SORT)`, so an unknown value is rejected before reaching SQL.
-- [ ] Every generated query ends with the tie-breaker, making the row order total and stable across pages.
+- [ ] `save` upserts and stamps `updated_at`; `remove` deletes the row; `ids()` returns every `blunder_id` with a note. What counts as a blank body is the router's rule (Task 2), not each store's.
+- [ ] Opening is lazy — `pnpm build` passes and creates no notes file.
+- [ ] `server/db.ts` still opens `blunders.db` with `{ readOnly: true }`, and nothing references blunders from the notes schema.
 
 **Verification:**
 
 - [ ] Types: `pnpm check-types` · Lint: `pnpm lint` · Build: `pnpm build`
-- [ ] Manual: with `BLUNDERS_DB_PATH` set, page 5 and page 6 of `middle_game` share no `blunder_id`, and the union of all pages has no duplicates.
-- [ ] Manual: `mildest` returns the reverse of `worst` at both ends of the list.
+- [ ] Manual: a node script against a `/tmp` store exercises save, overwrite, clear and `ids()`.
+- [ ] Manual: with a note saved, run `pnpm --filter @repo/galaxy-scraper load --db=<scratch copy>` from the main checkout (`raw/` lives only there) — the note is still there.
 
-**Dependencies:** None
-**Files likely touched:** `apps/web/lib/constants.ts`, `apps/web/server/router.ts`
+**Dependencies:** None (Open Question 1 resolved)
+**Files likely touched:** `apps/web/server/notes.ts` (new), `apps/web/server/db.ts`, `apps/web/server/trpc.ts`, `scripts/setup-worktree.ts` (its comment and generated `.env.local` text say the shared database is safe because it is read-only — no longer the whole story)
 **Estimated scope:** Small
 
-### Task 2: Read the sort off the URL, on both sides
+### Task 2: Read and write procedures
 
-**Description:** Add `sortFrom` beside `pageFrom`, then read `?sort=` in the layout's prefetch and in the list's `useQuery` so both build the identical query key. After this, typing `?sort=mildest` into the address bar reorders the list — the same halfway point Part 5 reached before Part 5.5.
+**Description:** Add a `notes` router: `byBlunder` (query, `{ blunder_id }` → note or null), `save` (mutation, `{ blunder_id, body }` → saved note or null), `ids` (query → `number[]`). A blank or whitespace-only body calls `ctx.notes.remove` and returns null. Every procedure gets `.output()`, like the existing ones, and calls only `ctx.notes` — plus one read-only existence check against `ctx.db` in `save`.
 
 **Acceptance criteria:**
 
-- [ ] `sortFrom` returns `DEFAULT_SORT` for absent, unknown or repeated values, exactly as `pageFrom` treats a non-page.
-- [ ] `layout.tsx` and `blunder-list.tsx` pass the same `sort` into the same query options, so the prefetch hydrates instead of refetching.
-- [ ] Typing `?sort=mildest` reorders the list; `?sort=nonsense` silently renders the default rather than erroring.
+- [ ] `router.ts` contains no notes SQL; all notes storage goes through `ctx.notes`.
+- [ ] A body over the maximum length (Open Question 5) is rejected by Zod before the store is called.
+- [ ] Saving against a `blunder_id` that is not in `blunders` fails with `NOT_FOUND` rather than writing an orphan.
 
 **Verification:**
 
 - [ ] Types, lint, build as above.
-- [ ] Manual: with the network tab open, loading `/middle_game?sort=mildest` shows no client refetch on hydration — a mismatched key shows up immediately as one.
+- [ ] Manual: dev server on a port other than 3000 with `NOTES_DB_PATH=/tmp/…`; `curl` a POST to `/api/trpc/notes.save`, then GET `notes.byBlunder` and `notes.ids`.
+- [ ] Manual, the flexibility proof: swap `ctx.notes` for a throwaway `Map`-backed store in `trpc.ts`. The router compiles unchanged and the `curl` round trip still passes. Revert.
 
 **Dependencies:** Task 1
-**Files likely touched:** `apps/web/lib/constants.ts`, `apps/web/app/[category]/layout.tsx`, `apps/web/app/[category]/blunder-list.tsx`
+**Files likely touched:** `apps/web/server/router.ts`
 **Estimated scope:** Small
 
-### Task 3: A control that writes the sort, and every link that carries it
+### Task 3: A textarea that saves (reference implementation)
 
-**Description:** Add the sort control to the filter panel and make the pager, the row links and the pager's prefetch carry `sort` the way Part 5.5 taught them to carry filters. This is where Part 5.5's rule — every link is a write, and a link that omits a param clears it — gets applied to a param that has a non-empty default.
+**Description:** A client `NoteEditor` rendered on the blunder page beside `BlunderAnalysis`. The page prefetches `notes.byBlunder` and wraps the editor in a `HydrationBoundary`; the editor reads with `useQuery`, saves with `useMutation` (interaction per Open Question 2), shows pending and error states, and writes the returned note into the cache with `setQueryData`.
 
 **Acceptance criteria:**
 
-- [ ] Changing the sort resets to page 1, for the same reason changing a filter does: the page you were on may not exist under the new order.
-- [ ] Turning a page, opening a row, and ticking a filter all preserve the active sort.
-- [ ] The pager's hover prefetch uses the same key the click will land on, sort included.
+- [ ] A saved note is present after a hard reload, on first paint — no flash of an empty textarea.
+- [ ] Moving between blunders shows each one's own note; the textarea resets per blunder (`key={blunder_id}`, Part 2's lesson).
+- [ ] A failed save keeps the typed text in the textarea and says it did not save.
 
 **Verification:**
 
 - [ ] Types, lint, build as above.
-- [ ] Manual: set `mildest`, go to page 3, open a blunder, tick a severity — the sort survives all four navigations.
-- [ ] Manual: the default sort round-trips without leaving a redundant `?sort=worst` on every URL.
+- [ ] Manual: network tab shows one POST per save and no refetch of `byBlunder` afterwards.
 
 **Dependencies:** Task 2
-**Files likely touched:** `apps/web/app/[category]/blunder-filters.tsx`, `apps/web/app/[category]/subcomponents/blunder-list-pagination.tsx`, `apps/web/app/[category]/blunder-list.tsx`
-**Estimated scope:** Medium
+**Files likely touched:** `apps/web/app/[category]/[blunderId]/page.tsx`, `apps/web/app/[category]/note-editor.tsx` (new)
+**Estimated scope:** Small
 
-### Checkpoint: Part 5.6 works
+### Checkpoint: Phase 1
 
-- [ ] `pnpm check-types`, `pnpm lint` and `pnpm build` all pass
-- [ ] Sort survives paging, filtering and opening a row
-- [ ] No row repeats or disappears across a page boundary, including at the `blitz` ties at sorted rows 300/301
-- [ ] Review with Adam before starting Part 5.7
+- [ ] `pnpm check-types`, `pnpm lint`, `pnpm build` pass
+- [ ] A note survives reload, navigation, and a scraper `load`
+- [ ] `blunders.db` is still opened read-only; `router.ts` has no notes SQL
+- [ ] Review with Adam — in particular that the save interaction is right before autosave builds on it
 
 ---
 
-## Phase 2 — Part 5.7, counts from the database
+## Phase 2 — Slice: the mutation grows up
 
-### Task 4: Count the buckets in the query
+### Task 4: Optimistic autosave
 
-**Description:** Add a `GROUP BY` returning a count per `(kind, direction, severity)` bucket over the whole filtered set, reusing the same `WHERE` the list already builds, with the severity bands expressed as a `CASE` derived from `SEVERITY_BANDS`. Extend the procedure output so `byCategory` returns counts alongside blunders and total.
+**Description:** Save on a debounce while typing and immediately on blur. Serialize saves per blunder with `scope: { id }`. Show the optimistic state from the mutation's `variables`; build the `onMutate` + rollback variant alongside it in the scratch worktree so the doc's comparison is verified code too.
 
 **Acceptance criteria:**
 
-- [ ] Counts use the identical filter conditions as the list query, so they describe the list they will label.
-- [ ] The severity `CASE` is generated from `SEVERITY_BANDS` rather than hand-written, matching how Part 5 derives its `WHERE` bands.
-- [ ] Unfiltered `middle_game` returns the verified breakdown: checker 131/65/44/5 and cube offer 32/9/8/1, receive 3/3/3 — and the bucket counts sum to `total`.
+- [ ] With the network throttled, typing quickly and stopping always ends with the last text stored, never an earlier one.
+- [ ] Leaving the blunder mid-debounce still saves (flush on blur and unmount).
+- [ ] "Saving… / Saved" comes from mutation state, not a separate `useState`; the `onMutate` variant rolls back on error.
 
 **Verification:**
 
 - [ ] Types, lint, build as above.
-- [ ] Manual: compare the procedure's counts against the same `GROUP BY` run directly in `sqlite3` for `middle_game` filtered and unfiltered.
-- [ ] Manual: `.output()` still parses — a drifting shape fails loudly here rather than in the browser.
+- [ ] Manual: throttled network tab shows the POSTs for one blunder strictly one after another.
 
-**Dependencies:** None (independent of Tasks 1-3)
-**Files likely touched:** `apps/web/server/router.ts`, `apps/web/lib/constants.ts`
-**Estimated scope:** Medium
+**Dependencies:** Task 3
+**Files likely touched:** `apps/web/app/[category]/note-editor.tsx`
+**Estimated scope:** Small
 
-### Task 5: Headings that say "n of N"
+### Task 5: The list knows which blunders have notes
 
-**Description:** Pass the counts down through the list into the group headings so each one reads `Checker plays (37 of 245)`, with the page figure still from `.length` and the total from the query. The lookup has to key on the full path — a severity id like `mild` appears under checker, under cube/offer and under cube/receive — so the nested `BlunderListGroup` needs enough context to find its own number.
+**Description:** The layout prefetches `notes.ids` next to `byCategory`; `blunder-list.tsx` turns it into a `Set` and passes a flag down to `BlunderListLinks`, which renders a marker. The editor's successful save invalidates `notes.ids`. `byCategory` does not change.
 
 **Acceptance criteria:**
 
-- [ ] Every kind, direction and severity heading shows both the page count and the filtered total.
-- [ ] A bucket with rows on this page never shows a total smaller than its page count.
-- [ ] Buckets with a non-zero total but no rows on this page are handled deliberately — decide whether they appear greyed or stay hidden, and say which in the doc.
+- [ ] The marker shows for every blunder with a note, including on a cold load, with no pop-in.
+- [ ] Saving a first note, or clearing one, updates the marker without a reload.
+- [ ] `byCategory`'s input, output and query key are untouched — the join is in JavaScript.
 
 **Verification:**
 
 - [ ] Types, lint, build as above.
-- [ ] Manual: on `middle_game` page 1 the checker heading reads `(39 of 245)` and the cube heading `(11 of 59)`.
-- [ ] Manual: tick a severity filter and confirm both numbers move together.
+- [ ] Manual: `git diff main -- apps/web/server/router.ts` shows no change inside `byCategory`.
 
-**Dependencies:** Task 4
-**Files likely touched:** `apps/web/app/[category]/blunder-list.tsx`, `apps/web/app/[category]/subcomponents/blunder-list-group.tsx`
+**Dependencies:** Task 2; Task 4 for the final invalidation site
+**Files likely touched:** `apps/web/app/[category]/layout.tsx`, `apps/web/app/[category]/blunder-list.tsx`, `apps/web/app/[category]/subcomponents/blunder-list-links.tsx`, `apps/web/app/[category]/note-editor.tsx`
 **Estimated scope:** Medium
 
-### Checkpoint: Part 5.7 works
+### Checkpoint: Phase 2
 
 - [ ] All three checks pass and the app runs
-- [ ] Counts agree with `sqlite3` for at least two categories, filtered and unfiltered
-- [ ] The thread Part 4.6 left open is genuinely closed — no heading count is page-local any more
+- [ ] Throttled autosave never loses or reorders an edit
+- [ ] Marker and editor agree after every save and clear
 - [ ] Review with Adam before writing the doc
 
 ---
 
 ## Phase 3 — Write it down
 
-### Task 6: Write Part 5.6 into LEARNING.md
+### Task 6: Preserve the reference implementation, revert the client
 
-**Description:** Write the Part 5.6 section in the established shape — "The one idea", the file/job table, a numbered section per file with the code and "The pieces", then "Gotchas" — from the code proven in Phase 1. Organize it around the transferable concepts (a keyword cannot be bound; a sort without a unique tie-breaker is not a total order) rather than around this app's files.
-
-**Acceptance criteria:**
-
-- [ ] Every snippet is copied from the verified worktree, not retyped from memory.
-- [ ] The tie numbers are the corrected, verified ones, not the "59" from the sketch.
-- [ ] Gotchas cover at least: why the whitelist is a record and not a string; why the tie-breaker is two columns; why changing the sort resets the page.
-- [ ] No code fence nested inside a blockquote, and prose is never hard-wrapped.
-
-**Verification:**
-
-- [ ] Manual: a reader with the Part 5.5 codebase can type the section start to finish with nothing missing and nothing out of order — the ordering complaint from BG-12 was that a prop arrived before the component that takes it.
-- [ ] `pnpm format:check` passes.
-
-**Dependencies:** Checkpoint after Task 3
-**Files likely touched:** `LEARNING.md`
-**Estimated scope:** Small (one file, substantial prose)
-
-### Task 7: Write Part 5.7 into LEARNING.md
-
-**Description:** Same shape, for the counts. The concepts to foreground: a count that describes the page is a different question from a count that describes the set, and deriving SQL from the same constant that drives the UI is what keeps the two from drifting.
+**Description:** Commit the full client implementation to a local `bg-16-reference-impl` branch (not pushed), then revert the client files on `bg-16` so only the server changes remain — the BG-14 pattern.
 
 **Acceptance criteria:**
 
-- [ ] Every snippet comes from the verified worktree.
-- [ ] The `middle_game` numbers used as examples are the real ones.
-- [ ] Gotchas cover at least: keying a nested lookup by path rather than by id; counts following the filters; the cost of a second query per page load.
+- [ ] `git diff bg-16-reference-impl -- apps/web/app` shows exactly the client work.
+- [ ] On `bg-16`, `apps/web/app/` is identical to `main`, and the app still builds with the server changes alone.
 
 **Verification:**
 
-- [ ] Manual: typeable start to finish in order, as above.
-- [ ] `pnpm format:check` passes.
+- [ ] `pnpm build` passes on `bg-16` after the revert.
 
-**Dependencies:** Checkpoint after Task 5, Task 6
+**Dependencies:** Checkpoint: Phase 2
+**Files likely touched:** none new
+**Estimated scope:** XS
+
+### Task 7: Write Part 6 into LEARNING.md
+
+**Description:** Open with the "Already done for you" preface — the store, `ctx.notes`, the three procedures and their shapes — plus one plain paragraph on why notes live in their own file, since the client relies on its consequence: there is no join, so the list marker is joined in JavaScript. Then the client sections in the house shape (whole file, the pieces, gotchas), split per Open Question 3.
+
+**Acceptance criteria:**
+
+- [ ] Snippets are extracted from `LEARNING.md` itself and built in a scratch worktree with `NOTES_DB_PATH` pointed at `/tmp`; each sub-part compiles standing alone.
+- [ ] Both comparisons are present: `variables` versus `onMutate` for optimistic UI, and `useMutation` versus a Server Action.
+- [ ] Gotchas cover at least: the cache is stale after a write; out-of-order autosaves and `scope`; `key` resetting the textarea per blunder; a debounce losing the last edit on navigation.
+
+**Verification:**
+
+- [ ] Manual: typeable start to finish in order — nothing used before it is defined.
+- [ ] `pnpm format:check` passes; no code fence inside a blockquote; no hard-wrapped prose.
+
+**Dependencies:** Task 6
 **Files likely touched:** `LEARNING.md`
 **Estimated scope:** Small (one file, substantial prose)
 
 ### Task 8: Reconcile the surrounding threads
 
-**Description:** Fix everything elsewhere in the doc that these two parts change. Part 5's "Still open" loses its 5.6 and 5.7 paragraphs and keeps 5.8 and 5.9. Part 4.6's "Still open" claims a fix is coming in Part 5; it now arrives in 5.7 and should point there. The new sections each need their own "Still open" handing off to 5.8. The wrong "59" claim disappears with the paragraph that carried it, so check nothing else repeats it.
+**Description:** Fix everything elsewhere in the doc that Part 6 changes or contradicts.
 
 **Acceptance criteria:**
 
-- [ ] No remaining forward reference describes 5.6 or 5.7 as unwritten.
-- [ ] Part 4.6's dangling count thread points at Part 5.7 by name.
-- [ ] `grep` finds no surviving instance of the incorrect tie figure.
+- [ ] `LEARNING.md:3514` and `:3518` promise that Part 6 revisits the severity bands and grouping. Part 6 does not, so those lines are reworded to stop pointing there.
+- [ ] Every "Then **Part 6**, mutations." hand-off (`:2489`, `:2947`, `:3340`, `:3528`) and the scope sentence at `:2196` match what Part 6 became.
+- [ ] Contents lists Parts 5.6, 5.7 and 6 (it currently stops at 5.5), and the intro's worktree paragraph mentions the notes file.
 
 **Verification:**
 
-- [ ] Manual: read the three "Still open" sections in sequence and confirm the hand-offs are consistent.
+- [ ] `grep -n "Part 6" LEARNING.md` — every hit is accurate.
 - [ ] `pnpm format:check` passes.
 
-**Dependencies:** Tasks 6 and 7
+**Dependencies:** Task 7
 **Files likely touched:** `LEARNING.md`
 **Estimated scope:** XS
 
 ### Checkpoint: Doc complete
 
-- [ ] Parts 5.6 and 5.7 read in the same voice as 5 and 5.5
-- [ ] Every claim with a number behind it was verified against the database
+- [ ] Part 6 reads in the same voice as Part 5.x
+- [ ] Every snippet was built from the doc's own text
 - [ ] Review with Adam
 
 ---
 
 ## Phase 4 — Land it
 
-### Task 9: Revert the code, commit the doc, open the PR
+### Task 9: Commit, PR, Linear
 
-**Description:** Revert every app change made for verification so the worktree is back to Part 5.5 code, leaving only `LEARNING.md` modified. Then commit, push, open the PR and move BG-14. The implementation itself is Adam's to type.
+**Description:** Commit the server changes, the doc and these task files; push; open the PR; post the storage decision to BG-16 and move it.
 
 **Acceptance criteria:**
 
-- [ ] `git status` shows `LEARNING.md` as the only tracked change — no app file survives from the verification build.
-- [ ] The PR body says plainly that it ships the doc sections, and that the implementation is typed separately.
-- [ ] BG-14 is moved and the PR attached.
+- [ ] The PR contains `server/notes.ts`, `server/trpc.ts`, `server/router.ts`, `scripts/setup-worktree.ts`, `LEARNING.md` and `tasks/*` — no files under `apps/web/app/`.
+- [ ] The PR body summarizes the storage decision and says the client is typed separately.
+- [ ] BG-16 has the decision as a comment, links BG-7 (a file-drop import can no longer touch notes, by construction), and is moved.
 
 **Verification:**
 
 - [ ] All checks green on the pushed branch.
 
 **Dependencies:** All previous
-**Files likely touched:** none beyond the above
 **Estimated scope:** XS
 
 ---
 
 ## Risks and Mitigations
 
-| Risk                                                                       | Impact                                   | Mitigation                                                                                                       |
-| -------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| This worktree has no `.env.local`, so anything touching the database fails | High — blocks every verification step    | Set `BLUNDERS_DB_PATH` to the main checkout's `blunders.db` for this session; BG-13 / PR #14 fixes this properly |
-| The prefetch key and the query key drift as `sort` is added                | Medium — silent double fetch, no error   | Task 2 checks the network tab explicitly; Part 5.5 already names this as a permanent two-place problem           |
-| Sort text reaching SQL from anywhere but the whitelist                     | High — injection                         | Input is `z.enum` over the record's keys; the record is the only source of `ORDER BY` text                       |
-| The counts query doubles the per-page database work                        | Low — SQLite, local, small data          | Measure once; consider folding `total` into the same `GROUP BY` since it is the sum of the buckets               |
-| Doc numbers copied from the sketch rather than recomputed                  | Medium — a wrong claim in a teaching doc | Every figure in Tasks 6-7 traced to a query run in this session; the "59" error is already one instance          |
-| Writing the code spoils the exercise Adam wants to type himself            | Medium — wasted or unwanted work         | Resolve Open Question 1 before Phase 3 ends, not after                                                           |
+| Risk                                                                                     | Impact                                     | Mitigation                                                                                                         |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Verification worktrees write test notes into the real notes file                         | Medium — pollutes Adam's own data          | Every scratch run sets `NOTES_DB_PATH` to `/tmp`; Tasks 2 and 7 name it explicitly                                 |
+| Two dev servers (main checkout and a worktree) writing one notes file                    | Low                                        | SQLite handles multi-process writers; WAL on the notes connection, as the scraper does                             |
+| Debounced autosave drops the last edit on navigation                                     | Medium — silent loss in a notes feature    | Flush on blur and unmount; Task 4 tests it                                                                         |
+| Out-of-order saves overwrite newer text                                                  | Medium                                     | `scope` serializes per blunder; throttled test in Task 4                                                           |
+| Someone later "fixes" the missing foreign key with `ON DELETE CASCADE`                   | High if notes ever share the blunders file | A comment in `notes.ts` citing the verified behavior; the separate file makes the constraint impossible regardless |
+| `blunder_id` collides if the app imports from a second source (BG-7's naming discussion) | Low today                                  | Out of scope; a `(source, blunder_id)` key is the fix, and the one-row-per-blunder shape makes it additive         |
+| The doc drifts back into server detail Adam asked to skip                                | Medium                                     | Preface plus one paragraph; the full rationale lives here and in the PR                                            |
 
 ## Open Questions
 
-- ~~**Does BG-14 want the code, the doc, or both?**~~ **Resolved:** Adam wires it up; this session writes the doc sections. The code is still built here to verify the snippets, then reverted.
-- **Where does `sort` ride?** Extend `filterParams` into a general `viewParams` that also writes `sort`, or add a second builder. One builder means one place for every link to call and one place to forget nothing; two keeps the filter/sort distinction visible. Part 5.8 replaces both with `nuqs` regardless.
-- **Should `total` collapse into the counts query?** The buckets sum to it, so keeping the separate `COUNT(*)` is arguably one query too many — but merging them couples pagination to bucketing.
-- **Should the default sort be written into the URL?** Leaving `?sort=worst` off keeps URLs clean but means the control renders a value the URL does not contain; writing it makes every URL longer.
-- **What happens to a bucket with a total but no rows on this page?** On a late page, most buckets are empty locally but non-zero overall. Showing them greyed is informative; hiding them is quieter. Task 5 needs an answer.
+1. ~~**Where does the notes file live?**~~ **Resolved:** `NOTES_DB_PATH ?? join(dirname(<open blunders.db>), "notes.db")`. Every worktree already points `BLUNDERS_DB_PATH` at the main checkout, so all checkouts share one notes file there with no setup change, deleting a worktree never deletes notes, and `data/` and `*.db` are already gitignored.
+2. ~~**Save interaction in the first slice.**~~ **Resolved:** save on blur plus a button in Task 3, autosave in Task 4 — two lessons rather than one tangled one.
+3. ~~**Doc numbering.**~~ **Resolved:** Part 6 (`useMutation` and the cache after a write), Part 6.5 (optimistic autosave), Part 6.6 (invalidating the list).
+4. ~~**Is the list marker in scope?**~~ **Resolved:** yes.
+5. ~~**Maximum note length.**~~ **Resolved:** 2,000 characters, as `NOTE_MAX_LENGTH` in `lib/constants.ts` so Zod and the textarea's `maxLength` share one number.
