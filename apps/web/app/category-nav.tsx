@@ -1,24 +1,45 @@
 import Link from "next/link";
+import { Stack, type StackProps, Text, List, ListItem, Badge } from "@uiid/design-system";
 import { caller } from "@/server/caller";
 
-/**
- * A Server Component. It calls the procedure directly — no fetch, no HTTP —
- * and its output is baked into the HTML before it reaches the browser.
- */
-export async function CategoryNav() {
-  const categories = await caller.categories.list();
+const OUTER_PADDING: StackProps["p"] = 0;
+const OUTER_GAP: StackProps["gap"] = 6;
 
+export function CategoryNav() {
   return (
-    <nav data-slot="category-nav" aria-label="Blunder categories">
-      <ul>
-        {categories.map(({ category, count }) => (
-          <li key={category}>
-            <Link href={`/${category}`}>
-              {category} <data value={count}>({count})</data>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <CategoryContainer>
+      <CategoryTitle />
+      <CategoryList />
+    </CategoryContainer>
   );
 }
+
+const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
+  <Stack render={<nav />} aria-label="Blunder categories" p={OUTER_PADDING} gap={OUTER_GAP}>
+    {children}
+  </Stack>
+);
+
+const CategoryTitle = () => (
+  <Text render={<h2 />} size={1} weight="bold">
+    Select a category
+  </Text>
+);
+
+const CategoryList = async () => {
+  const categories = await caller.categories.list();
+  return (
+    <List gap={1}>
+      {categories.map(({ category, count }) => (
+        <ListItem key={category}>
+          <Link href={`/${category}`} style={{ display: "contents" }}>
+            <Text>{category}</Text>
+            <Badge size="small" color="neutral">
+              <data value={count}>{count}</data>
+            </Badge>
+          </Link>
+        </ListItem>
+      ))}
+    </List>
+  );
+};

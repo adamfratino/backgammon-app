@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   type BlunderSort,
   CUBE_ACTION,
+  CRAWFORD_IDS,
   cubeDirection,
   DEFAULT_SORT,
   DIRECTIONS,
@@ -121,7 +122,7 @@ const blunderDetail = probabilities.extend({
   color: z.string().nullable(),
   die_1: z.number().nullable(),
   die_2: z.number().nullable(),
-  crawford_state: z.string().nullable(),
+  crawford_state: z.enum(CRAWFORD_IDS).nullable(),
   played_notation: z.string().nullable(),
   best_notation: z.string().nullable(),
   played_rank: z.number().nullable(),

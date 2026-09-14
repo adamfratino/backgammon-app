@@ -1,29 +1,22 @@
-import { Fragment } from "react";
-import { parseXgid, pipCount } from "@repo/core";
-import { Board } from "@repo/diagram";
 import type { inferRouterOutputs } from "@trpc/server";
+import { Button, Stack, Group, Text, ToggleGroup, Toggle, RadioGroup } from "@uiid/design-system";
 
-import type { BlunderKind } from "@/lib/constants";
+import { parseXgid } from "@repo/core";
+import { Board } from "@repo/diagram";
+
+import { CRAWFORD_STATE, severityOf } from "@/lib/constants";
 import type { AppRouter } from "@/server/router";
+
 import { CopyButton } from "./copy-button";
+import { Fragment } from "react";
 
 type Outputs = inferRouterOutputs<AppRouter>;
 type BlunderDetail = NonNullable<Outputs["blunders"]["detail"]>;
 type Candidate = BlunderDetail["candidates"][number];
-type BoardSide = NonNullable<BlunderDetail["board"]>["onRoll"];
 
 interface BlunderAnalysisProps {
   detail: BlunderDetail;
 }
-
-const term = { fontWeight: "bold" } as const;
-const def = { marginLeft: 0, marginBottom: 8 } as const;
-const section = { marginTop: 24 } as const;
-
-const ERROR_LABELS: Record<BlunderKind, string> = {
-  checker: "Checker error",
-  cube: "Cube error",
-};
 
 /** Engine probabilities are fractions; the UI reads them as percentages. */
 function percent(value: number | null): string {
@@ -52,28 +45,6 @@ function Chances({ of }: { of: Candidate | BlunderDetail }) {
   );
 }
 
-/**
- * One side of the position. Points run from that side's own 24 point down to
- * its 1, so both sides read from their own home board.
- *
- * `pips` is what that side still has to travel to bear everything off. It
- * comes from the XGID rather than from `side`, whose points are already
- * flattened to a string — the two describe the same checkers, which is what
- * `pnpm --filter @repo/core verify` checks on every stored position.
- */
-function Side({ side, pips }: { side: BoardSide; pips: number | null }) {
-  return (
-    <span style={{ fontFamily: "monospace", fontSize: "0.85em" }}>
-      {pips == null ? null : `${pips} pips — `}bar {side.bar}, off {side.off} — {side.points}
-    </span>
-  );
-}
-
-/**
- * The whole panel, server-rendered. Part 2 split this in two — a summary from
- * the list row, then the analysis once its query resolved. The route renders
- * both at once, and `detail` carries the summary fields, so the split is gone.
- */
 export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
   const {
     blunder_id,
@@ -95,93 +66,70 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
   const rolled = die_1 != null && die_2 != null;
   const parsed = source_xgid ? parseXgid(source_xgid) : null;
 
+  const c = CRAWFORD_STATE.find((cr) => cr.id !== "none" && cr.id === crawford_state);
+
+  function calcPos(num: number): string {
+    if (num > 0) return "You're winning";
+    if (num === 0) return "You're tied";
+    return "You're losing";
+  }
+
   return (
-    <article aria-label={`Blunder ${blunder_id}`} style={{ maxWidth: 560 }}>
-      <h2>Blunder {blunder_id}</h2>
-      <dl>
-        {decisions.map(({ kind, error_magnitude }) => (
-          <Fragment key={kind}>
-            <dt style={term}>{ERROR_LABELS[kind]}</dt>
-            <dd style={def}>{error_magnitude.toFixed(4)}</dd>
-          </Fragment>
-        ))}
-
-        <dt style={term}>Score</dt>
-        <dd style={def}>
-          {score_black}–{score_white} to {match_length ?? "—"}
-        </dd>
-      </dl>
-
-      <section style={section}>
-        <h3>Position</h3>
-        {/* The board is drawn from the XGID rather than from `board`, so the
-            string shown below is provably the position on screen. gnubg lays
-            every position out for the side on roll, so that side is always
-            the near one — even on the rows whose XGID turn field says
-            otherwise, as `pnpm --filter @repo/core verify` checks by replaying
-            every play from the near side. */}
-        {parsed ? (
-          <div style={{ maxWidth: 460, marginBottom: 16 }}>
-            <Board
-              position={parsed.position}
-              dice={parsed.dice}
-              cube={parsed.cube}
-              turn="player"
-              move={played_notation}
-            />
-          </div>
-        ) : null}
-        <dl>
-          <dt style={term}>Roll</dt>
-          <dd style={def}>{rolled ? `${die_1}-${die_2}` : "—"}</dd>
-
-          <dt style={term}>Cube</dt>
-          <dd style={def}>{cube_value ?? "—"}</dd>
-
-          <dt style={term}>Crawford</dt>
-          <dd style={def}>{crawford_state ?? "—"}</dd>
-
-          <dt style={term}>On roll</dt>
-          <dd style={def}>
-            {board ? (
-              <Side side={board.onRoll} pips={parsed ? pipCount(parsed.position.player) : null} />
+    <Stack aria-label={`Blunder ${blunder_id}`} render={<article />} gap={6} fullwidth ax="stretch">
+      <Text size={4} weight="normal">
+        {(score_black || score_white || match_length) && (
+          <>
+            {calcPos(score_black! - score_white!)}{" "}
+            <strong>
+              [{score_black} - {score_white}]
+            </strong>{" "}
+            in a match to <strong>[{match_length}]</strong>
+            {c ? (
+              <>
+                , <strong>{c?.label}</strong>.
+              </>
             ) : (
-              "—"
+              "."
             )}
-          </dd>
+          </>
+        )}
+        {cube_value && cube_value > 1 && (
+          <>
+            {" "}
+            The cube is at <strong>[{cube_value}]</strong>.
+          </>
+        )}{" "}
+        {rolled && (
+          <>
+            You rolled{" "}
+            <strong>
+              {die_1}-{die_2}
+            </strong>
+            .
+          </>
+        )}
+      </Text>
 
-          <dt style={term}>Opponent</dt>
-          <dd style={def}>
-            {board ? (
-              <Side
-                side={board.opponent}
-                pips={parsed ? pipCount(parsed.position.opponent) : null}
-              />
-            ) : (
-              "—"
-            )}
-          </dd>
+      <Stack ax="stretch">
+        {decisions.map(({ kind, error_magnitude }) => {
+          const mag = error_magnitude.toFixed(3);
+          const sev = severityOf(Number(mag));
 
-          <dt style={term}>XGID</dt>
-          <dd style={{ ...def, display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                fontFamily: "monospace",
-                fontSize: "0.85em",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {source_xgid ?? "—"}
-            </span>
-            {source_xgid ? <CopyButton value={source_xgid} label="Copy XGID" /> : null}
-          </dd>
-        </dl>
-      </section>
+          return (
+            <Text key={kind} size={1} color="red" weight="normal">
+              ⛔ You initially made a{" "}
+              {
+                <strong>
+                  {sev} {kind}
+                </strong>
+              }{" "}
+              blunder [<strong>{mag}</strong>].
+            </Text>
+          );
+        })}
+      </Stack>
 
-      {cube ? <CubeEquities detail={detail} /> : null}
-
-      <section style={section}>
-        <h3>{candidates.length > 0 ? "Plays" : "Chances"}</h3>
+      <Group gap={1} ay="end">
         {candidates.length > 0 ? (
           <Plays detail={detail} />
         ) : (
@@ -189,8 +137,34 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
           // chances are the only ones there are.
           <Chances of={detail} />
         )}
-      </section>
-    </article>
+        <Button>Submit pick</Button>
+      </Group>
+
+      <Stack aria-label="Backgammon board" fullwidth gap={1}>
+        {/* The board is drawn from the XGID rather than from `board`, so the
+            string shown below is provably the position on screen. gnubg lays
+            every position out for the side on roll, so that side is always
+            the near one — even on the rows whose XGID turn field says
+            otherwise, as `pnpm --filter @repo/core verify` checks by replaying
+            every play from the near side. */}
+        {parsed && (
+          <Board
+            position={parsed.position}
+            dice={parsed.dice}
+            cube={parsed.cube}
+            turn="player"
+            move={played_notation}
+          />
+        )}
+        <Group ay="center" gap={1} fullwidth ax="space-between">
+          <Text size={-1} shade="muted" family="mono">
+            Blunder #{blunder_id}
+          </Text>
+          {source_xgid && <CopyButton value={source_xgid} label="XGID" />}
+        </Group>
+      </Stack>
+      {/* {cube ? <CubeEquities detail={detail} /> : null} */}
+    </Stack>
   );
 }
 
@@ -202,26 +176,28 @@ function CubeEquities({ detail }: BlunderAnalysisProps) {
   // the position rather than a decision anyone got wrong.
   const decided = detail.decisions.some(({ kind }) => kind === "cube");
 
+  if (!decided) return null;
+
   return (
-    <section style={section}>
+    <section>
       <h3>Cube</h3>
       {decided ? null : <p style={{ fontSize: "0.85em" }}>No cube decision — shown for context.</p>}
       <dl style={{ fontFamily: "monospace", fontSize: "0.9em" }}>
-        <dt style={term}>No Double</dt>
-        <dd style={def}>{equity(cube.no_double)}</dd>
+        <dt>No Double</dt>
+        <dd>{equity(cube.no_double)}</dd>
 
-        <dt style={term}>Take</dt>
-        <dd style={def}>{equity(cube.double_take)}</dd>
+        <dt>Take</dt>
+        <dd>{equity(cube.double_take)}</dd>
 
-        <dt style={term}>Pass</dt>
-        <dd style={def}>{equity(cube.double_pass)}</dd>
+        <dt>Pass</dt>
+        <dd>{equity(cube.double_pass)}</dd>
       </dl>
       <dl>
-        <dt style={term}>Doubler&rsquo;s best action</dt>
-        <dd style={def}>{cube.doublers_best_action ?? "—"}</dd>
+        <dt>Doubler&rsquo;s best action</dt>
+        <dd>{cube.doublers_best_action ?? "—"}</dd>
 
-        <dt style={term}>Receiver&rsquo;s best action</dt>
-        <dd style={def}>{cube.receivers_best_action ?? "—"}</dd>
+        <dt>Receiver&rsquo;s best action</dt>
+        <dd>{cube.receivers_best_action ?? "—"}</dd>
       </dl>
     </section>
   );
@@ -233,21 +209,32 @@ function CubeEquities({ detail }: BlunderAnalysisProps) {
  */
 function Plays({ detail }: BlunderAnalysisProps) {
   return (
-    <ol style={{ paddingLeft: "1.5em" }}>
-      {detail.candidates.map((play) => (
-        <li key={play.rank} style={{ marginBottom: 12 }}>
-          <div style={{ fontFamily: "monospace" }}>
-            <strong>{play.notation ?? "—"}</strong> {equity(play.equity)}
-            {play.rank === 1 ? null : ` (${equity(play.equity_error)})`}
-          </div>
-          <div style={{ fontSize: "0.85em" }}>
-            {play.move_played ? "played" : null}
-            {play.move_played && play.rank === 1 ? " · " : null}
-            {play.rank === 1 ? "best" : null}
-          </div>
-          <Chances of={play} />
-        </li>
-      ))}
-    </ol>
+    <>
+      <RadioGroup
+        label="Choose a play:"
+        bordered
+        direction="horizontal"
+        items={detail.candidates.map((play) => ({
+          value: play.notation as string,
+          label: play.notation as string,
+        }))}
+      />
+      {/* <ol style={{ paddingLeft: "1.5em" }}>
+        {detail.candidates.map((play) => (
+          <li key={play.rank} style={{ marginBottom: 12 }}>
+            <div style={{ fontFamily: "monospace" }}>
+              <strong>{play.notation ?? "—"}</strong> {equity(play.equity)}
+              {play.rank === 1 ? null : ` (${equity(play.equity_error)})`}
+            </div>
+            <div style={{ fontSize: "0.85em" }}>
+              {play.move_played ? "played" : null}
+              {play.move_played && play.rank === 1 ? " · " : null}
+              {play.rank === 1 ? "best" : null}
+            </div>
+            <Chances of={play} />
+          </li>
+        ))}
+      </ol> */}
+    </>
   );
 }

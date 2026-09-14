@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { Group, Select } from "@uiid/design-system";
 
 import {
   type BlunderSort,
@@ -42,7 +43,7 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
   }
 
   return (
-    <div style={{ display: "flex", gap: "2rem" }}>
+    <Group gap={6}>
       <FilterGroup
         legend="Kind"
         param="kind"
@@ -65,7 +66,7 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
         onToggle={toggle}
       />
       <SortGroup sort={sort} onChoose={choose} />
-    </div>
+    </Group>
   );
 }
 

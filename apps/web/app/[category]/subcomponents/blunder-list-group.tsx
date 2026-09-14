@@ -1,3 +1,5 @@
+import { Stack, Text } from "@uiid/design-system";
+
 import type { Blunder, BucketCount } from "@/server/router";
 import {
   CUBE_DIRECTIONS,
@@ -33,16 +35,14 @@ export function BlunderListGroup({
   query,
   depth,
 }: BlunderListGroupProps) {
-  const Heading = depth === 0 ? "h3" : "h4";
-
   return (
-    <section>
-      <Heading>
+    <Stack render={<section />} ml={3}>
+      <Text render={depth === 0 ? <h3 /> : <h4 />} size={1} weight="bold">
         {group.label}{" "}
         <data value={group.total}>
           ({group.blunders.length} of {group.total})
         </data>
-      </Heading>
+      </Text>
 
       {group.groups.length > 0 ? (
         group.groups.map((child) => (
@@ -63,7 +63,7 @@ export function BlunderListGroup({
           query={query}
         />
       )}
-    </section>
+    </Stack>
   );
 }
 

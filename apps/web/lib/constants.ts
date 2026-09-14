@@ -1,4 +1,4 @@
-export const PER_PAGE = 50;
+export const PER_PAGE = 20;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,
@@ -14,6 +14,14 @@ export const KIND_LABELS: Record<BlunderKind, string> = {
   checker: "Checker plays",
   cube: "Cube decisions",
 };
+
+export const CRAWFORD_STATE = [
+  { id: "none", label: "none" },
+  { id: "crawford", label: "on crawford" },
+  { id: "post_crawford", label: "post-crawford" },
+] as const;
+
+export type CrawfordState = (typeof CRAWFORD_STATE)[number]["id"];
 
 export const SEVERITY_BANDS = [
   { id: "catastrophic", label: "Catastrophic", min: 0.4 },
@@ -60,6 +68,7 @@ export type BlunderSort = (typeof SORTS)[number]["id"];
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
+export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 
 export const DEFAULT_SORT: BlunderSort = "worst";
 export interface BlunderFilters {

@@ -2,6 +2,7 @@
 
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { Stack, Text } from "@uiid/design-system";
 
 import { viewParams, filtersFrom, KINDS, KIND_LABELS, sortFrom, pageFrom } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
@@ -42,14 +43,13 @@ export function BlunderList({ category }: BlunderListProps) {
   const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
 
   return (
-    <div aria-busy={isPlaceholderData} style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
-      <BlunderListPagination
-        page={page}
-        total={data.total}
-        category={category}
-        filters={filters}
-        sort={sort}
-      />
+    <Stack
+      aria-busy={isPlaceholderData}
+      style={{ opacity: isPlaceholderData ? 0.5 : 1 }}
+      gap={6}
+      br={1}
+      p={6}
+    >
       {KINDS.map((kind) => {
         const blunders = byKind[kind];
         if (!blunders) return null;
@@ -58,13 +58,13 @@ export function BlunderList({ category }: BlunderListProps) {
         const total = counts.reduce((running, { count }) => running + count, 0);
 
         return (
-          <section key={kind}>
-            <h2 style={{ margin: 0 }}>
+          <Stack key={kind} render={<section />} gap={3}>
+            <Text render={<h2 />} size={2} weight="bold" style={{ whiteSpace: "nowrap" }}>
               {KIND_LABELS[kind]}{" "}
               <data value={total}>
                 ({blunders.length} of {total})
               </data>
-            </h2>
+            </Text>
 
             {groupsOf(kind, blunders, counts).map((group) => {
               return (
@@ -78,9 +78,17 @@ export function BlunderList({ category }: BlunderListProps) {
                 />
               );
             })}
-          </section>
+          </Stack>
         );
       })}
-    </div>
+
+      <BlunderListPagination
+        page={page}
+        total={data.total}
+        category={category}
+        filters={filters}
+        sort={sort}
+      />
+    </Stack>
   );
 }
