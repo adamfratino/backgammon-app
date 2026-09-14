@@ -23,15 +23,17 @@ import {
   DIE_GAP,
   DIE_SIZE,
   FAR_HALF_CENTRE,
+  MAX_VISIBLE,
   MIDDLE,
   NEAR_HALF_CENTRE,
   OFF_HEIGHT,
-  OFF_PITCH,
+  offTop,
   PLAY_HEIGHT,
   PLAY_LEFT,
   PLAY_WIDTH,
   POINT_HEIGHT,
   POINT_WIDTH,
+  stackCentre,
   TOP,
   topPoint,
   TRAY_LEFT,
@@ -39,6 +41,7 @@ import {
   WIDTH,
   HEIGHT,
 } from "./geometry.ts";
+import { MoveArrows } from "./MoveArrows.tsx";
 import type { BoardProps } from "./types.ts";
 
 /**
@@ -77,10 +80,14 @@ const DEFAULT_STYLES = `
     fill: #e8dcc4;
     pointer-events: none;
   }
+  .gammon-arrows            { pointer-events: none; }
+  .gammon-arrow-shaft       { fill: none; stroke-linecap: round; }
+  .gammon-arrow-head        { stroke-linejoin: round; }
+  .gammon-arrows--casing .gammon-arrow-shaft { stroke: #f7f3ea; stroke-width: 2.8; }
+  .gammon-arrows--casing .gammon-arrow-head  { fill: #f7f3ea; stroke: #f7f3ea; stroke-width: 1.4; }
+  .gammon-arrows--line .gammon-arrow-shaft   { stroke: #d62828; stroke-width: 1.4; }
+  .gammon-arrows--line .gammon-arrow-head    { fill: #d62828; }
 `;
-
-/** Beyond this a stack is taller than its point, so the total is written on it. */
-const MAX_VISIBLE = 5;
 
 /** Pip positions on a die face, as columns and rows of a three-by-three grid. */
 const DIE_PIPS: Record<number, ReadonlyArray<readonly [number, number]>> = {
@@ -153,7 +160,7 @@ function CheckerStack({ count, cx, edge, direction, side }: StackProps) {
   if (count <= 0) return null;
 
   const visible = Math.min(count, MAX_VISIBLE);
-  const cy = (index: number) => edge + direction * (CHECKER_RADIUS + index * 2 * CHECKER_RADIUS);
+  const cy = (index: number) => stackCentre(edge, direction, index);
 
   return (
     <>
@@ -193,7 +200,7 @@ function Tray({ count, side }: { count: number; side: SideName }) {
           key={index}
           className={`gammon-off gammon-off--${side}`}
           x={TRAY_LEFT + 1}
-          y={side === "player" ? BOTTOM - (index + 1) * OFF_PITCH : TOP + index * OFF_PITCH}
+          y={offTop(side === "player", index)}
           width={TRAY_WIDTH - 2}
           height={OFF_HEIGHT}
           rx={0.6}
@@ -289,6 +296,7 @@ export function Board({
   dice = null,
   cube = null,
   turn = "player",
+  move = null,
   className,
   showNumbers = true,
 }: BoardProps) {
@@ -301,6 +309,7 @@ export function Board({
   const showCube = cube !== null && (cube.value > 1 || cube.owner !== null);
 
   const roll = dice ? `, rolling ${dice[0]}-${dice[1]}` : "";
+  const play = move ? `, playing ${move}` : "";
 
   return (
     <svg
@@ -311,7 +320,7 @@ export function Board({
       className={className}
     >
       <title>
-        {`Backgammon position — near side ${pipCount(player)} pips, far side ${pipCount(opponent)} pips${roll}`}
+        {`Backgammon position — near side ${pipCount(player)} pips, far side ${pipCount(opponent)} pips${roll}${play}`}
       </title>
       <style>{DEFAULT_STYLES}</style>
 
@@ -388,6 +397,8 @@ export function Board({
         <Tray count={player.off} side="player" />
         <Tray count={opponent.off} side="opponent" />
       </g>
+
+      {move ? <MoveArrows move={move} position={position} turn={turn} /> : null}
 
       {showNumbers ? (
         <g className="gammon-numbers">

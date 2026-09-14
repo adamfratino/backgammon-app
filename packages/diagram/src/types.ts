@@ -20,8 +20,19 @@ export interface BoardProps {
    */
   cube?: Cube | null;
 
-  /** Which side is on roll, which decides where the dice land. Defaults to the near side. */
+  /**
+   * Which side is on roll, which decides where the dice land and whose
+   * checkers `move` refers to. Defaults to the near side.
+   */
   turn?: SideName;
+
+  /**
+   * A play to draw as arrows, in the notation GNU BG and XG write — `13/9 6/5*`,
+   * `bar/22*\/17`, `3/off(2)` — numbered from the side on roll's own home
+   * board. Each checker's arrow leaves the top of its stack and ends where it
+   * would stand. `null`, or a string that isn't a play, draws none.
+   */
+  move?: string | null;
 
   /**
    * Applied to the root `<svg>`. The diagram has no intrinsic size — it fills
