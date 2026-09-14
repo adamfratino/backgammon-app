@@ -87,6 +87,7 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
     crawford_state,
     board,
     source_xgid,
+    played_notation,
     candidates,
     cube,
   } = detail;
@@ -114,14 +115,19 @@ export function BlunderAnalysis({ detail }: BlunderAnalysisProps) {
       <section style={section}>
         <h3>Position</h3>
         {/* The board is drawn from the XGID rather than from `board`, so the
-            string shown below is provably the position on screen. */}
+            string shown below is provably the position on screen. gnubg lays
+            every position out for the side on roll, so that side is always
+            the near one — even on the rows whose XGID turn field says
+            otherwise, as `pnpm --filter @repo/core verify` checks by replaying
+            every play from the near side. */}
         {parsed ? (
           <div style={{ maxWidth: 460, marginBottom: 16 }}>
             <Board
               position={parsed.position}
               dice={parsed.dice}
               cube={parsed.cube}
-              turn={parsed.turn}
+              turn="player"
+              move={played_notation}
             />
           </div>
         ) : null}

@@ -1,10 +1,12 @@
 /**
- * Checks `parseXgid` against every position in the local database.
+ * Checks `parseXgid` against every position in the local database, and
+ * `parseMove` against every play.
  *
  * The point is the cross-check: `@repo/galaxy-scraper` decodes a GNU BG
  * position id by an entirely separate route — base64 bit-unpacking rather than
  * character parsing — so the two agreeing on all 24 points, both bars and both
- * checker totals is real evidence, not a restatement of the same logic.
+ * checker totals is real evidence, not a restatement of the same logic. Plays
+ * are checked the same way, against the position Galaxy says each one leads to.
  *
  * Run with `pnpm --filter @repo/core verify`. Exits non-zero on any mismatch.
  */
@@ -14,9 +16,10 @@ import { DatabaseSync } from "node:sqlite";
 import { DB_PATH } from "@repo/galaxy-scraper/config";
 import { decodePositionId } from "@repo/galaxy-scraper/position";
 
-import { POINT_COUNT } from "./constants.ts";
+import { BAR_PIP, POINT_COUNT } from "./constants.ts";
+import { type CheckerMove, OFF_PIP, parseMove } from "./move.ts";
 import { checkersOn } from "./side.ts";
-import type { Side } from "./types.ts";
+import type { Position, Side } from "./types.ts";
 import { parseXgid } from "./xgid.ts";
 
 interface Row {
@@ -53,6 +56,103 @@ function compareSide(id: number, label: string, decoded: number[], parsed: Side)
   if (total !== 15) problems.push(`${id}: ${label} accounts for ${total} checkers, not 15`);
 
   return problems;
+}
+
+interface Play {
+  blunder_id: number;
+  rank: number;
+  notation: string;
+  source_xgid: string;
+  result_xgid: string;
+}
+
+/**
+ * Makes a play on the near side of a position, or says why it can't be made:
+ * a checker leaving a stop it isn't on, a hit that finds no blot, or a landing
+ * on a point the other side holds.
+ */
+function replay(before: Position, moves: CheckerMove[]): Position | string {
+  const player = { ...before.player, points: [...before.player.points] };
+  const opponent = { ...before.opponent, points: [...before.opponent.points] };
+
+  for (const { from, to, hit } of moves) {
+    if (from === BAR_PIP) {
+      if (player.bar === 0) return `nothing on the bar`;
+      player.bar -= 1;
+    } else {
+      if (checkersOn(player, from) === 0) return `nothing on ${from}`;
+      player.points[from] = checkersOn(player, from) - 1;
+    }
+
+    if (to === OFF_PIP) {
+      player.off += 1;
+      continue;
+    }
+
+    const facing = POINT_COUNT + 1 - to;
+    const blockers = checkersOn(opponent, facing);
+    if (hit ? blockers !== 1 : blockers !== 0) {
+      return `${hit ? "hit" : "landing"} on ${to} finds ${blockers} of the other side`;
+    }
+    if (hit) {
+      opponent.points[facing] = 0;
+      opponent.bar += 1;
+    }
+    player.points[to] = checkersOn(player, to) + 1;
+  }
+
+  return { player, opponent };
+}
+
+function sameSide(a: Side, b: Side): boolean {
+  if (a.bar !== b.bar || a.off !== b.off) return false;
+  for (let point = 1; point <= POINT_COUNT; point++) {
+    if (checkersOn(a, point) !== checkersOn(b, point)) return false;
+  }
+  return true;
+}
+
+/**
+ * Replays every candidate's notation from the near side of the position it was
+ * played in, and compares the outcome with the XGID Galaxy gives for the
+ * position after it. Agreement proves both `parseMove` and that the side on
+ * roll is always drawn near — which the board's arrows rely on, and which the
+ * XGID's own turn field does not reliably say.
+ */
+function checkPlays(db: DatabaseSync): { checked: number; problems: string[] } {
+  const plays = db
+    .prepare(
+      `SELECT c.blunder_id, c.rank, c.notation, b.source_xgid, c.xgid AS result_xgid
+       FROM candidate_moves c
+       JOIN blunders b ON b.blunder_id = c.blunder_id
+       WHERE c.notation IS NOT NULL AND c.xgid IS NOT NULL AND b.source_xgid IS NOT NULL`,
+    )
+    .all() as unknown as Play[];
+
+  const problems: string[] = [];
+
+  for (const play of plays) {
+    const label = `${play.blunder_id} #${play.rank} ${play.notation}`;
+    const moves = parseMove(play.notation);
+    const before = parseXgid(play.source_xgid);
+    const expected = parseXgid(play.result_xgid);
+    if (!moves || !before || !expected) {
+      problems.push(`${label}: could not be parsed`);
+      continue;
+    }
+
+    const after = replay(before.position, moves);
+    if (typeof after === "string") {
+      problems.push(`${label}: ${after}`);
+    } else if (
+      !sameSide(after.player, expected.position.player) ||
+      !sameSide(after.opponent, expected.position.opponent)
+    ) {
+      problems.push(`${label}: replayed position differs from ${play.result_xgid}`);
+    }
+  }
+
+  return { checked: plays.length, problems };
 }
 
 function main(): void {
@@ -103,10 +203,15 @@ function main(): void {
     }
   }
 
-  console.log(`checked ${rows.length} positions`);
+  const plays = checkPlays(db);
+  problems.push(...plays.problems);
+
+  console.log(`checked ${rows.length} positions and ${plays.checked} plays`);
 
   if (problems.length === 0) {
-    console.log("every XGID agrees with its GNU BG position id");
+    console.log(
+      "every XGID agrees with its GNU BG position id, and every play replays onto its result",
+    );
     return;
   }
 

@@ -20,6 +20,9 @@ export const QUADRANT_WIDTH = POINT_WIDTH * POINTS_PER_QUADRANT;
 /** How far a point reaches toward the middle. Exactly five stacked checkers. */
 export const POINT_HEIGHT = 44;
 
+/** Beyond this a stack is taller than its point, so the total is written on it. */
+export const MAX_VISIBLE = 5;
+
 /** Clear space between the tips of opposing points, where the dice sit. */
 export const GUTTER = 12;
 
@@ -84,3 +87,18 @@ export const columnCentre = (column: number): number => columnX(column) + POINT_
  */
 export const bottomPoint = (column: number): number => COLUMNS - column;
 export const topPoint = (column: number): number => COLUMNS + 1 + column;
+
+/** Where a point in the near side's numbering is drawn: the inverse of the two above. */
+export function pointPlace(point: number): { column: number; row: "top" | "bottom" } {
+  return point > COLUMNS
+    ? { column: point - COLUMNS - 1, row: "top" }
+    : { column: COLUMNS - point, row: "bottom" };
+}
+
+/** Centre of the `index`th checker in a stack, counting out from the edge it grows from. */
+export const stackCentre = (edge: number, direction: 1 | -1, index: number): number =>
+  edge + direction * (CHECKER_RADIUS + index * 2 * CHECKER_RADIUS);
+
+/** Top of the `index`th borne-off checker, laid in from its owner's end of the tray. */
+export const offTop = (near: boolean, index: number): number =>
+  near ? BOTTOM - (index + 1) * OFF_PITCH : TOP + index * OFF_PITCH;
