@@ -23,11 +23,13 @@ import {
   DIE_GAP,
   DIE_SIZE,
   FAR_HALF_CENTRE,
+  FRAME,
   MAX_VISIBLE,
   MIDDLE,
   NEAR_HALF_CENTRE,
   OFF_HEIGHT,
   offTop,
+  PIP_CHIP_HEIGHT,
   PLAY_HEIGHT,
   PLAY_LEFT,
   PLAY_WIDTH,
@@ -75,6 +77,14 @@ const DEFAULT_STYLES = `
   }
   .gammon-count--player     { fill: #2b2b2b; }
   .gammon-count--opponent   { fill: #f7f3ea; }
+  .gammon-pip-count-body--player    { fill: #f7f3ea; }
+  .gammon-pip-count-body--opponent  { fill: #2b2b2b; }
+  .gammon-pip-count-value {
+    font: 600 4px ui-monospace, SFMono-Regular, Menlo, monospace;
+    pointer-events: none;
+  }
+  .gammon-pip-count-value--player   { fill: #2b2b2b; }
+  .gammon-pip-count-value--opponent { fill: #f7f3ea; }
   .gammon-numbers text {
     font: 500 4px ui-monospace, SFMono-Regular, Menlo, monospace;
     fill: #e8dcc4;
@@ -210,6 +220,33 @@ function Tray({ count, side }: { count: number; side: SideName }) {
   );
 }
 
+/** A side's pip count on a chip in its checker colours, in the frame at its end of the tray. */
+function PipCount({ count, side }: { count: number; side: SideName }) {
+  const y = (side === "player" ? BOTTOM : 0) + (FRAME - PIP_CHIP_HEIGHT) / 2;
+
+  return (
+    <g className={`gammon-pip-count gammon-pip-count--${side}`}>
+      <rect
+        className={`gammon-pip-count-body gammon-pip-count-body--${side}`}
+        x={TRAY_LEFT}
+        y={y}
+        width={TRAY_WIDTH}
+        height={PIP_CHIP_HEIGHT}
+        rx={1}
+      />
+      <text
+        className={`gammon-pip-count-value gammon-pip-count-value--${side}`}
+        x={TRAY_LEFT + TRAY_WIDTH / 2}
+        y={y + PIP_CHIP_HEIGHT / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+      >
+        {count}
+      </text>
+    </g>
+  );
+}
+
 function Die({ value, x, y }: { value: number; x: number; y: number }) {
   // Quarters of the face put the outer pips one quarter in from each edge and
   // the middle one dead centre.
@@ -297,6 +334,7 @@ export function Board({
   cube = null,
   turn = "player",
   move = null,
+  pipCounts = null,
   className,
   showNumbers = true,
 }: BoardProps) {
@@ -397,6 +435,13 @@ export function Board({
         <Tray count={player.off} side="player" />
         <Tray count={opponent.off} side="opponent" />
       </g>
+
+      {pipCounts ? (
+        <g className="gammon-pip-counts">
+          <PipCount count={pipCounts.player} side="player" />
+          <PipCount count={pipCounts.opponent} side="opponent" />
+        </g>
+      ) : null}
 
       {move ? <MoveArrows move={move} position={position} turn={turn} /> : null}
 

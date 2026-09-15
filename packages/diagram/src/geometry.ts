@@ -40,6 +40,9 @@ export const OFF_HEIGHT = 2.6;
 export const OFF_PITCH = 3;
 
 export const CUBE_SIZE = 10;
+
+/** A pip count sits on a chip in the frame, as wide as the tray beside it. */
+export const PIP_CHIP_HEIGHT = 5;
 export const DIE_SIZE = 9;
 export const DIE_GAP = 3;
 
