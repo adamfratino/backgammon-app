@@ -10,7 +10,7 @@ export function BlunderPlays({ value, onValueChange, candidates }: PlaysProps) {
       <RadioGroup
         label="Choose a play:"
         bordered
-        direction="horizontal"
+        orientation="horizontal"
         value={value}
         onValueChange={onValueChange}
         items={candidates.map((play) => ({
