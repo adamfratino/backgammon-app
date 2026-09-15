@@ -35,6 +35,15 @@ export interface BoardProps {
   move?: string | null;
 
   /**
+   * Each side's pip count, shown in the frame at its own end of the tray — the
+   * near side's below it, the far side's above — on a chip in that side's
+   * checker colours. The diagram draws the numbers it is given rather than
+   * counting them; `pipCount` from `@repo/core` gives the raw race count.
+   * `null` draws none.
+   */
+  pipCounts?: Record<SideName, number> | null;
+
+  /**
    * Applied to the root `<svg>`. The diagram has no intrinsic size — it fills
    * whatever box it is given — and every part of it carries a `gammon-`
    * prefixed class, so this is the hook for overriding size and colours.

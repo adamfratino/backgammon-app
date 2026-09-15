@@ -1,6 +1,6 @@
 import { Stack } from "@uiid/design-system";
 
-import { parseXgid } from "@repo/core";
+import { parseXgid, pipCount } from "@repo/core";
 
 import type { BlunderDetail } from "./analysis.types";
 import { BlunderIntroText } from "./subcomponents/blunder-intro-text";
@@ -25,6 +25,12 @@ export function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
   } = detail;
 
   const parsed = source_xgid ? parseXgid(source_xgid) : null;
+  const pipCounts = parsed
+    ? {
+        player: pipCount(parsed.position.player),
+        opponent: pipCount(parsed.position.opponent),
+      }
+    : null;
 
   return (
     <Stack aria-label={`Blunder ${blunder_id}`} render={<article />} gap={6} fullwidth ax="stretch">
@@ -43,6 +49,7 @@ export function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
         candidates={candidates}
         blunder_id={blunder_id}
         parsed={parsed}
+        pipCounts={pipCounts}
       />
       {cube ? <CubeEquities cube={cube} decisions={decisions} /> : null}
     </Stack>

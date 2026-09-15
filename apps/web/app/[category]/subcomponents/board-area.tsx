@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Stack, Group, Text } from "@uiid/design-system";
 
-import type { Xgid } from "@repo/core";
+import type { SideName, Xgid } from "@repo/core";
 import { Board } from "@repo/diagram";
 
 import type { BlunderDetail } from "../analysis.types";
@@ -14,9 +14,17 @@ import { CopyButton } from "./copy-button";
 interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "candidates" | "blunder_id"> {
   /** `source_xgid`, parsed on the server so `@repo/core` stays out of the browser bundle. */
   parsed: Xgid | null;
+  /** Each side's pip count in `parsed`, counted on the server for the same reason. */
+  pipCounts: Record<SideName, number> | null;
 }
 
-export function BoardArea({ source_xgid, candidates, blunder_id, parsed }: BoardAreaProps) {
+export function BoardArea({
+  source_xgid,
+  candidates,
+  blunder_id,
+  parsed,
+  pipCounts,
+}: BoardAreaProps) {
   const [selected, setSelected] = useState<string | null>(null);
 
   return (
@@ -29,6 +37,7 @@ export function BoardArea({ source_xgid, candidates, blunder_id, parsed }: Board
           cube={parsed.cube}
           turn="player"
           move={selected}
+          pipCounts={pipCounts}
         />
       )}
       <Group ay="center" gap={1} fullwidth ax="space-between">
