@@ -41,7 +41,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
           <BlunderList category={category} />
         </HydrationBoundary>
         <Stack ax="stretch" fullwidth maxw={960} p={GAP} gap={GAP}>
-          {/* <BlunderFilterPanel category={category} /> */}
+          <BlunderFilterPanel category={category} />
           {children}
         </Stack>
       </Group>
