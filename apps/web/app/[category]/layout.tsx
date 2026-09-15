@@ -7,6 +7,7 @@ import { getQueryClient, trpc } from "@/trpc/server";
 
 import { BlunderList } from "./blunder-list";
 import { BlunderFilterPanel } from "./blunder-filters";
+import { BlunderStepper } from "./blunder-stepper";
 
 interface CategoryLayoutProps {
   params: Promise<{ category: string }>;
@@ -36,15 +37,16 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
           {category}
         </Text>
       </Stack>
-      <Group fullwidth>
-        <HydrationBoundary state={dehydrate(queryClient)}>
+      <HydrationBoundary state={dehydrate(queryClient)}>
+        <Group fullwidth>
           <BlunderList category={category} />
-        </HydrationBoundary>
-        <Stack ax="stretch" fullwidth maxw={960} p={GAP} gap={GAP}>
-          <BlunderFilterPanel category={category} />
-          {children}
-        </Stack>
-      </Group>
+          <Stack ax="stretch" fullwidth maxw={960} p={GAP} gap={GAP}>
+            {/* <BlunderFilterPanel category={category} /> */}
+            <BlunderStepper category={category} />
+            {children}
+          </Stack>
+        </Group>
+      </HydrationBoundary>
     </Stack>
   );
 }

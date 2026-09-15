@@ -4,7 +4,15 @@ import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Stack, Text } from "@uiid/design-system";
 
-import { viewParams, filtersFrom, KINDS, KIND_LABELS, sortFrom, pageFrom } from "@/lib/constants";
+import {
+  viewParams,
+  filtersFrom,
+  openFrom,
+  KINDS,
+  KIND_LABELS,
+  sortFrom,
+  pageFrom,
+} from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
@@ -17,8 +25,9 @@ interface BlunderListProps {
 export function BlunderList({ category }: BlunderListProps) {
   const trpc = useTRPC();
 
-  const selected = useSelectedLayoutSegment();
+  const segment = useSelectedLayoutSegment();
   const searchParams = useSearchParams();
+  const selected = openFrom(segment, searchParams);
   const page = pageFrom(searchParams.get("page"));
   const filters = filtersFrom(searchParams);
   const sort = sortFrom(searchParams.get("sort"));

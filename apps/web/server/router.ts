@@ -31,6 +31,8 @@ const category = z.object({
 const blunder = z.object({
   blunder_id: z.number(),
   kind: z.enum(KINDS),
+  /** Stored as `both`, so this row is one of two in the list under the same id. */
+  both: z.boolean(),
   cube_action: z.enum(CUBE_ACTION).nullable(),
   error_magnitude: z.number(),
   error_severity: z.string().nullable(),
@@ -300,7 +302,7 @@ export const appRouter = router({
         const rows = ctx.db
           .prepare(
             `${WITH_DECISIONS}
-             SELECT d.blunder_id, d.kind, b.cube_action, d.error_magnitude,
+             SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action, d.error_magnitude,
                     b.error_severity, d.played_notation, d.best_notation,
                     b.match_length, b.score_black, b.score_white,
                     c.doublers_best_action, c.receivers_best_action
@@ -349,8 +351,9 @@ export const appRouter = router({
 
         // The driver hands back untyped rows. These assertions are safe only
         // because `.output()` re-checks the real shape at runtime.
+        // SQLite has no boolean type; `b.kind = 'both'` comes back as 0 or 1.
         return {
-          blunders: rows as unknown as Blunder[],
+          blunders: rows.map((row) => ({ ...row, both: row.both === 1 })) as unknown as Blunder[],
           total,
           counts: counts as unknown as BucketCount[],
         };
