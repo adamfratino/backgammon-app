@@ -65,7 +65,7 @@ function main(): void {
   const dbPath = join(mainCheckout, DB_SUBPATH);
   if (!existsSync(dbPath)) {
     log(`no scraped database in this checkout or in ${mainCheckout}.`);
-    log("run `pnpm --filter @repo/galaxy-scraper all` to scrape one; nothing was written.");
+    log("run `pnpm blunders` to scrape one; nothing was written.");
     return;
   }
 

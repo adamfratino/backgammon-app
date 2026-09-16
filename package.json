@@ -5,6 +5,7 @@
   "scripts": {
     "setup:worktree": "node --disable-warning=ExperimentalWarning scripts/setup-worktree.ts",
     "postinstall": "node --disable-warning=ExperimentalWarning scripts/setup-worktree.ts",
+    "blunders": "pnpm --filter @repo/galaxy-scraper sync",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",

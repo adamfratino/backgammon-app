@@ -39,6 +39,7 @@ yarn-error.log*
 
 # Galaxy scraper — secrets & scraped data
 .token
+.auth.json
 *.curl
 raw/
 data/

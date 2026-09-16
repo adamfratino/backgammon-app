@@ -14,6 +14,8 @@
     "./position": "./src/position.ts"
   },
   "scripts": {
+    "sync": "node --disable-warning=ExperimentalWarning src/cli.ts sync",
+    "login": "node --disable-warning=ExperimentalWarning src/cli.ts login",
     "categories": "node --disable-warning=ExperimentalWarning src/cli.ts categories",
     "scrape": "node --disable-warning=ExperimentalWarning src/cli.ts scrape",
     "load": "node --disable-warning=ExperimentalWarning src/cli.ts load",

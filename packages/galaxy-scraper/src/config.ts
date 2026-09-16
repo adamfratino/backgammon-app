@@ -9,6 +9,18 @@ export const DB_PATH = join(DATA_DIR, "blunders.db");
 
 export const API_BASE = "https://api.backgammongalaxy.com/blunder-service/api/v1";
 
+/** Galaxy's Keycloak realm; `account` is the public client the web app itself uses. */
+export const KEYCLOAK_TOKEN_URL =
+  "https://auth.backgammongalaxy.com/realms/backgammongalaxy/protocol/openid-connect/token";
+export const KEYCLOAK_CLIENT_ID = "account";
+
+/** Galaxy's edge rejects non-browser user agents, so every request pretends to be Chrome. */
+export const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+
+/** Version the web client reports; see https://www.backgammongalaxy.com/play/version.json */
+export const APP_VERSION = "6.0.216+666";
+
 /**
  * Categories as of the last observed `categories` response. Used only as a
  * fallback when the live categories endpoint cannot be reached. `recent` is
