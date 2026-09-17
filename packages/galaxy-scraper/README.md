@@ -10,30 +10,40 @@ tables.
 Zero runtime dependencies — it uses Node 24's built-in `fetch`, `node:sqlite`,
 and native TypeScript type stripping.
 
-## Setup
-
-Grab a bearer token from the browser:
-
-1. Open <https://www.backgammongalaxy.com> logged in, then DevTools → Network.
-2. Filter to Fetch/XHR and open your Blunders page so a request fires.
-3. Click a `blunder/category/...` request → Headers → copy the `authorization`
-   value (without the `Bearer ` prefix).
-
-Save it to `.token` in this package (gitignored), or export `GALAXY_TOKEN`:
-
-```bash
-echo '<token>' > packages/galaxy-scraper/.token
-chmod 600 packages/galaxy-scraper/.token
-```
-
-Tokens last about 13 days. The CLI reports the remaining lifetime on startup
-and refuses to run once expired.
-
 ## Usage
 
+From the repo root:
+
 ```bash
+pnpm blunders
+```
+
+That logs in if it has to, scrapes every category, and loads the database.
+The first run walks you through the login:
+
+1. Open <https://www.backgammongalaxy.com/play> logged in and open the
+   DevTools console (⌥⌘J in Chrome, ⌥⌘C in Safari). If Chrome asks, type
+   `allow pasting` once.
+2. Paste. The CLI has already put the snippet from `src/console-snippet.js` on
+   your clipboard; it reads your session tokens out of the page and copies them
+   back to the clipboard. Nothing leaves the browser.
+3. Paste into the terminal and press Enter. The paste is not echoed.
+
+The tokens are saved to `.auth.json` in this package (gitignored, mode 600).
+Both tokens last about nine days. When the snippet also finds the refresh
+token, the CLI renews the pair on every run, which rolls that window forward,
+so running at least once every nine days or so means you never paste again. You
+only repeat the paste if you leave it long enough for the refresh token to
+lapse too. Either way it reports the remaining lifetimes on every run.
+
+`GALAXY_TOKEN` in the environment, or a bare access token in a `.token` file,
+still work for the non-interactive case.
+
+Other commands:
+
+```bash
+pnpm --filter @repo/galaxy-scraper login        # re-capture tokens, e.g. after switching accounts
 pnpm --filter @repo/galaxy-scraper categories   # list categories and counts
-pnpm --filter @repo/galaxy-scraper all          # scrape everything, then load
 pnpm --filter @repo/galaxy-scraper stats        # summarise the database
 pnpm --filter @repo/galaxy-scraper verify       # check the XGID converter
 ```

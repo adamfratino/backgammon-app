@@ -1,4 +1,4 @@
-import { API_BASE } from "./config.ts";
+import { API_BASE, APP_VERSION, BROWSER_USER_AGENT } from "./config.ts";
 import type { Credentials } from "./credentials.ts";
 import type { CategoryCounts, CategoryPage } from "./types.ts";
 
@@ -9,12 +9,11 @@ function headers(token: string): Record<string, string> {
     "accept-language": "en-US,en;q=0.9",
     appenvironment: "PROD",
     appplatform: "WEB",
-    appversion: "6.0.108+558",
+    appversion: APP_VERSION,
     authorization: `Bearer ${token}`,
     origin: "https://www.backgammongalaxy.com",
     referer: "https://www.backgammongalaxy.com/play",
-    "user-agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "user-agent": BROWSER_USER_AGENT,
   };
 }
 

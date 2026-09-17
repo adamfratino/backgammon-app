@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { GalaxyClient } from "./api.ts";
+import { ensureCredentials, login } from "./auth.ts";
 import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
-import { loadCredentials } from "./credentials.ts";
+import { readStoredCredentials } from "./credentials.ts";
 import { openDatabase, writeBatch } from "./db.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
 import { normalize } from "./transform.ts";
@@ -44,10 +45,11 @@ function parseArgs(argv: string[]): Args {
 const HELP = `
 galaxy-scraper — pull Backgammon Galaxy blunder analysis into SQLite
 
+  sync [options]             Log in if needed, then scrape everything and load it
+  login                      Capture fresh tokens from the Galaxy web client
   categories                 List blunder categories and counts
   scrape [options]           Download category pages into raw/
   load [options]             Build the SQLite database from raw/
-  all [options]              scrape, then load
   stats [options]            Summarise what is in the database
   verify                     Check the XGID converter against Galaxy's own XGIDs
 
@@ -59,7 +61,8 @@ Options
   --max-pages=100            Safety cap on pages per category
   --db=<path>                Database location
 
-The bearer token is read from $GALAXY_TOKEN or a .token file in the package root.
+Credentials live in .auth.json in the package root (written by login) and are renewed
+automatically while the refresh token lasts. $GALAXY_TOKEN or a .token file still work.
 `;
 
 function loadIntoDatabase(dbPath: string, selfId: string | null): void {
@@ -166,26 +169,20 @@ async function main(): Promise<void> {
   }
 
   if (args.command === "load") {
-    // selfId only affects which player is labelled "self"; the token is optional here.
-    let selfId: string | null = null;
-    try {
-      selfId = loadCredentials().selfId;
-    } catch {
-      console.log("(no token available — falling back to player1 as self)");
-    }
+    // selfId only affects which player is labelled "self"; an expired token still has it.
+    const selfId = readStoredCredentials()?.selfId ?? null;
+    if (!selfId) console.log("(no token available — falling back to player1 as self)");
     loadIntoDatabase(args.dbPath, selfId);
     return;
   }
 
-  const credentials = loadCredentials();
-  const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
-
-  if (credentials.expiresAt) {
-    const days = (credentials.expiresAt.getTime() - Date.now()) / 86_400_000;
-    console.log(
-      `Token valid for ${days.toFixed(1)} more days (user ${credentials.selfId ?? "?"}).`,
-    );
+  if (args.command === "login") {
+    await login();
+    return;
   }
+
+  const credentials = await ensureCredentials();
+  const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
 
   const discovered = await client.fetchCategories();
   if (discovered) console.log(`Categories endpoint: ${discovered.path}`);
@@ -207,7 +204,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (args.command !== "scrape" && args.command !== "all") {
+  const scrapeThenLoad = args.command === "sync" || args.command === "all";
+  if (args.command !== "scrape" && !scrapeThenLoad) {
     console.log(HELP);
     return;
   }
@@ -227,7 +225,7 @@ async function main(): Promise<void> {
   }
   console.log(`\nScraped ${grandTotal} blunders into ${RAW_DIR}`);
 
-  if (args.command === "all") loadIntoDatabase(args.dbPath, credentials.selfId);
+  if (scrapeThenLoad) loadIntoDatabase(args.dbPath, credentials.selfId);
 }
 
 main().catch((error: unknown) => {
