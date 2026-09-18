@@ -19,7 +19,6 @@ import type { Blunder } from "@/server/router";
 import {
   type BlunderKind,
   blunderHref,
-  CUBE_ACTION_LABELS,
   filtersFrom,
   pageFrom,
   PER_PAGE,
@@ -86,11 +85,10 @@ export function BlunderTable({ category }: BlunderTableProps) {
         <TableRoot striped highlightOnHover>
           <TableHeader>
             <TableRow>
-              <TableHead>Played</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead>Roll</TableHead>
               <TableHead style={NUMERIC}>Error</TableHead>
               <TableHead>Severity</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead>Roll</TableHead>
               <TableHead>Score</TableHead>
             </TableRow>
           </TableHeader>
@@ -124,23 +122,12 @@ const KIND_CELL: Record<BlunderKind, string> = {
 };
 
 /**
- * What went wrong and how badly, never what should have happened: the best play
- * stays on the blunder's own page, so the table can't give a quiz away.
+ * How badly, never what: the position is the quiz, so neither the play that was
+ * made nor the one that should have been leaves the blunder's own page.
  */
 function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) {
-  const {
-    kind,
-    cube_action,
-    played_notation,
-    die_1,
-    die_2,
-    error_magnitude,
-    match_length,
-    score_black,
-    score_white,
-  } = blunder;
+  const { kind, die_1, die_2, error_magnitude, match_length, score_black, score_white } = blunder;
 
-  const played = kind === "cube" ? cube_action && CUBE_ACTION_LABELS[cube_action] : played_notation;
   // A cube decision is made before the dice are thrown, so only a checker play has a roll.
   const roll = kind === "checker" && die_1 !== null && die_2 !== null ? `${die_1}-${die_2}` : "—";
   const severity = SEVERITY_BANDS.find(({ id }) => id === severityOf(error_magnitude))?.label;
@@ -153,13 +140,12 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
 
   return (
     <TableRow>
-      <TableCell>
-        <Link href={href}>{played ?? "—"}</Link>
+      <TableCell style={NUMERIC}>
+        <Link href={href}>{error_magnitude.toFixed(3)}</Link>
       </TableCell>
+      <TableCell>{severity}</TableCell>
       <TableCell>{KIND_CELL[kind]}</TableCell>
       <TableCell>{roll}</TableCell>
-      <TableCell style={NUMERIC}>{error_magnitude.toFixed(3)}</TableCell>
-      <TableCell>{severity}</TableCell>
       <TableCell>{score}</TableCell>
     </TableRow>
   );

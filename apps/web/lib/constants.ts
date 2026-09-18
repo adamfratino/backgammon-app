@@ -46,14 +46,6 @@ export const CUBE_ACTION = [
 
 export type BlunderCubeAction = (typeof CUBE_ACTION)[number] | null;
 
-/** What the player did with the cube, in the words a backgammon player would use. */
-export const CUBE_ACTION_LABELS: Record<NonNullable<BlunderCubeAction>, string> = {
-  double_requested: "Double",
-  dice_rolled: "No double",
-  double_accepted: "Take",
-  double_rejected: "Pass",
-};
-
 export const CUBE_DIRECTIONS = [
   { id: "offer", label: "Offering the cube" },
   { id: "receive", label: "Being offered the cube" },

@@ -33,9 +33,7 @@ const blunder = z.object({
   kind: z.enum(KINDS),
   /** Stored as `both`, so this row is one of two in the list under the same id. */
   both: z.boolean(),
-  cube_action: z.enum(CUBE_ACTION).nullable(),
   error_magnitude: z.number(),
-  played_notation: z.string().nullable(),
   die_1: z.number().nullable(),
   die_2: z.number().nullable(),
   match_length: z.number().nullable(),
@@ -152,11 +150,11 @@ const DETAIL_COLUMNS = `
  */
 const WITH_DECISIONS = `
   WITH decisions AS (
-    SELECT blunder_id, 'checker' AS kind, error_magnitude, played_notation
+    SELECT blunder_id, 'checker' AS kind, error_magnitude
     FROM blunders
     WHERE kind IN ('checker', 'both')
     UNION ALL
-    SELECT blunder_id, 'cube', ABS(cube_raw_error), NULL
+    SELECT blunder_id, 'cube', ABS(cube_raw_error)
     FROM blunders
     WHERE kind IN ('cube', 'both')
   )`;
@@ -258,8 +256,8 @@ export const appRouter = router({
         const rows = ctx.db
           .prepare(
             `${WITH_DECISIONS}
-             SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action, d.error_magnitude,
-                    d.played_notation, b.die_1, b.die_2, b.match_length, b.score_black, b.score_white
+             SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, d.error_magnitude,
+                    b.die_1, b.die_2, b.match_length, b.score_black, b.score_white
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
