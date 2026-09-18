@@ -35,14 +35,12 @@ const blunder = z.object({
   both: z.boolean(),
   cube_action: z.enum(CUBE_ACTION).nullable(),
   error_magnitude: z.number(),
-  error_severity: z.string().nullable(),
   played_notation: z.string().nullable(),
-  best_notation: z.string().nullable(),
+  die_1: z.number().nullable(),
+  die_2: z.number().nullable(),
   match_length: z.number().nullable(),
   score_black: z.number().nullable(),
   score_white: z.number().nullable(),
-  doublers_best_action: z.string().nullable(),
-  receivers_best_action: z.string().nullable(),
 });
 
 /** Chances of each outcome from the mover's side. Gammons include backgammons. */
@@ -154,11 +152,11 @@ const DETAIL_COLUMNS = `
  */
 const WITH_DECISIONS = `
   WITH decisions AS (
-    SELECT blunder_id, 'checker' AS kind, error_magnitude, played_notation, best_notation
+    SELECT blunder_id, 'checker' AS kind, error_magnitude, played_notation
     FROM blunders
     WHERE kind IN ('checker', 'both')
     UNION ALL
-    SELECT blunder_id, 'cube', ABS(cube_raw_error), NULL, NULL
+    SELECT blunder_id, 'cube', ABS(cube_raw_error), NULL
     FROM blunders
     WHERE kind IN ('cube', 'both')
   )`;
@@ -261,13 +259,10 @@ export const appRouter = router({
           .prepare(
             `${WITH_DECISIONS}
              SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action, d.error_magnitude,
-                    b.error_severity, d.played_notation, d.best_notation,
-                    b.match_length, b.score_black, b.score_white,
-                    c.doublers_best_action, c.receivers_best_action
+                    d.played_notation, b.die_1, b.die_2, b.match_length, b.score_black, b.score_white
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-             LEFT JOIN cube_decisions c ON c.blunder_id = d.blunder_id
              WHERE ${filter}
              ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}
              LIMIT ? OFFSET ?`,

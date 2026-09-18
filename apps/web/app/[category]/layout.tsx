@@ -10,8 +10,6 @@ interface CategoryLayoutProps {
   children: React.ReactNode;
 }
 
-const GAP = 6;
-
 /**
  * The category's title, and the page of the list the URL asks for. The table
  * draws that page, and a blunder's Previous and Next read their neighbours from
@@ -33,7 +31,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
 
   return (
     <Stack render={<main />} ax="stretch" style={{ flex: 1 }}>
-      <Stack p={GAP} bb={1}>
+      <Stack p={6} bb={1}>
         <Text render={<h1 />} size={3} weight="bold">
           {category}
         </Text>

@@ -88,6 +88,7 @@ export function BlunderTable({ category }: BlunderTableProps) {
             <TableRow>
               <TableHead>Played</TableHead>
               <TableHead>Kind</TableHead>
+              <TableHead>Roll</TableHead>
               <TableHead style={NUMERIC}>Error</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Score</TableHead>
@@ -127,10 +128,21 @@ const KIND_CELL: Record<BlunderKind, string> = {
  * stays on the blunder's own page, so the table can't give a quiz away.
  */
 function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) {
-  const { kind, cube_action, played_notation, error_magnitude } = blunder;
-  const { match_length, score_black, score_white } = blunder;
+  const {
+    kind,
+    cube_action,
+    played_notation,
+    die_1,
+    die_2,
+    error_magnitude,
+    match_length,
+    score_black,
+    score_white,
+  } = blunder;
 
   const played = kind === "cube" ? cube_action && CUBE_ACTION_LABELS[cube_action] : played_notation;
+  // A cube decision is made before the dice are thrown, so only a checker play has a roll.
+  const roll = kind === "checker" && die_1 !== null && die_2 !== null ? `${die_1}-${die_2}` : "—";
   const severity = SEVERITY_BANDS.find(({ id }) => id === severityOf(error_magnitude))?.label;
 
   // Blunders without a match score have none of the three, never just one.
@@ -145,6 +157,7 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
         <Link href={href}>{played ?? "—"}</Link>
       </TableCell>
       <TableCell>{KIND_CELL[kind]}</TableCell>
+      <TableCell>{roll}</TableCell>
       <TableCell style={NUMERIC}>{error_magnitude.toFixed(3)}</TableCell>
       <TableCell>{severity}</TableCell>
       <TableCell>{score}</TableCell>

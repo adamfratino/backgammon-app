@@ -9,8 +9,6 @@ interface BlunderPageProps {
   params: Promise<{ category: string; blunderId: string }>;
 }
 
-const GAP = 6;
-
 export default async function BlunderPage({ params }: BlunderPageProps) {
   const { category, blunderId } = await params;
 
@@ -23,7 +21,7 @@ export default async function BlunderPage({ params }: BlunderPageProps) {
   if (!detail) notFound();
 
   return (
-    <Stack ax="stretch" fullwidth maxw={960} p={GAP} gap={GAP}>
+    <Stack ax="stretch" fullwidth maxw={960} p={6} gap={6}>
       <BlunderStepper category={category} blunderId={blunderId} />
       <BlunderAnalysis detail={detail} />
     </Stack>

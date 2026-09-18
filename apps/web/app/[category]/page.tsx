@@ -7,13 +7,11 @@ interface CategoryPageProps {
   params: Promise<{ category: string }>;
 }
 
-const GAP = 6;
-
 export default async function CategoryPage({ params }: CategoryPageProps) {
   const { category } = await params;
 
   return (
-    <Stack ax="stretch" fullwidth p={GAP} gap={GAP}>
+    <Stack ax="stretch" fullwidth p={6} gap={6}>
       <BlunderFilterPanel category={category} />
       <BlunderTable category={category} />
     </Stack>

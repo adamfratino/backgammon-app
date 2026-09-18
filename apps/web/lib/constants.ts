@@ -1,4 +1,4 @@
-export const PER_PAGE = 20;
+export const PER_PAGE = 10;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,
@@ -143,7 +143,7 @@ export function viewParams(
 }
 
 /** The blunder the URL has open: its id segment, and `?decision=` if there is one. */
-export interface OpenBlunder {
+interface OpenBlunder {
   id: string;
   decision: string | null;
 }
