@@ -35,7 +35,8 @@ interface BlunderTableProps {
   category: string;
 }
 
-const NUMERIC: React.CSSProperties = { textAlign: "end", fontVariantNumeric: "tabular-nums" };
+// Fixed locale and zone, so the server and the browser print the same day.
+const DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
 /**
  * One page of the category, in the order the server sorted it. Previous and Next
@@ -85,11 +86,12 @@ export function BlunderTable({ category }: BlunderTableProps) {
         <TableRoot striped highlightOnHover>
           <TableHeader>
             <TableRow>
-              <TableHead style={NUMERIC}>Error</TableHead>
+              <TableHead>Error</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Kind</TableHead>
               <TableHead>Roll</TableHead>
               <TableHead>Score</TableHead>
+              <TableHead>Date</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -126,7 +128,16 @@ const KIND_CELL: Record<BlunderKind, string> = {
  * made nor the one that should have been leaves the blunder's own page.
  */
 function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) {
-  const { kind, die_1, die_2, error_magnitude, match_length, score_black, score_white } = blunder;
+  const {
+    kind,
+    die_1,
+    die_2,
+    error_magnitude,
+    match_length,
+    score_black,
+    score_white,
+    finished_on,
+  } = blunder;
 
   // A cube decision is made before the dice are thrown, so only a checker play has a roll.
   const roll = kind === "checker" && die_1 !== null && die_2 !== null ? `${die_1}-${die_2}` : "—";
@@ -140,13 +151,14 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
 
   return (
     <TableRow>
-      <TableCell style={NUMERIC}>
+      <TableCell>
         <Link href={href}>{error_magnitude.toFixed(3)}</Link>
       </TableCell>
       <TableCell>{severity}</TableCell>
       <TableCell>{KIND_CELL[kind]}</TableCell>
       <TableCell>{roll}</TableCell>
       <TableCell>{score}</TableCell>
+      <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
     </TableRow>
   );
 }

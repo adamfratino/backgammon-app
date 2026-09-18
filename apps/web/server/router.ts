@@ -39,6 +39,8 @@ const blunder = z.object({
   match_length: z.number().nullable(),
   score_black: z.number().nullable(),
   score_white: z.number().nullable(),
+  /** The day its match finished, UTC, as `YYYY-MM-DD`. A blunder has no time of its own. */
+  finished_on: z.string().nullable(),
 });
 
 /** Chances of each outcome from the mover's side. Gammons include backgammons. */
@@ -168,6 +170,9 @@ const WITH_DECISIONS = `
 const SORT_ORDER_BY: Record<BlunderSort, string> = {
   worst: "d.error_magnitude DESC",
   mildest: "d.error_magnitude ASC",
+  // Blunders from one match share its finish time, so within a match, worst first.
+  newest: "m.finished_at DESC, d.error_magnitude DESC",
+  oldest: "m.finished_at ASC, d.error_magnitude DESC",
 };
 
 /**
@@ -257,10 +262,12 @@ export const appRouter = router({
           .prepare(
             `${WITH_DECISIONS}
              SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, d.error_magnitude,
-                    b.die_1, b.die_2, b.match_length, b.score_black, b.score_white
+                    b.die_1, b.die_2, b.match_length, b.score_black, b.score_white,
+                    date(m.finished_at) AS finished_on
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             LEFT JOIN matches m ON m.match_id = b.match_id
              WHERE ${filter}
              ORDER BY ${SORT_ORDER_BY[input.sort]}, ${TIE_BREAKER}
              LIMIT ? OFFSET ?`,

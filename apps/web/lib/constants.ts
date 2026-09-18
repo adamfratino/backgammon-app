@@ -61,6 +61,8 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
 export const SORTS = [
   { id: "worst", label: "Worst first" },
   { id: "mildest", label: "Mildest first" },
+  { id: "newest", label: "Newest first" },
+  { id: "oldest", label: "Oldest first" },
 ] as const;
 
 export type BlunderSort = (typeof SORTS)[number]["id"];
