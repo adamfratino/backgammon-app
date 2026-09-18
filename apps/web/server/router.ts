@@ -39,6 +39,7 @@ const blunder = z.object({
   match_length: z.number().nullable(),
   score_black: z.number().nullable(),
   score_white: z.number().nullable(),
+  cube_value: z.number().nullable(),
   /** The day its match finished, UTC, as `YYYY-MM-DD`. A blunder has no time of its own. */
   finished_on: z.string().nullable(),
 });
@@ -257,7 +258,7 @@ export const appRouter = router({
             `${WITH_DECISIONS}
              SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, d.error_magnitude,
                     b.die_1, b.die_2, b.match_length, b.score_black, b.score_white,
-                    date(m.finished_at) AS finished_on
+                    b.cube_value, date(m.finished_at) AS finished_on
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
