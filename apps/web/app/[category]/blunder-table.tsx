@@ -29,7 +29,8 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-import { BlunderListPagination } from "./subcomponents/blunder-list-pagination";
+import { roll } from "./analysis.utils";
+import { BlunderTablePagination } from "./subcomponents/blunder-table-pagination";
 
 interface BlunderTableProps {
   category: string;
@@ -107,7 +108,7 @@ export function BlunderTable({ category }: BlunderTableProps) {
         </TableRoot>
       </TableContainer>
 
-      <BlunderListPagination
+      <BlunderTablePagination
         page={page}
         total={data.total}
         category={category}
@@ -139,8 +140,6 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
     finished_on,
   } = blunder;
 
-  // A cube decision is made before the dice are thrown, so only a checker play has a roll.
-  const roll = kind === "checker" && die_1 !== null && die_2 !== null ? `${die_1}-${die_2}` : "—";
   const severity = SEVERITY_BANDS.find(({ id }) => id === severityOf(error_magnitude))?.label;
 
   // Blunders without a match score have none of the three, never just one.
@@ -156,7 +155,8 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
       </TableCell>
       <TableCell>{severity}</TableCell>
       <TableCell>{KIND_CELL[kind]}</TableCell>
-      <TableCell>{roll}</TableCell>
+      {/* A cube decision is made before the dice are thrown, so only a checker play has a roll. */}
+      <TableCell>{kind === "checker" ? roll(die_1, die_2) : "—"}</TableCell>
       <TableCell>{score}</TableCell>
       <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
     </TableRow>
