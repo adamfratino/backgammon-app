@@ -1,21 +1,20 @@
 import { headers } from "next/headers";
 import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
-import { Stack, Group, Text } from "@uiid/design-system";
+import { Stack, Text } from "@uiid/design-system";
 
 import { filtersFrom, pageFrom, sortFrom } from "@/lib/constants";
 import { getQueryClient, trpc } from "@/trpc/server";
-
-import { BlunderList } from "./blunder-list";
-import { BlunderFilterPanel } from "./blunder-filters";
-import { BlunderStepper } from "./blunder-stepper";
 
 interface CategoryLayoutProps {
   params: Promise<{ category: string }>;
   children: React.ReactNode;
 }
 
-const GAP = 6;
-
+/**
+ * The category's title, and the page of the list the URL asks for. The table
+ * draws that page, and a blunder's Previous and Next read their neighbours from
+ * it, so both pages below start with it already in the cache.
+ */
 export default async function CategoryLayout({ params, children }: CategoryLayoutProps) {
   const { category } = await params;
 
@@ -32,21 +31,12 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
 
   return (
     <Stack render={<main />} ax="stretch" style={{ flex: 1 }}>
-      <Stack p={GAP} bb={1}>
+      <Stack p={6} bb={1}>
         <Text render={<h1 />} size={3} weight="bold">
           {category}
         </Text>
       </Stack>
-      <HydrationBoundary state={dehydrate(queryClient)}>
-        <Group fullwidth>
-          <BlunderList category={category} />
-          <Stack ax="stretch" fullwidth maxw={960} p={GAP} gap={GAP}>
-            {/* <BlunderFilterPanel category={category} /> */}
-            <BlunderStepper category={category} />
-            {children}
-          </Stack>
-        </Group>
-      </HydrationBoundary>
+      <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>
     </Stack>
   );
 }

@@ -1,4 +1,4 @@
-export const PER_PAGE = 20;
+export const PER_PAGE = 10;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,
@@ -61,6 +61,8 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
 export const SORTS = [
   { id: "worst", label: "Worst first" },
   { id: "mildest", label: "Mildest first" },
+  { id: "newest", label: "Newest first" },
+  { id: "oldest", label: "Oldest first" },
 ] as const;
 
 export type BlunderSort = (typeof SORTS)[number]["id"];
@@ -135,7 +137,7 @@ export function viewParams(
 }
 
 /** The blunder the URL has open: its id segment, and `?decision=` if there is one. */
-export interface OpenBlunder {
+interface OpenBlunder {
   id: string;
   decision: string | null;
 }
@@ -145,14 +147,6 @@ interface BlunderRow {
   blunder_id: number;
   kind: BlunderKind;
   both: boolean;
-}
-
-/** Reads the open blunder the same way in the list and the stepper. */
-export function openFrom(
-  segment: string | null,
-  params: Pick<URLSearchParams, "get">,
-): OpenBlunder | null {
-  return segment === null ? null : { id: segment, decision: params.get("decision") };
 }
 
 /**
@@ -177,7 +171,7 @@ export function blunderHref(category: string, row: BlunderRow, query: string): s
  * is the checker row. On every other blunder the param changes nothing, so a
  * stray one is ignored, like a stray `?sort=`.
  */
-export function isOpen(row: BlunderRow, open: OpenBlunder | null): boolean {
-  if (open === null || String(row.blunder_id) !== open.id) return false;
+export function isOpen(row: BlunderRow, open: OpenBlunder): boolean {
+  if (String(row.blunder_id) !== open.id) return false;
   return !row.both || isCubeHalf(row) === (open.decision === "cube");
 }

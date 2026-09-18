@@ -1,6 +1,6 @@
 import { Text } from "@uiid/design-system";
 import type { BlunderDetail } from "../analysis.types";
-import { isWinningText } from "../analysis.utils";
+import { isWinningText, roll } from "../analysis.utils";
 import { CRAWFORD_STATE } from "@/lib/constants";
 
 interface BlunderIntroText extends Pick<
@@ -52,11 +52,7 @@ export function BlunderIntroText({
       )}{" "}
       {rolled && (
         <>
-          You just rolled{" "}
-          <strong>
-            [{die_1}-{die_2}]
-          </strong>
-          .
+          You just rolled <strong>[{roll(die_1, die_2)}]</strong>.
         </>
       )}
     </Text>

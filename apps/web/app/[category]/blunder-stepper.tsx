@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { Button, Group } from "@uiid/design-system";
 import { ChevronLeftIcon, ChevronRightIcon } from "@uiid/design-system/icons";
@@ -11,7 +11,6 @@ import {
   blunderHref,
   filtersFrom,
   isOpen,
-  openFrom,
   pageFrom,
   PER_PAGE,
   sortFrom,
@@ -19,33 +18,32 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-import { rowsInListOrder } from "./subcomponents/blunder-list-group";
-
 interface BlunderStepperProps {
   category: string;
+  /** The open blunder's id, as it appears in the URL. */
+  blunderId: string;
 }
 
 /**
- * Previous and next, in the order the list beside it draws its rows. Nothing is
- * stored: where you are is the open blunder and the list's page, both in the
- * URL, and what sits either side comes from the list's own cached query.
+ * Previous and next, in the order the category's table draws its rows. Nothing
+ * is stored: where you are is the open blunder and the table's page, both in the
+ * URL, and what sits either side comes from the table's own cached query.
  */
-export function BlunderStepper({ category }: BlunderStepperProps) {
+export function BlunderStepper({ category, blunderId }: BlunderStepperProps) {
   const trpc = useTRPC();
 
-  const segment = useSelectedLayoutSegment();
   const searchParams = useSearchParams();
-  const selected = openFrom(segment, searchParams);
+  const selected = { id: blunderId, decision: searchParams.get("decision") };
   const page = pageFrom(searchParams.get("page"));
   const filters = filtersFrom(searchParams);
   const sort = sortFrom(searchParams.get("sort"));
 
-  // The list's own input, so this reads the list's cache entry instead of
+  // The table's own input, so this reads the table's cache entry instead of
   // fetching the same page a second time.
   const view = { category, ...filters, sort };
   const { data } = useQuery(trpc.blunders.byCategory.queryOptions({ ...view, page }));
 
-  const rows = rowsInListOrder(data);
+  const rows = data?.blunders ?? [];
   const index = rows.findIndex((row) => isOpen(row, selected));
   const pageCount = data ? Math.ceil(data.total / PER_PAGE) : 0;
 
@@ -61,8 +59,6 @@ export function BlunderStepper({ category }: BlunderStepperProps) {
     trpc.blunders.byCategory.queryOptions(onLastRow ? { ...view, page: page + 1 } : skipToken),
   );
 
-  if (selected === null) return null;
-
   function hrefFor(row: Blunder | undefined, onPage: number): string | null {
     if (row === undefined) return null;
     const params = viewParams(filters, sort);
@@ -71,12 +67,12 @@ export function BlunderStepper({ category }: BlunderStepperProps) {
   }
 
   const previous =
-    index > 0 ? hrefFor(rows[index - 1], page) : hrefFor(rowsInListOrder(before).at(-1), page - 1);
+    index > 0 ? hrefFor(rows[index - 1], page) : hrefFor(before?.blunders.at(-1), page - 1);
 
   const next =
     index !== -1 && index < rows.length - 1
       ? hrefFor(rows[index + 1], page)
-      : hrefFor(rowsInListOrder(after)[0], page + 1);
+      : hrefFor(after?.blunders[0], page + 1);
 
   return (
     <Group render={<nav />} aria-label="Step through blunders" ax="space-between" fullwidth>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useTRPC } from "@/trpc/client";
 import { PER_PAGE, viewParams, type BlunderFilters, type BlunderSort } from "@/lib/constants";
 
-interface BlunderListPaginationProps {
+interface BlunderTablePaginationProps {
   page: number;
   total: number;
   category: string;
@@ -14,13 +14,13 @@ interface BlunderListPaginationProps {
   sort: BlunderSort;
 }
 
-export function BlunderListPagination({
+export function BlunderTablePagination({
   page,
   category,
   total,
   filters,
   sort,
-}: BlunderListPaginationProps) {
+}: BlunderTablePaginationProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 

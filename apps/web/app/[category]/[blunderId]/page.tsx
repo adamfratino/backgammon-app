@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
+import { Stack } from "@uiid/design-system";
 
 import { caller } from "@/server/caller";
 import { BlunderAnalysis } from "../analysis";
+import { BlunderStepper } from "../blunder-stepper";
 
 interface BlunderPageProps {
   params: Promise<{ category: string; blunderId: string }>;
@@ -18,5 +20,10 @@ export default async function BlunderPage({ params }: BlunderPageProps) {
   const detail = await caller.blunders.detail({ category, blunder_id });
   if (!detail) notFound();
 
-  return <BlunderAnalysis detail={detail} />;
+  return (
+    <Stack ax="stretch" fullwidth maxw={960} p={6} gap={6}>
+      <BlunderStepper category={category} blunderId={blunderId} />
+      <BlunderAnalysis detail={detail} />
+    </Stack>
+  );
 }
