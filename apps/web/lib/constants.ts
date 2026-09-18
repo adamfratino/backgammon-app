@@ -133,3 +133,51 @@ export function viewParams(
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
 }
+
+/** The blunder the URL has open: its id segment, and `?decision=` if there is one. */
+export interface OpenBlunder {
+  id: string;
+  decision: string | null;
+}
+
+/** The parts of a list row that decide where it links. */
+interface BlunderRow {
+  blunder_id: number;
+  kind: BlunderKind;
+  both: boolean;
+}
+
+/** Reads the open blunder the same way in the list and the stepper. */
+export function openFrom(
+  segment: string | null,
+  params: Pick<URLSearchParams, "get">,
+): OpenBlunder | null {
+  return segment === null ? null : { id: segment, decision: params.get("decision") };
+}
+
+/**
+ * A blunder stored as `both` is two rows in the list under one id. Its checker
+ * row keeps the plain address and its cube row adds `?decision=cube`. Every
+ * other blunder is one row, and its id is enough.
+ */
+function isCubeHalf({ kind, both }: BlunderRow): boolean {
+  return both && kind === "cube";
+}
+
+/** A row's link: the view in `query` comes along, plus `?decision=cube` if it needs one. */
+export function blunderHref(category: string, row: BlunderRow, query: string): string {
+  const params = new URLSearchParams(query);
+  if (isCubeHalf(row)) params.set("decision", "cube");
+  return `/${category}/${row.blunder_id}${params.size > 0 ? `?${params}` : ""}`;
+}
+
+/**
+ * Whether a row is the one the URL has open. The id has to match, and on a `both`
+ * blunder so does the half: `?decision=cube` is the cube row, and anything else
+ * is the checker row. On every other blunder the param changes nothing, so a
+ * stray one is ignored, like a stray `?sort=`.
+ */
+export function isOpen(row: BlunderRow, open: OpenBlunder | null): boolean {
+  if (open === null || String(row.blunder_id) !== open.id) return false;
+  return !row.both || isCubeHalf(row) === (open.decision === "cube");
+}

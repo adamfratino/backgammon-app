@@ -3,10 +3,12 @@ import { Stack, Text } from "@uiid/design-system";
 import type { Blunder, BucketCount } from "@/server/router";
 import {
   CUBE_DIRECTIONS,
+  KINDS,
   SEVERITY_BANDS,
   severityOf,
   cubeDirection,
   type BlunderKind,
+  type OpenBlunder,
 } from "@/lib/constants";
 
 import { BlunderListLinks } from "./blunder-list-links";
@@ -22,7 +24,7 @@ interface BlunderListGroup {
 interface BlunderListGroupProps {
   group: BlunderListGroup;
   category: string;
-  selected: string | null;
+  selected: OpenBlunder | null;
   query: string;
   depth: number;
 }
@@ -110,5 +112,28 @@ export function groupsOf(
           },
         ]
       : [];
+  });
+}
+
+/** A group's rows top to bottom, or its child groups' rows if it has any. */
+function rowsOf(group: BlunderListGroup): Blunder[] {
+  return group.groups.length > 0 ? group.groups.flatMap(rowsOf) : group.blunders;
+}
+
+/**
+ * A page's rows in the order the list draws them — kind, then side of the cube,
+ * then severity — which is not the order the server sent them in. The two rows
+ * of a `both` blunder are both here, as two stops.
+ */
+export function rowsInListOrder(
+  data: { blunders: Blunder[]; counts: BucketCount[] } | undefined,
+): Blunder[] {
+  if (!data) return [];
+
+  const byKind = Object.groupBy(data.blunders, (blunder) => blunder.kind);
+
+  return KINDS.flatMap((kind) => {
+    const blunders = byKind[kind];
+    return blunders ? groupsOf(kind, blunders, data.counts).flatMap(rowsOf) : [];
   });
 }
