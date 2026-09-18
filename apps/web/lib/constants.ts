@@ -46,6 +46,14 @@ export const CUBE_ACTION = [
 
 export type BlunderCubeAction = (typeof CUBE_ACTION)[number] | null;
 
+/** What the player did with the cube, in the words a backgammon player would use. */
+export const CUBE_ACTION_LABELS: Record<NonNullable<BlunderCubeAction>, string> = {
+  double_requested: "Double",
+  dice_rolled: "No double",
+  double_accepted: "Take",
+  double_rejected: "Pass",
+};
+
 export const CUBE_DIRECTIONS = [
   { id: "offer", label: "Offering the cube" },
   { id: "receive", label: "Being offered the cube" },
@@ -147,14 +155,6 @@ interface BlunderRow {
   both: boolean;
 }
 
-/** Reads the open blunder the same way in the list and the stepper. */
-export function openFrom(
-  segment: string | null,
-  params: Pick<URLSearchParams, "get">,
-): OpenBlunder | null {
-  return segment === null ? null : { id: segment, decision: params.get("decision") };
-}
-
 /**
  * A blunder stored as `both` is two rows in the list under one id. Its checker
  * row keeps the plain address and its cube row adds `?decision=cube`. Every
@@ -177,7 +177,7 @@ export function blunderHref(category: string, row: BlunderRow, query: string): s
  * is the checker row. On every other blunder the param changes nothing, so a
  * stray one is ignored, like a stray `?sort=`.
  */
-export function isOpen(row: BlunderRow, open: OpenBlunder | null): boolean {
-  if (open === null || String(row.blunder_id) !== open.id) return false;
+export function isOpen(row: BlunderRow, open: OpenBlunder): boolean {
+  if (String(row.blunder_id) !== open.id) return false;
   return !row.both || isCubeHalf(row) === (open.decision === "cube");
 }
