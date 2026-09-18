@@ -7,7 +7,7 @@ import {
   CRAWFORD_IDS,
   cubeDirection,
   DEFAULT_SORT,
-  DIRECTIONS,
+  KIND_FILTER_IDS,
   KINDS,
   NOTE_MAX_LENGTH,
   PER_PAGE,
@@ -207,9 +207,8 @@ export const appRouter = router({
         z.object({
           category: z.string(),
           page: z.number().int().min(1).default(1),
-          kinds: z.array(z.enum(KINDS)).default([]),
+          kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
           severities: z.array(z.enum(SEVERITIES)).default([]),
-          directions: z.array(z.enum(DIRECTIONS)).default([]),
           sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
         }),
       )
@@ -226,8 +225,14 @@ export const appRouter = router({
         const params: (string | number)[] = [input.category];
 
         if (input.kinds.length > 0) {
-          where.push(`d.kind IN (${input.kinds.map(() => "?").join(", ")})`);
-          params.push(...input.kinds);
+          // A cube decision's side of the cube is read off the action taken.
+          const clauses = input.kinds.map((kind) => {
+            if (kind === "checker") return "d.kind = 'checker'";
+            const actions = CUBE_ACTION.filter((action) => cubeDirection(action) === kind);
+            params.push(...actions);
+            return `(d.kind = 'cube' AND b.cube_action IN (${actions.map(() => "?").join(", ")}))`;
+          });
+          where.push(`(${clauses.join(" OR ")})`);
         }
 
         if (input.severities.length > 0) {
@@ -243,17 +248,6 @@ export const appRouter = router({
             },
           );
           where.push(`(${clauses.join(" OR ")})`);
-        }
-
-        if (input.directions.length > 0) {
-          // A checker decision has no cube action, so asking for a direction is
-          // also asking for cube decisions.
-          const actions = CUBE_ACTION.filter((action) =>
-            input.directions.includes(cubeDirection(action)),
-          );
-          where.push(`d.kind = 'cube'`);
-          where.push(`b.cube_action IN (${actions.map(() => "?").join(", ")})`);
-          params.push(...actions);
         }
 
         const filter = where.join(" AND ");

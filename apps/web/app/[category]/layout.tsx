@@ -30,7 +30,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
     .catch(noop);
 
   return (
-    <Stack render={<main />} ax="stretch" style={{ flex: 1 }}>
+    <Stack render={<main />} ax="stretch" minw={0} style={{ flex: 1 }}>
       <Stack p={6} bb={1}>
         <Text render={<h1 />} size={3} weight="bold">
           {category}
