@@ -1,4 +1,4 @@
-export const PER_PAGE = 10;
+export const PER_PAGE = 20;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,
@@ -9,11 +9,6 @@ export const NOTE_MAX_LENGTH = 2000;
 export const KINDS = ["checker", "cube"] as const;
 
 export type BlunderKind = (typeof KINDS)[number];
-
-export const KIND_LABELS: Record<BlunderKind, string> = {
-  checker: "Checker plays",
-  cube: "Cube decisions",
-};
 
 export const CRAWFORD_STATE = [
   { id: "none", label: "none" },
@@ -58,6 +53,18 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   return "offer";
 }
 
+/**
+ * What the Kind filter offers: checker plays, and cube decisions split by which
+ * side of the cube you were on. Ticking several widens the list, so "Checker
+ * plays" and "Offering the cube" is either one.
+ */
+export const KIND_FILTERS = [
+  { id: "checker", label: "Checker plays" },
+  ...CUBE_DIRECTIONS,
+] as const;
+
+export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
+
 export const SORTS = [
   { id: "worst", label: "Worst first" },
   { id: "mildest", label: "Mildest first" },
@@ -67,16 +74,15 @@ export const SORTS = [
 
 export type BlunderSort = (typeof SORTS)[number]["id"];
 
+export const KIND_FILTER_IDS = KIND_FILTERS.map(({ id }) => id);
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
-export const DIRECTIONS = CUBE_DIRECTIONS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
 export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 
 export const DEFAULT_SORT: BlunderSort = "worst";
 export interface BlunderFilters {
-  kinds: BlunderKind[];
+  kinds: KindFilter[];
   severities: BlunderSeverity[];
-  directions: CubeDirection[];
 }
 
 /** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
@@ -95,11 +101,11 @@ export function sortFrom(value: string | null): BlunderSort {
 }
 
 /**
- * The filters, read from `?kind=&severity=&direction=`. Anything that isn't one
- * of ours is dropped, and each group comes back in the constants' own order —
- * which is what lets the browser and the server build the same cache key from
- * the same URL. Takes anything with `getAll`, so the read-only search params in
- * the browser and a plain `URLSearchParams` on the server both fit.
+ * The filters, read from `?kind=&severity=`. Anything that isn't one of ours is
+ * dropped, and each group comes back in the constants' own order — which is
+ * what lets the browser and the server build the same cache key from the same
+ * URL. Takes anything with `getAll`, so the read-only search params in the
+ * browser and a plain `URLSearchParams` on the server both fit.
  */
 export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFilters {
   const pick = <T extends string>(key: string, allowed: readonly T[]): T[] => {
@@ -108,9 +114,8 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
   };
 
   return {
-    kinds: pick("kind", KINDS),
+    kinds: pick("kind", KIND_FILTER_IDS),
     severities: pick("severity", SEVERITIES),
-    directions: pick("direction", DIRECTIONS),
   };
 }
 
@@ -125,13 +130,12 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
  * every existing caller keep compiling while quietly clearing the sort.
  */
 export function viewParams(
-  { kinds, severities, directions }: BlunderFilters,
+  { kinds, severities }: BlunderFilters,
   sort: BlunderSort,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
-  for (const direction of directions) params.append("direction", direction);
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
 }

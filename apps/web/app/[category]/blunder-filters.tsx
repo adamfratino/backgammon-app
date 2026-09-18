@@ -1,24 +1,46 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Group, Select } from "@uiid/design-system";
+import { Button, Select, Stack, Toggle, ToggleGroup } from "@uiid/design-system";
+import { RefreshCcwIcon } from "@uiid/design-system/icons";
 
 import {
-  type BlunderSort,
-  CUBE_DIRECTIONS,
-  viewParams,
   filtersFrom,
-  sortFrom,
-  KINDS,
-  SORTS,
-  KIND_LABELS,
+  KIND_FILTERS,
   SEVERITY_BANDS,
+  SORTS,
+  sortFrom,
+  viewParams,
 } from "@/lib/constants";
 
 interface BlunderFilterPanelProps {
   category: string;
 }
 
+// Select lists `{ value, label }`; the constants are `{ id, label }`.
+const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
+const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label }) => ({ value: id, label }));
+
+/**
+ * What both dropdowns share. The popup opens below the trigger rather than over
+ * it, leaving the picks in view. Below, nothing clips the options, and the DS
+ * draws each label as a list item inside a `<ul>`, so the list's own bullets
+ * have to be switched off until UI-209 is fixed.
+ */
+const FILTER_SELECT = {
+  multiple: true,
+  fullwidth: true,
+  PositionerProps: { alignItemWithTrigger: false },
+  ListProps: { style: { listStyleType: "none" } },
+} as const;
+
+/**
+ * A sidebar of fixed width, so ticking never changes the table's width; a long
+ * list of picks truncates instead. Nothing ticked in a dropdown means nothing
+ * is filtered out, so the empty state says "All" rather than looking unset.
+ * Every change goes through `viewParams`, which writes no `?page=`, so the list
+ * starts again at page 1.
+ */
 export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,102 +52,60 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
     router.push(query ? `/${category}?${query}` : `/${category}`);
   }
 
-  function toggle(param: string, value: string, checked: boolean) {
+  // Select hands back the values in the order they were ticked, so they go
+  // through `filtersFrom` to come out in the constants' order, like the server's.
+  function pick(param: "kind" | "severity", values: string[]) {
     const params = new URLSearchParams(searchParams);
-    if (checked) params.append(param, value);
-    else params.delete(param, value);
-
-    show(viewParams(filtersFrom(params), sortFrom(params.get("sort"))));
-  }
-
-  function choose(next: BlunderSort) {
-    show(viewParams(filters, next));
+    params.delete(param);
+    for (const value of values) params.append(param, value);
+    show(viewParams(filtersFrom(params), sort));
   }
 
   return (
-    <Group gap={6}>
-      <FilterGroup
-        legend="Kind"
-        param="kind"
-        options={KINDS.map((id) => ({ id, label: KIND_LABELS[id] }))}
-        chosen={filters.kinds}
-        onToggle={toggle}
+    <Stack w={448} gap={8} ax="stretch">
+      <Select
+        {...FILTER_SELECT}
+        label="Kind"
+        placeholder="All kinds"
+        items={KIND_ITEMS}
+        value={filters.kinds}
+        onValueChange={(values) => pick("kind", values)}
+        size="small"
       />
-      <FilterGroup
-        legend="Severity"
-        param="severity"
-        options={SEVERITY_BANDS}
-        chosen={filters.severities}
-        onToggle={toggle}
+      <Select
+        {...FILTER_SELECT}
+        label="Severity"
+        placeholder="All severities"
+        items={SEVERITY_ITEMS}
+        value={filters.severities}
+        onValueChange={(values) => pick("severity", values)}
+        size="small"
       />
-      <FilterGroup
-        legend="Cube"
-        param="direction"
-        options={CUBE_DIRECTIONS}
-        chosen={filters.directions}
-        onToggle={toggle}
-      />
-      <SortGroup sort={sort} onChoose={choose} />
-    </Group>
-  );
-}
-
-interface FilterGroupProps {
-  legend: string;
-  param: string;
-  options: readonly { id: string; label: string }[];
-  chosen: readonly string[];
-  onToggle: (param: string, value: string, checked: boolean) => void;
-}
-
-/** One group of checkboxes. The `name` is the query param it writes. */
-function FilterGroup({ legend, param, options, chosen, onToggle }: FilterGroupProps) {
-  return (
-    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-      <legend>{legend}</legend>
-      {options.map(({ id, label }) => (
-        <label key={id} style={{ display: "block" }}>
-          <input
-            type="checkbox"
-            name={param}
-            value={id}
-            checked={chosen.includes(id)}
-            onChange={(event) => onToggle(param, id, event.currentTarget.checked)}
-          />{" "}
-          {label}
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
-interface SortGroupProps {
-  sort: BlunderSort;
-  onChoose: (sort: BlunderSort) => void;
-}
-
-/**
- * Radios, not checkboxes, because a sort is one choice rather than a set — and
- * because one of them is always on, there is no "nothing selected" state to
- * represent. That is the whole difference between `sortFrom` and `filtersFrom`,
- * made visible in the markup.
- */
-function SortGroup({ sort, onChoose }: SortGroupProps) {
-  return (
-    <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-      <legend>Sort</legend>
-      {SORTS.map(({ id, label }) => (
-        <label key={id} style={{ display: "block" }}>
-          <input
-            type="radio"
-            name="sort"
-            value={id}
-            checked={sort === id}
-            onChange={() => onChoose(id)}
-          />{" "}
-          {label}
-        </label>
-      ))}
-    </fieldset>
+      {/* A sort is always set, so pressing the pressed one again changes nothing. */}
+      <ToggleGroup
+        aria-label="Sort"
+        fullwidth
+        value={[sort]}
+        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next)))}
+        size="small"
+      >
+        {SORTS.map(({ id, label }) => (
+          <Toggle key={id} value={id}>
+            {label}
+          </Toggle>
+        ))}
+      </ToggleGroup>
+      <Button
+        variant="subtle"
+        size="small"
+        shape="square"
+        tooltip="Reset filters"
+        aria-label="Reset filters"
+        disabled={viewParams(filters, sort).size === 0}
+        onClick={() => show(new URLSearchParams())}
+      >
+        <RefreshCcwIcon />
+      </Button>
+    </Stack>
   );
 }
