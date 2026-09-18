@@ -1,4 +1,4 @@
-export const PER_PAGE = 20;
+export const PER_PAGE = 15;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,

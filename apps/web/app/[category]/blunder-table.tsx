@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
+  Badge,
+  Button,
+  Group,
+  type PaletteColor,
   Stack,
   TableBody,
   TableCell,
@@ -14,15 +18,16 @@ import {
   TableRow,
   Text,
 } from "@uiid/design-system";
+import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
 import {
   type BlunderKind,
+  type BlunderSeverity,
   blunderHref,
   filtersFrom,
   pageFrom,
   PER_PAGE,
-  SEVERITY_BANDS,
   severityOf,
   sortFrom,
   viewParams,
@@ -79,20 +84,19 @@ export function BlunderTable({ category }: BlunderTableProps) {
       ax="stretch"
       gap={3}
     >
-      <Text shade="muted">
-        Showing {first}–{last} of <data value={data.total}>{data.total}</data>
-      </Text>
-
       <TableContainer>
         <TableRoot striped highlightOnHover>
           <TableHeader>
             <TableRow>
               <TableHead>Error</TableHead>
-              <TableHead>Severity</TableHead>
               <TableHead>Kind</TableHead>
-              <TableHead>Roll</TableHead>
-              <TableHead>Score</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Score</TableHead>
+              <TableHead>Cube</TableHead>
+              <TableHead>Roll</TableHead>
+              <TableHead>
+                <span className="sr-only">Row actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -108,13 +112,18 @@ export function BlunderTable({ category }: BlunderTableProps) {
         </TableRoot>
       </TableContainer>
 
-      <BlunderTablePagination
-        page={page}
-        total={data.total}
-        category={category}
-        filters={filters}
-        sort={sort}
-      />
+      <Group gap={2} fullwidth ax="space-between">
+        <BlunderTablePagination
+          page={page}
+          total={data.total}
+          category={category}
+          filters={filters}
+          sort={sort}
+        />
+        <Text shade="muted">
+          Showing {first}–{last} of <data value={data.total}>{data.total}</data>
+        </Text>
+      </Group>
     </Stack>
   );
 }
@@ -122,6 +131,14 @@ export function BlunderTable({ category }: BlunderTableProps) {
 const KIND_CELL: Record<BlunderKind, string> = {
   checker: "Checker",
   cube: "Cube",
+};
+
+// No green: no blunder is fine, so even the mildest band stays neutral.
+const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
+  catastrophic: "red",
+  severe: "orange",
+  moderate: "yellow",
+  mild: "neutral",
 };
 
 /**
@@ -137,10 +154,9 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
     match_length,
     score_black,
     score_white,
+    cube_value,
     finished_on,
   } = blunder;
-
-  const severity = SEVERITY_BANDS.find(({ id }) => id === severityOf(error_magnitude))?.label;
 
   // Blunders without a match score have none of the three, never just one.
   const score =
@@ -151,14 +167,27 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
   return (
     <TableRow>
       <TableCell>
-        <Link href={href}>{error_magnitude.toFixed(3)}</Link>
+        <Badge color={SEVERITY_COLOR[severityOf(error_magnitude)]}>
+          {error_magnitude.toFixed(3)}
+        </Badge>
       </TableCell>
-      <TableCell>{severity}</TableCell>
       <TableCell>{KIND_CELL[kind]}</TableCell>
+      <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
+      <TableCell>{score}</TableCell>
+      <TableCell>{cube_value ?? "—"}</TableCell>
       {/* A cube decision is made before the dice are thrown, so only a checker play has a roll. */}
       <TableCell>{kind === "checker" ? roll(die_1, die_2) : "—"}</TableCell>
-      <TableCell>{score}</TableCell>
-      <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
+      <TableCell collapse>
+        <Button
+          size="xsmall"
+          variant="subtle"
+          render={<Link href={href} />}
+          tooltip="View blunder"
+          aria-label="View blunder"
+        >
+          <EyeIcon />
+        </Button>
+      </TableCell>
     </TableRow>
   );
 }
