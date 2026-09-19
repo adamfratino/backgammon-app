@@ -7,7 +7,6 @@ import {
   Badge,
   Button,
   Group,
-  type PaletteColor,
   Stack,
   TableBody,
   TableCell,
@@ -22,13 +21,13 @@ import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
 import {
-  type BlunderSeverity,
   blunderHref,
   filtersFrom,
   KIND_LABELS,
   kindCategory,
   pageFrom,
   PER_PAGE,
+  SEVERITY_COLOR,
   severityOf,
   sortFrom,
   viewParams,
@@ -128,14 +127,6 @@ export function BlunderTable({ category }: BlunderTableProps) {
     </Stack>
   );
 }
-
-// No green: no blunder is fine, so even the mildest band stays neutral.
-const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
-  catastrophic: "red",
-  severe: "orange",
-  moderate: "yellow",
-  mild: "neutral",
-};
 
 /**
  * How badly, never what: the position is the quiz, so neither the play that was
