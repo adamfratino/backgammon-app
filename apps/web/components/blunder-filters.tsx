@@ -30,9 +30,27 @@ interface BlunderFilterPanelProps {
   category: string;
 }
 
-// Select lists `{ value, label }`; the constants are `{ id, label }`.
+// Select keys a row by `value`, the constants by `id`; everything else carries
+// across unchanged. `description` is a second line the popup stacks under the
+// name, so the closed trigger still reads back just the names.
 const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
-const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label }) => ({ value: id, label }));
+
+/**
+ * A step smaller than the name and a shade back from it, so the popup reads as a
+ * list of choices with notes rather than two competing lines. Both are set here:
+ * the DS asks for the description in the muted shade, but `--list-description-color`
+ * resolves to the same value the label draws in, so left alone the second line
+ * comes out the same weight of color as the first.
+ */
+const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label, description }) => ({
+  value: id,
+  label,
+  description: (
+    <Text size={-1} shade="muted">
+      {description}
+    </Text>
+  ),
+}));
 
 /**
  * Each band beside the slice of the error scale it covers, in the same badge the
@@ -66,7 +84,12 @@ const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label, min }, index) => {
 interface FilterSelectProps {
   label: string;
   placeholder: string;
-  items: { value: string; label: string; children?: React.ReactNode }[];
+  items: {
+    value: string;
+    label: string;
+    description?: React.ReactNode;
+    children?: React.ReactNode;
+  }[];
   value: string[];
   onValueChange: (values: string[]) => void;
 }

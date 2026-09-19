@@ -36,11 +36,27 @@ export type CrawfordState = (typeof CRAWFORD_STATE)[number]["id"];
  * Crawford filter" instead of "before the Crawford game" — and the labels above
  * are prose fragments for a sentence on the blunder page ("you're on crawford"),
  * not the standalone names a dropdown needs.
+ *
+ * Each carries the line the popup stacks under its name. The three differ by
+ * what the cube is doing, which is the part that changes how a position should
+ * be played, so each description says that rather than restating the name.
  */
 export const CRAWFORD_FILTERS = [
-  { id: "pre", label: "Pre-Crawford" },
-  { id: "crawford", label: "Crawford game" },
-  { id: "post", label: "Post-Crawford" },
+  {
+    id: "pre",
+    label: "Pre-Crawford",
+    description: "Neither player at match point — the cube is live",
+  },
+  {
+    id: "crawford",
+    label: "Crawford game",
+    description: "The one game after a player reaches match point — no doubling",
+  },
+  {
+    id: "post",
+    label: "Post-Crawford",
+    description: "Every game after the Crawford game — the cube is live again",
+  },
 ] as const;
 
 export type CrawfordFilter = (typeof CRAWFORD_FILTERS)[number]["id"];
