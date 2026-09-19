@@ -4,6 +4,13 @@ export const PER_PAGE = 15;
 export const SIDEBAR_MAXWIDTH = 480;
 
 /**
+ * How many page numbers the paginator shows on each side of the current one.
+ * The first and last pages are always drawn, so 1 is the narrowest window that
+ * still shows where you are: `1 … 15 16 17 … 31`.
+ */
+export const PAGE_SPREAD = 1;
+
+/**
  * A note is a scratchpad, not a document. The server rejects anything longer,
  * and the textarea stops typing there.
  */
