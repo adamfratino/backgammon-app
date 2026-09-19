@@ -1,7 +1,8 @@
 "use client";
 
+import { useId } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Select, Stack, Toggle, ToggleGroup } from "@uiid/design-system";
+import { Button, Group, Select, Stack, Text, Toggle, ToggleGroup } from "@uiid/design-system";
 import { RefreshCcwIcon } from "@uiid/design-system/icons";
 
 import {
@@ -22,18 +23,60 @@ interface BlunderFilterPanelProps {
 const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
 const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label }) => ({ value: id, label }));
 
+interface FilterSelectProps {
+  label: string;
+  placeholder: string;
+  items: { value: string; label: string }[];
+  value: string[];
+  onValueChange: (values: string[]) => void;
+}
+
 /**
- * What both dropdowns share. The popup opens below the trigger rather than over
- * it, leaving the picks in view. Below, nothing clips the options, and the DS
- * draws each label as a list item inside a `<ul>`, so the list's own bullets
- * have to be switched off until UI-209 is fixed.
+ * A dropdown under its own label row, which carries a reset for just this
+ * dropdown. The row sits outside the Select because the DS Field's label row
+ * only takes a hint icon, not a button; once UI-216 gives it an `action` slot,
+ * this goes back to Select's `label` with the reset as its action. The popup
+ * opens below the trigger rather than over it, leaving the picks in view.
+ * Below, nothing clips the options, and the DS draws each label as a list item
+ * inside a `<ul>`, so the list's own bullets have to be switched off until
+ * UI-209 is fixed.
  */
-const FILTER_SELECT = {
-  multiple: true,
-  fullwidth: true,
-  PositionerProps: { alignItemWithTrigger: false },
-  ListProps: { style: { listStyleType: "none" } },
-} as const;
+function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectProps) {
+  const labelId = useId();
+  const reset = `Reset ${label.toLowerCase()}`;
+
+  return (
+    <Stack gap={1} ax="stretch">
+      <Group ax="space-between" ay="center">
+        <Text id={labelId} size={-1} weight="bold">
+          {label}
+        </Text>
+        <Button
+          variant="ghost"
+          size="xsmall"
+          shape="square"
+          tooltip={reset}
+          aria-label={reset}
+          disabled={value.length === 0}
+          onClick={() => onValueChange([])}
+        >
+          <RefreshCcwIcon />
+        </Button>
+      </Group>
+      <Select
+        {...props}
+        multiple
+        fullwidth
+        value={value}
+        onValueChange={onValueChange}
+        size="small"
+        TriggerProps={{ "aria-labelledby": labelId }}
+        PositionerProps={{ alignItemWithTrigger: false }}
+        ListProps={{ style: { listStyleType: "none" } }}
+      />
+    </Stack>
+  );
+}
 
 /**
  * A sidebar of fixed width, so ticking never changes the table's width; a long
@@ -79,36 +122,20 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
         ))}
       </ToggleGroup>
 
-      <Select
-        {...FILTER_SELECT}
+      <FilterSelect
         label="Kind"
         placeholder="All kinds"
         items={KIND_ITEMS}
         value={filters.kinds}
         onValueChange={(values) => pick("kind", values)}
-        size="small"
       />
-      <Select
-        {...FILTER_SELECT}
+      <FilterSelect
         label="Severity"
         placeholder="All severities"
         items={SEVERITY_ITEMS}
         value={filters.severities}
         onValueChange={(values) => pick("severity", values)}
-        size="small"
       />
-
-      <Button
-        variant="subtle"
-        size="small"
-        shape="square"
-        tooltip="Reset filters"
-        aria-label="Reset filters"
-        disabled={viewParams(filters, sort).size === 0}
-        onClick={() => show(new URLSearchParams())}
-      >
-        <RefreshCcwIcon />
-      </Button>
     </Stack>
   );
 }
