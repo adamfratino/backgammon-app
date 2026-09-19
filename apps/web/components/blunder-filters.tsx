@@ -30,25 +30,33 @@ interface BlunderFilterPanelProps {
   category: string;
 }
 
-// Select keys a row by `value`, the constants by `id`; everything else carries
-// across unchanged. `description` is a second line the popup stacks under the
-// name, so the closed trigger still reads back just the names.
+// Select keys a row by `value`, the constants by `id`.
 const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
 
 /**
- * A step smaller than the name and a shade back from it, so the popup reads as a
- * list of choices with notes rather than two competing lines. Both are set here:
- * the DS asks for the description in the muted shade, but `--list-description-color`
- * resolves to the same value the label draws in, so left alone the second line
- * comes out the same weight of color as the first.
+ * Each state with a line saying what it means for the cube, a size smaller and a
+ * shade back, so the popup reads as choices with notes rather than two competing
+ * lines.
+ *
+ * Drawn through `children` rather than the DS `description` slot, for the same
+ * reason the severity rows are: the slot wraps the pair in a block that carries
+ * its own bottom margin whenever a description is present, which pads every row
+ * apart, and it colors the second line with `--list-description-color` — which
+ * resolves to the value the label already draws in, so the "description" comes
+ * out no dimmer than the name above it. `label` stays a plain string because it
+ * is still what the closed trigger shows and what typeahead matches. Raised
+ * upstream as UI-218.
  */
 const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label, description }) => ({
   value: id,
   label,
-  description: (
-    <Text size={-1} shade="muted">
-      {description}
-    </Text>
+  children: (
+    <Stack gap={1}>
+      <Text size={0}>{label}</Text>
+      <Text size={-1} shade="halftone">
+        {description}
+      </Text>
+    </Stack>
   ),
 }));
 
@@ -84,12 +92,7 @@ const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label, min }, index) => {
 interface FilterSelectProps {
   label: string;
   placeholder: string;
-  items: {
-    value: string;
-    label: string;
-    description?: React.ReactNode;
-    children?: React.ReactNode;
-  }[];
+  items: { value: string; label: string; children?: React.ReactNode }[];
   value: string[];
   onValueChange: (values: string[]) => void;
 }
