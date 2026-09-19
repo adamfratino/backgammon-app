@@ -28,6 +28,23 @@ export const CRAWFORD_STATE = [
 
 export type CrawfordState = (typeof CRAWFORD_STATE)[number]["id"];
 
+/**
+ * What the Crawford filter offers, in the order a match runs through them.
+ *
+ * These ids are the filter's own rather than the `crawford_state` column's. That
+ * column calls the ordinary case `none`, which in a URL would read as "no
+ * Crawford filter" instead of "before the Crawford game" — and the labels above
+ * are prose fragments for a sentence on the blunder page ("you're on crawford"),
+ * not the standalone names a dropdown needs.
+ */
+export const CRAWFORD_FILTERS = [
+  { id: "pre", label: "Pre-Crawford" },
+  { id: "crawford", label: "Crawford game" },
+  { id: "post", label: "Post-Crawford" },
+] as const;
+
+export type CrawfordFilter = (typeof CRAWFORD_FILTERS)[number]["id"];
+
 export const SEVERITY_BANDS = [
   { id: "catastrophic", label: "Catastrophic", min: 0.4 },
   { id: "severe", label: "Severe", min: 0.2 },
@@ -120,11 +137,13 @@ export const KIND_FILTER_IDS = KIND_FILTERS.map(({ id }) => id);
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
 export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
+export const CRAWFORD_FILTER_IDS = CRAWFORD_FILTERS.map(({ id }) => id);
 
 export const DEFAULT_SORT: BlunderSort = "worst";
 export interface BlunderFilters {
   kinds: KindFilter[];
   severities: BlunderSeverity[];
+  crawfords: CrawfordFilter[];
 }
 
 /** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
@@ -143,9 +162,9 @@ export function sortFrom(value: string | null): BlunderSort {
 }
 
 /**
- * The filters, read from `?kind=&severity=`. Anything that isn't one of ours is
- * dropped, and each group comes back in the constants' own order — which is
- * what lets the browser and the server build the same cache key from the same
+ * The filters, read from `?kind=&severity=&crawford=`. Anything that isn't one of
+ * ours is dropped, and each group comes back in the constants' own order — which
+ * is what lets the browser and the server build the same cache key from the same
  * URL. Takes anything with `getAll`, so the read-only search params in the
  * browser and a plain `URLSearchParams` on the server both fit.
  */
@@ -158,6 +177,7 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
   return {
     kinds: pick("kind", KIND_FILTER_IDS),
     severities: pick("severity", SEVERITIES),
+    crawfords: pick("crawford", CRAWFORD_FILTER_IDS),
   };
 }
 
@@ -172,12 +192,13 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
  * every existing caller keep compiling while quietly clearing the sort.
  */
 export function viewParams(
-  { kinds, severities }: BlunderFilters,
+  { kinds, severities, crawfords }: BlunderFilters,
   sort: BlunderSort,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
+  for (const crawford of crawfords) params.append("crawford", crawford);
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
 }

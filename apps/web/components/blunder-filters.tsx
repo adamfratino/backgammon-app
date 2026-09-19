@@ -15,6 +15,7 @@ import {
 import { RefreshCcwIcon } from "@uiid/design-system/icons";
 
 import {
+  CRAWFORD_FILTERS,
   filtersFrom,
   KIND_FILTERS,
   SEVERITY_BANDS,
@@ -31,6 +32,7 @@ interface BlunderFilterPanelProps {
 
 // Select lists `{ value, label }`; the constants are `{ id, label }`.
 const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
+const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label }) => ({ value: id, label }));
 
 /**
  * Each band beside the slice of the error scale it covers, in the same badge the
@@ -133,7 +135,7 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
 
   // Select hands back the values in the order they were ticked, so they go
   // through `filtersFrom` to come out in the constants' order, like the server's.
-  function pick(param: "kind" | "severity", values: string[]) {
+  function pick(param: "kind" | "severity" | "crawford", values: string[]) {
     const params = new URLSearchParams(searchParams);
     params.delete(param);
     for (const value of values) params.append(param, value);
@@ -170,6 +172,13 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
         items={SEVERITY_ITEMS}
         value={filters.severities}
         onValueChange={(values) => pick("severity", values)}
+      />
+      <FilterSelect
+        label="Crawford"
+        placeholder="All games"
+        items={CRAWFORD_ITEMS}
+        value={filters.crawfords}
+        onValueChange={(values) => pick("crawford", values)}
       />
     </Stack>
   );
