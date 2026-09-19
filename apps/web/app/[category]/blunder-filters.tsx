@@ -11,6 +11,7 @@ import {
   SORTS,
   sortFrom,
   viewParams,
+  SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
 
 interface BlunderFilterPanelProps {
@@ -62,7 +63,22 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
   }
 
   return (
-    <Stack w={448} gap={8} ax="stretch">
+    <Stack w={SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
+      {/* A sort is always set, so pressing the pressed one again changes nothing. */}
+      <ToggleGroup
+        aria-label="Sort"
+        fullwidth
+        value={[sort]}
+        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next)))}
+        size="small"
+      >
+        {SORTS.map(({ id, label }) => (
+          <Toggle key={id} value={id}>
+            {label}
+          </Toggle>
+        ))}
+      </ToggleGroup>
+
       <Select
         {...FILTER_SELECT}
         label="Kind"
@@ -81,20 +97,7 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
         onValueChange={(values) => pick("severity", values)}
         size="small"
       />
-      {/* A sort is always set, so pressing the pressed one again changes nothing. */}
-      <ToggleGroup
-        aria-label="Sort"
-        fullwidth
-        value={[sort]}
-        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next)))}
-        size="small"
-      >
-        {SORTS.map(({ id, label }) => (
-          <Toggle key={id} value={id}>
-            {label}
-          </Toggle>
-        ))}
-      </ToggleGroup>
+
       <Button
         variant="subtle"
         size="small"

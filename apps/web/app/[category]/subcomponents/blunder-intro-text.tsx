@@ -27,7 +27,7 @@ export function BlunderIntroText({
   const rolled = die_1 != null && die_2 != null;
 
   return (
-    <Text size={4} weight="normal" balance>
+    <Text size={3} weight="normal" balance>
       {(score_black || score_white || match_length) && (
         <>
           {isWinningText(score_black! - score_white!)}{" "}

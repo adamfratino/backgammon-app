@@ -1,4 +1,5 @@
 export const PER_PAGE = 15;
+export const SIDEBAR_MAXWIDTH = 480;
 
 /**
  * A note is a scratchpad, not a document. The server rejects anything longer,
