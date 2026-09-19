@@ -22,10 +22,11 @@ import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
 import {
-  type BlunderKind,
   type BlunderSeverity,
   blunderHref,
   filtersFrom,
+  KIND_LABELS,
+  kindCategory,
   pageFrom,
   PER_PAGE,
   severityOf,
@@ -128,11 +129,6 @@ export function BlunderTable({ category }: BlunderTableProps) {
   );
 }
 
-const KIND_CELL: Record<BlunderKind, string> = {
-  checker: "Checker",
-  cube: "Cube",
-};
-
 // No green: no blunder is fine, so even the mildest band stays neutral.
 const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
   catastrophic: "red",
@@ -148,6 +144,7 @@ const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
 function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) {
   const {
     kind,
+    cube_action,
     die_1,
     die_2,
     error_magnitude,
@@ -171,7 +168,7 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
           {error_magnitude.toFixed(3)}
         </Badge>
       </TableCell>
-      <TableCell>{KIND_CELL[kind]}</TableCell>
+      <TableCell>{KIND_LABELS[kindCategory(kind, cube_action)]}</TableCell>
       <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
       <TableCell>{score}</TableCell>
       <TableCell>{cube_value ?? "—"}</TableCell>
