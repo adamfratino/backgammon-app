@@ -1,3 +1,5 @@
+import type { PaletteColor } from "@uiid/design-system";
+
 export const PER_PAGE = 15;
 export const SIDEBAR_MAXWIDTH = 480;
 
@@ -32,6 +34,18 @@ export function severityOf(errorMagnitude: number): BlunderSeverity {
   const band = SEVERITY_BANDS.find(({ min }) => errorMagnitude >= min);
   return band?.id ?? "mild";
 }
+
+/**
+ * No green: no blunder is fine, so even the mildest band stays neutral. It sits
+ * here rather than beside the table because the Severity filter draws the same
+ * badges, and a band that is red in one place has to be red in the other.
+ */
+export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
+  catastrophic: "red",
+  severe: "orange",
+  moderate: "yellow",
+  mild: "neutral",
+};
 
 export const CUBE_ACTION = [
   "double_accepted",

@@ -2,13 +2,23 @@
 
 import { useId } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Group, Select, Stack, Text, Toggle, ToggleGroup } from "@uiid/design-system";
+import {
+  Badge,
+  Button,
+  Group,
+  Select,
+  Stack,
+  Text,
+  Toggle,
+  ToggleGroup,
+} from "@uiid/design-system";
 import { RefreshCcwIcon } from "@uiid/design-system/icons";
 
 import {
   filtersFrom,
   KIND_FILTERS,
   SEVERITY_BANDS,
+  SEVERITY_COLOR,
   SORTS,
   sortFrom,
   viewParams,
@@ -21,12 +31,40 @@ interface BlunderFilterPanelProps {
 
 // Select lists `{ value, label }`; the constants are `{ id, label }`.
 const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
-const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label }) => ({ value: id, label }));
+
+/**
+ * Each band beside the slice of the error scale it covers, in the same badge the
+ * table's Error column draws, so a severity is the same color in the filter as
+ * in the list it filters. The bands run high to low, so a band stops a
+ * thousandth short of the one above it and the top band is open-ended — the
+ * upper bound is read off the next band's floor rather than written out a second
+ * time, where it could drift from `min`.
+ *
+ * `children` draws the row in place of the label, which stays a plain string
+ * because it is also what the closed trigger reads back: the popup shows
+ * "Catastrophic 0.400+" in red, the trigger still shows "Catastrophic".
+ */
+const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label, min }, index) => {
+  const above = SEVERITY_BANDS[index - 1]?.min;
+  const range =
+    above === undefined ? `${min.toFixed(3)}+` : `${min.toFixed(3)}–${(above - 0.001).toFixed(3)}`;
+
+  return {
+    value: id,
+    label,
+    children: (
+      <>
+        <Text size={0}>{label}</Text>
+        <Badge color={SEVERITY_COLOR[id]}>{range}</Badge>
+      </>
+    ),
+  };
+});
 
 interface FilterSelectProps {
   label: string;
   placeholder: string;
-  items: { value: string; label: string }[];
+  items: { value: string; label: string; children?: React.ReactNode }[];
   value: string[];
   onValueChange: (values: string[]) => void;
 }
@@ -36,10 +74,8 @@ interface FilterSelectProps {
  * dropdown. The row sits outside the Select because the DS Field's label row
  * only takes a hint icon, not a button; once UI-216 gives it an `action` slot,
  * this goes back to Select's `label` with the reset as its action. The popup
- * opens below the trigger rather than over it, leaving the picks in view.
- * Below, nothing clips the options, and the DS draws each label as a list item
- * inside a `<ul>`, so the list's own bullets have to be switched off until
- * UI-209 is fixed.
+ * opens below the trigger rather than over it, leaving the picks in view, where
+ * nothing clips the options.
  */
 function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectProps) {
   const labelId = useId();
@@ -72,7 +108,6 @@ function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectPro
         size="small"
         TriggerProps={{ "aria-labelledby": labelId }}
         PositionerProps={{ alignItemWithTrigger: false }}
-        ListProps={{ style: { listStyleType: "none" } }}
       />
     </Stack>
   );
