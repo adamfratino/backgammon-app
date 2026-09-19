@@ -33,6 +33,8 @@ const blunder = z.object({
   kind: z.enum(KINDS),
   /** Stored as `both`, so this row is one of two in the list under the same id. */
   both: z.boolean(),
+  /** Which side of the cube a `cube` decision was on, via `cubeDirection`. */
+  cube_action: z.enum(CUBE_ACTION).nullable(),
   error_magnitude: z.number(),
   die_1: z.number().nullable(),
   die_2: z.number().nullable(),
@@ -257,8 +259,8 @@ export const appRouter = router({
           .prepare(
             `${WITH_DECISIONS}
              SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, d.error_magnitude,
-                    b.die_1, b.die_2, b.match_length, b.score_black, b.score_white,
-                    b.cube_value, date(m.finished_at) AS finished_on
+                    b.cube_action, b.die_1, b.die_2, b.match_length, b.score_black,
+                    b.score_white, b.cube_value, date(m.finished_at) AS finished_on
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id

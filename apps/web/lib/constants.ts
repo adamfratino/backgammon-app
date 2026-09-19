@@ -66,6 +66,26 @@ export const KIND_FILTERS = [
 
 export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
 
+/**
+ * Which of those three a single decision is, so a row can name itself the way
+ * the filter that would select it does. A blunder stored as `both` is one
+ * decision of each kind, so this reads the decision's kind, not the row's.
+ */
+export function kindCategory(kind: BlunderKind, cubeAction: BlunderCubeAction): KindFilter {
+  return kind === "checker" ? "checker" : cubeDirection(cubeAction);
+}
+
+/**
+ * The same three worded for one decision rather than a set of them: the filter
+ * offers "Checker plays" because ticking it widens the list, while a cell
+ * describes the single blunder in front of you.
+ */
+export const KIND_LABELS: Record<KindFilter, string> = {
+  checker: "Checker play",
+  offer: "Offering the cube",
+  receive: "Being offered the cube",
+};
+
 export const SORTS = [
   { id: "worst", label: "Worst first" },
   { id: "mildest", label: "Mildest first" },
