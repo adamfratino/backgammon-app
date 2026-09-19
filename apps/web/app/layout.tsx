@@ -1,6 +1,6 @@
 import { Group, Stack } from "@uiid/design-system";
 import { TRPCReactProvider } from "@/trpc/client";
-import { CategoryNav } from "./category-nav";
+import { CategoryNav } from "@/components/category-nav";
 
 import "@uiid/design-system/globals.css";
 

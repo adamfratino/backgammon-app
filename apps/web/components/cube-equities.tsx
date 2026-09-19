@@ -1,5 +1,5 @@
-import type { BlunderDetail } from "../analysis.types";
-import { equity } from "../analysis.utils";
+import type { BlunderDetail } from "@/lib/analysis.types";
+import { equity } from "@/lib/analysis.utils";
 
 interface CubeEquitiesProps extends Pick<BlunderDetail, "cube" | "decisions"> {}
 

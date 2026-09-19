@@ -5,11 +5,11 @@ import { Stack, Group, Separator } from "@uiid/design-system";
 import { SIDEBAR_MAXWIDTH } from "@/lib/constants";
 import { caller } from "@/server/caller";
 
-import { BlunderAnalysis } from "../analysis";
-import { BlunderStepper } from "../blunder-stepper";
-import { BlunderPlays } from "../subcomponents/blunder-plays";
-import { BlunderIntroText } from "../subcomponents/blunder-intro-text";
-import { PreviousDecisions } from "../subcomponents/previous-decisions";
+import { BlunderAnalysis } from "@/components/analysis";
+import { BlunderStepper } from "@/components/blunder-stepper";
+import { BlunderPlays } from "@/components/blunder-plays";
+import { BlunderIntroText } from "@/components/blunder-intro-text";
+import { PreviousDecisions } from "@/components/previous-decisions";
 
 interface BlunderPageProps {
   params: Promise<{ category: string; blunderId: string }>;

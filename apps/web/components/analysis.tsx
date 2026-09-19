@@ -2,9 +2,9 @@ import { Stack } from "@uiid/design-system";
 
 import { parseXgid, pipCount } from "@repo/core";
 
-import type { BlunderDetail } from "./analysis.types";
-import { BoardArea } from "./subcomponents/board-area";
-import { CubeEquities } from "./subcomponents/cube-equities";
+import type { BlunderDetail } from "@/lib/analysis.types";
+import { BoardArea } from "./board-area";
+import { CubeEquities } from "./cube-equities";
 
 export function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
   const { blunder_id, decisions, source_xgid, cube } = detail;

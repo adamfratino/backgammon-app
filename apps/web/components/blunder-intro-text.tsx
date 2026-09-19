@@ -1,6 +1,6 @@
 import { Text } from "@uiid/design-system";
-import type { BlunderDetail } from "../analysis.types";
-import { isWinningText, roll } from "../analysis.utils";
+import type { BlunderDetail } from "@/lib/analysis.types";
+import { isWinningText, roll } from "@/lib/analysis.utils";
 import { CRAWFORD_STATE } from "@/lib/constants";
 
 interface BlunderIntroText extends Pick<

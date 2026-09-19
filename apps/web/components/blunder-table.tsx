@@ -20,6 +20,7 @@ import {
 import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
+import { CubeIcon } from "./cube-icon";
 import {
   blunderHref,
   filtersFrom,
@@ -34,8 +35,8 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-import { roll } from "./analysis.utils";
-import { BlunderTablePagination } from "./subcomponents/blunder-table-pagination";
+import { roll } from "@/lib/analysis.utils";
+import { BlunderTablePagination } from "./blunder-table-pagination";
 
 interface BlunderTableProps {
   category: string;
@@ -162,7 +163,12 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
       <TableCell>{KIND_LABELS[kindCategory(kind, cube_action)]}</TableCell>
       <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
       <TableCell>{score}</TableCell>
-      <TableCell>{cube_value ?? "—"}</TableCell>
+      {/* A cube still reading 1 was never turned, so the column stays empty until
+          there is a stake to show — as on the board, where an unturned cube is
+          left out rather than drawn with a face no real cube has. */}
+      <TableCell>
+        {cube_value !== null && cube_value > 1 ? <CubeIcon value={cube_value} /> : "—"}
+      </TableCell>
       {/* A cube decision is made before the dice are thrown, so only a checker play has a roll. */}
       <TableCell>{kind === "checker" ? roll(die_1, die_2) : "—"}</TableCell>
       <TableCell collapse>
