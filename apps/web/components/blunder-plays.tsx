@@ -2,7 +2,7 @@
 
 import { atom, useAtom } from "jotai";
 import { Button, RadioGroup, Stack, Textarea } from "@uiid/design-system";
-import type { BlunderDetail } from "../analysis.types";
+import type { BlunderDetail } from "@/lib/analysis.types";
 
 export const selectedPlay = atom<string | null>(null);
 

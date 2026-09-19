@@ -20,7 +20,7 @@ import {
 import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
-import { CubeIcon } from "@/components/cube-icon";
+import { CubeIcon } from "./cube-icon";
 import {
   blunderHref,
   filtersFrom,
@@ -35,8 +35,8 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-import { roll } from "./analysis.utils";
-import { BlunderTablePagination } from "./subcomponents/blunder-table-pagination";
+import { roll } from "@/lib/analysis.utils";
+import { BlunderTablePagination } from "./blunder-table-pagination";
 
 interface BlunderTableProps {
   category: string;

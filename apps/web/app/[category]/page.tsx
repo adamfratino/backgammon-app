@@ -1,7 +1,7 @@
 import { Group, Stack } from "@uiid/design-system";
 
-import { BlunderFilterPanel } from "./blunder-filters";
-import { BlunderTable } from "./blunder-table";
+import { BlunderFilterPanel } from "@/components/blunder-filters";
+import { BlunderTable } from "@/components/blunder-table";
 
 interface CategoryPageProps {
   params: Promise<{ category: string }>;

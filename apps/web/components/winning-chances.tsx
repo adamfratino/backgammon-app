@@ -1,5 +1,5 @@
-import { percent } from "../analysis.utils";
-import type { Candidate, BlunderDetail } from "../analysis.types";
+import { percent } from "@/lib/analysis.utils";
+import type { Candidate, BlunderDetail } from "@/lib/analysis.types";
 
 interface WinningChancesProps {
   of: Candidate | BlunderDetail;

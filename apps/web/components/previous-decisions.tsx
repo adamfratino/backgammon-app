@@ -1,6 +1,6 @@
 import { Stack, Text } from "@uiid/design-system";
 import { severityOf } from "@/lib/constants";
-import type { BlunderDetail } from "../analysis.types";
+import type { BlunderDetail } from "@/lib/analysis.types";
 
 interface PreviousDecisionsProps extends Pick<BlunderDetail, "decisions"> {}
 

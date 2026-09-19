@@ -6,7 +6,7 @@ import { Stack, Group, Text } from "@uiid/design-system";
 import type { SideName, Xgid } from "@repo/core";
 import { Board } from "@repo/diagram";
 
-import type { BlunderDetail } from "../analysis.types";
+import type { BlunderDetail } from "@/lib/analysis.types";
 
 import { selectedPlay } from "./blunder-plays";
 import { CopyButton } from "./copy-button";
