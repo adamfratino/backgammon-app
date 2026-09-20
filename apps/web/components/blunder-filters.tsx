@@ -6,6 +6,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Badge,
   Button,
+  Field,
   Group,
   Select,
   Slider,
@@ -20,6 +21,7 @@ import {
   ANY_CUBE_VALUE,
   CRAWFORD_FILTERS,
   cubeValueLadder,
+  DIE_FACES,
   filtersFrom,
   KIND_FILTERS,
   SEVERITY_BANDS,
@@ -27,6 +29,7 @@ import {
   SORTS,
   sortFrom,
   type CubeValueRange,
+  type DiceFilter,
   viewParams,
   SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
@@ -217,6 +220,82 @@ function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectPro
       size="small"
       PositionerProps={{ alignItemWithTrigger: false }}
     />
+  );
+}
+
+/** Stands for no face picked, which a list row needs a value of its own for. */
+const ANY_DIE = "any";
+
+interface DieSelectProps {
+  /**
+   * Named for a reader using a screen reader rather than on the panel, which
+   * carries one "Roll" above the pair instead of a heading over each list.
+   */
+  label: string;
+  /** The face this list holds, or undefined while it sits on Any. */
+  face: number | undefined;
+  onPick: (face: number | null) => void;
+}
+
+/**
+ * One face of the roll, as a list of all six with Any above them. Every face
+ * stays pickable whatever the other list holds: the pair is matched either way
+ * round, so nothing chosen here can make a face in the other list impossible —
+ * which is what the Cube value ends disable each other for.
+ *
+ * The name rides on the trigger rather than on `Select` itself. Anything the
+ * component doesn't claim is spread onto Base UI's `Select.Root`, which renders
+ * no element of its own, so an `aria-label` left there reaches no DOM at all and
+ * both lists go out unnamed — two comboboxes reading "Any" with nothing to tell
+ * them apart, having type-checked, linted and built. `TriggerProps` lands on the
+ * button a reader actually focuses. Raised upstream as UI-227.
+ */
+function DieSelect({ label, face, onPick }: DieSelectProps) {
+  return (
+    <Select
+      TriggerProps={{ "aria-label": label }}
+      fullwidth
+      size="small"
+      value={face === undefined ? ANY_DIE : String(face)}
+      onValueChange={(next) => onPick(next === ANY_DIE ? null : Number(next))}
+      items={[
+        { value: ANY_DIE, label: "Any" },
+        ...DIE_FACES.map((pip) => ({ value: String(pip), label: String(pip) })),
+      ]}
+      PositionerProps={{ alignItemWithTrigger: false }}
+    />
+  );
+}
+
+interface RollFilterProps {
+  value: DiceFilter;
+  /** Which of the two lists changed, and the face it now holds — null for Any. */
+  onPick: (slot: 0 | 1, face: number | null) => void;
+  onReset: () => void;
+}
+
+/**
+ * The roll as its two faces, in two lists under one label — the shape the Cube
+ * value filter gives its own two ends — and one reset for the pair rather than
+ * one each, because the two lists are one roll.
+ *
+ * They are slots in a set rather than the `die_1` and `die_2` columns: picking 6
+ * then 3 and picking 3 then 6 are the same filter, and both read back higher
+ * first, the way the Roll column draws every roll. Leaving one on Any is what
+ * asks for every roll containing the other face. See `DiceFilter`.
+ */
+function RollFilter({ value, onPick, onReset }: RollFilterProps) {
+  return (
+    <Field
+      label="Roll"
+      fullwidth
+      action={<ResetButton filter="Roll" disabled={value.length === 0} onClick={onReset} />}
+    >
+      <Group gap={1.5} fullwidth>
+        <DieSelect label="Die 1" face={value[0]} onPick={(face) => onPick(0, face)} />
+        <DieSelect label="Die 2" face={value[1]} onPick={(face) => onPick(1, face)} />
+      </Group>
+    </Field>
   );
 }
 
@@ -430,6 +509,21 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
     show(viewParams(filtersFrom(params), sort));
   }
 
+  // The two lists are slots in one roll rather than filters of their own, so a
+  // pick rewrites the pair and `filtersFrom` sorts it back higher first — the
+  // round trip the ticked groups above take through `pick`.
+  function pickDie(slot: 0 | 1, face: number | null) {
+    const faces = [filters.dice[0], filters.dice[1]];
+    faces[slot] = face ?? undefined;
+
+    const params = new URLSearchParams(searchParams);
+    params.delete("die");
+    for (const die of faces) {
+      if (die !== undefined) params.append("die", String(die));
+    }
+    show(viewParams(filtersFrom(params), sort));
+  }
+
   return (
     <Stack w={SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
       {/* A sort is always set, so pressing the pressed one again changes nothing. */}
@@ -467,6 +561,11 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
         items={crawfordItems(counts)}
         value={filters.crawfords}
         onValueChange={(values) => pick("crawford", values)}
+      />
+      <RollFilter
+        value={filters.dice}
+        onPick={pickDie}
+        onReset={() => show(viewParams({ ...filters, dice: [] }, sort))}
       />
       <CubeValueFilter
         ladder={ladder}

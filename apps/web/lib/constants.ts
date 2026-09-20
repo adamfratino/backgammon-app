@@ -174,6 +174,26 @@ export interface CubeValueRange {
 export const ANY_CUBE_VALUE: CubeValueRange = { min: null, max: null };
 
 /**
+ * Every face a die reads. The Roll filter's two lists step through these, and a
+ * `?die=` that names anything else is dropped.
+ */
+export const DIE_FACES: readonly number[] = [1, 2, 3, 4, 5, 6];
+
+/**
+ * Which roll the list is narrowed to, held as the faces themselves, higher
+ * first — and as a set rather than a sequence, because a roll has no first die.
+ * The scraper stores `die_1` and `die_2` in whatever order Galaxy sent them, and
+ * that is no order at all: 591 rows hold the lower face first and 619 hold the
+ * higher one. The table draws every one of them higher first, the way players
+ * say a roll, so this matches a position either way round — `[6, 3]` finds all
+ * 79 six-threes rather than the 44 that happen to be stored that way.
+ *
+ * No faces is no narrowing. One face is every roll containing it, so a 6 is 6-1
+ * through 6-6. Two is that exact roll, and the same face twice is the double.
+ */
+export type DiceFilter = number[];
+
+/**
  * What the Kind filter offers: checker plays, and cube decisions split by which
  * side of the cube you were on. Ticking several widens the list, so "Checker
  * plays" and "Offering the cube" is either one.
@@ -225,6 +245,7 @@ export interface BlunderFilters {
   kinds: KindFilter[];
   severities: BlunderSeverity[];
   crawfords: CrawfordFilter[];
+  dice: DiceFilter;
   cubeValue: CubeValueRange;
 }
 
@@ -271,7 +292,27 @@ function cubeValueRangeFrom(params: Pick<URLSearchParams, "get">): CubeValueRang
 }
 
 /**
- * The filters, read from `?kind=&severity=&crawford=&cubeMin=&cubeMax=`. Anything that
+ * The roll, read from `?die=`, higher first. Only a real face counts, so
+ * anything else — a 7, a word, an empty value — is dropped rather than narrowing
+ * the list to nothing, the same way an unrecognised `?kind=` is. A roll has two
+ * dice, so a third `?die=` is dropped too and the two highest faces win.
+ *
+ * One param repeated rather than a `die1` and a `die2`, because the pair is a
+ * set: appending twice and sorting here means a roll has one address, so the
+ * browser and the server build the same cache key from it — the same reason the
+ * ticked groups come back in the constants' order.
+ */
+function diceFrom(params: Pick<URLSearchParams, "getAll">): DiceFilter {
+  return params
+    .getAll("die")
+    .map(Number)
+    .filter((face) => DIE_FACES.includes(face))
+    .sort((a, b) => b - a)
+    .slice(0, 2);
+}
+
+/**
+ * The filters, read from `?kind=&severity=&crawford=&die=&cubeMin=&cubeMax=`. Anything that
  * isn't one of ours is dropped, and each group comes back in the constants' own
  * order — which is what lets the browser and the server build the same cache key
  * from the same URL. Takes anything that can be read like search params, so the
@@ -287,6 +328,7 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll" | "get">): Bl
     kinds: pick("kind", KIND_FILTER_IDS),
     severities: pick("severity", SEVERITIES),
     crawfords: pick("crawford", CRAWFORD_FILTER_IDS),
+    dice: diceFrom(params),
     cubeValue: cubeValueRangeFrom(params),
   };
 }
@@ -297,11 +339,18 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll" | "get">): Bl
  * than walking the object, so a filter that isn't a list of ticks — the cube
  * value range is the first — cannot quietly read as "nothing set".
  */
-export function isFiltered({ kinds, severities, crawfords, cubeValue }: BlunderFilters): boolean {
+export function isFiltered({
+  kinds,
+  severities,
+  crawfords,
+  dice,
+  cubeValue,
+}: BlunderFilters): boolean {
   return (
     kinds.length > 0 ||
     severities.length > 0 ||
     crawfords.length > 0 ||
+    dice.length > 0 ||
     cubeValue.min !== null ||
     cubeValue.max !== null
   );
@@ -318,13 +367,14 @@ export function isFiltered({ kinds, severities, crawfords, cubeValue }: BlunderF
  * every existing caller keep compiling while quietly clearing the sort.
  */
 export function viewParams(
-  { kinds, severities, crawfords, cubeValue }: BlunderFilters,
+  { kinds, severities, crawfords, dice, cubeValue }: BlunderFilters,
   sort: BlunderSort,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
   for (const crawford of crawfords) params.append("crawford", crawford);
+  for (const die of dice) params.append("die", String(die));
   if (cubeValue.min !== null) params.set("cubeMin", String(cubeValue.min));
   if (cubeValue.max !== null) params.set("cubeMax", String(cubeValue.max));
   if (sort !== DEFAULT_SORT) params.set("sort", sort);

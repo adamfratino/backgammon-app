@@ -29,7 +29,9 @@ export function CategoryTopbar({ category }: { category: string }) {
 
   return (
     <Stack px={6} py={4} bb={1}>
-      <Suspense fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}>
+      <Suspense
+        fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}
+      >
         <ViewTrail category={category} blunderId={blunderId} />
       </Suspense>
     </Stack>

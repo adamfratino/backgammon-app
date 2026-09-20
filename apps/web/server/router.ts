@@ -212,6 +212,11 @@ const blunderFilters = z.object({
   kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
   severities: z.array(z.enum(SEVERITIES)).default([]),
   crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
+  // At most two faces, since a roll has two dice, and in no particular order —
+  // see `DiceFilter`. `diceClause` sorts them itself rather than trusting the
+  // caller to, so a request that sends them low face first still asks for the
+  // roll it plainly meant.
+  dice: z.array(z.number().int().min(1).max(6)).max(2).default([]),
   // Either end may be absent, which is no bound rather than a bound at the edge
   // of the cube's ladder — see `CubeValueRange`.
   cubeValue: z
@@ -356,6 +361,38 @@ function cubeValueClause({ min, max }: BlunderFilters["cubeValue"]): Clause | nu
 }
 
 /**
+ * The roll, matched as a set of faces rather than against the two columns in
+ * order: `die_1` and `die_2` hold whichever face Galaxy sent first, so `MAX` and
+ * `MIN` put them in the order the faces are already in — higher first, the order
+ * the table's Roll column draws them — before anything is compared. A double
+ * falls out of the same pair of equalities rather than needing a case of its own.
+ *
+ * Only a checker decision has a roll. The Roll column draws dice for those and a
+ * dash for every cube decision, so a cube row cannot match a roll the reader can
+ * see — even though 139 of them carry the dice of the roll that followed the cube
+ * being left in the middle. Picking a die drops them, the way a cube value range
+ * drops a row whose value is unknown.
+ */
+function diceClause(dice: number[]): Clause | null {
+  const [high, low] = [...dice].sort((a, b) => b - a);
+  if (high === undefined) return null;
+
+  const isChecker: Clause = { sql: "d.kind = 'checker'", params: [] };
+
+  // One face is every roll containing it, so either column may be the one holding
+  // it. Two faces name the roll exactly, whichever column each of them is in.
+  if (low === undefined) {
+    return allOf([isChecker, { sql: "(b.die_1 = ? OR b.die_2 = ?)", params: [high, high] }]);
+  }
+
+  return allOf([
+    isChecker,
+    { sql: "MAX(b.die_1, b.die_2) = ?", params: [high] },
+    { sql: "MIN(b.die_1, b.die_2) = ?", params: [low] },
+  ]);
+}
+
+/**
  * The filters as SQL: one clause per group that was set, each carrying the
  * values it binds. Every value is bound, so nothing from the URL is ever part of
  * the SQL itself.
@@ -373,7 +410,9 @@ function filterClauses(filters: BlunderFilters, without?: CountedGroup): Clause[
     groupClause(group, filters[group]),
   );
 
-  return [...groups, cubeValueClause(filters.cubeValue)].filter((clause) => clause !== null);
+  return [...groups, diceClause(filters.dice), cubeValueClause(filters.cubeValue)].filter(
+    (clause) => clause !== null,
+  );
 }
 
 export const appRouter = router({
