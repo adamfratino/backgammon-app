@@ -106,6 +106,23 @@ export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
 export const MIN_CHART_DECISIONS = 10;
 
 /**
+ * How many matches one bar of the form panel covers.
+ *
+ * Matches rather than days, because a day is not a unit of play here: 64 of the
+ * 155 days in the database hold one or two matches and seven hold eleven or
+ * more. Dated points would put a Tuesday's single match beside a Saturday's
+ * nineteen and weight them the same — 9 September reads 1.09 equity given up per
+ * match and 10 September reads 0.10, and both are one match.
+ *
+ * Twenty-five because a 3-point match carries around two and a half mistakes, so
+ * a block this wide is drawn from roughly sixty decisions — enough that a bar
+ * moves when the play moves rather than when one bad game lands in it. Blocks
+ * are consecutive and share no matches, so the two the panel compares are simply
+ * the last bar and the one before it.
+ */
+export const FORM_WINDOW = 25;
+
+/**
  * The band thresholds as a track reads them: ascending, and without the bottom
  * band's floor of 0, which is the start of the track rather than a division in
  * it. Derived from `SEVERITY_BANDS` so a band that moves takes this with it.
