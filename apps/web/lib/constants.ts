@@ -132,6 +132,7 @@ const BEST = {
   label: "among your best stretches",
   from: 0,
   color: "yellow",
+  step: 400,
 } as const;
 
 /**
@@ -167,16 +168,24 @@ const BEST = {
  * Higher is worse on every form measure, since each counts something that went
  * wrong, so the bands run one way and no measure needs to say which direction is
  * good.
+ *
+ * The two warm bands reach to the 500 step rather than the 400 the rest of the
+ * app draws charts at. Nothing here is labelled by a Status dot, so there is no
+ * dot to match, and the 400 row's warm end is built to sit beside text: red is
+ * `#ff6358` and orange is `#ffa15e`, a salmon and a peach that at bar width read
+ * as one pale wash with no red in it. `#f9262a` against `#ff8918` is the same
+ * two hues far enough apart to be counted.
  */
 export const FORM_BANDS = [
-  { id: "worst", label: "in your worse half", from: 0.5, color: "red" },
-  { id: "middling", label: "middling for you", from: 0.25, color: "orange" },
+  { id: "worst", label: "in your worse half", from: 0.5, color: "red", step: 500 },
+  { id: "middling", label: "middling for you", from: 0.25, color: "orange", step: 500 },
   BEST,
 ] as const satisfies readonly {
   id: string;
   label: string;
   from: number;
   color: PaletteColor;
+  step: number;
 }[];
 
 export type FormBand = (typeof FORM_BANDS)[number];
@@ -234,12 +243,19 @@ export const ERROR_TRACK_MAX = 0.6;
  * `--palette-*` names a component's own CSS reads, which is no use to an SVG
  * fill handed in as a prop — so this names the token that class resolves to.
  *
- * The 400 step, because that is the one the palette classes land on: a Status
- * dot drawn `red` computes to `#ff6358`, which is `--color-red-400`. Anything
- * else would put a chart segment a shade away from the dot beside it.
+ * The 400 step by default, because that is the one the palette classes land on:
+ * a Status dot drawn `red` computes to `#ff6358`, which is `--color-red-400`.
+ * Anything else would put a chart segment a shade away from the dot beside it.
+ *
+ * `step` is for the charts that have no dot to match. The 400 row is built to
+ * sit beside text, so its warm end is pale — red is `#ff6358`, a salmon, and
+ * orange is `#ffa15e`, a peach. Side by side at bar width those two read as one
+ * colour, and neither reads as red. A chart whose hues have to be told apart
+ * from each other rather than matched to a legend is better served lower down
+ * the ramp; see `FORM_BANDS`.
  */
-export function paletteVar(color: PaletteColor): string {
-  return `var(--color-${color}-400)`;
+export function paletteVar(color: PaletteColor, step: number = 400): string {
+  return `var(--color-${color}-${step})`;
 }
 
 export const CUBE_ACTION = [

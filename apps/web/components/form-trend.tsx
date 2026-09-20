@@ -226,11 +226,11 @@ function TrendBars({ label, series, bands, latest }: TrendBarsProps) {
           // like the climbing ones. A bar measured from anywhere but zero is not
           // a length anyway.
           domain={domain}
-          color={paletteVar(band.color)}
+          color={paletteVar(band.color, band.step)}
           style={
             {
               gridArea: "1 / 1",
-              "--mc-accent": paletteVar(band.color),
+              "--mc-accent": paletteVar(band.color, band.step),
             } as CSSProperties
           }
           width={TREND_WIDTH}
