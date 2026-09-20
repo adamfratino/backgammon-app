@@ -113,6 +113,30 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
 }
 
 /**
+ * The two things you could have done with the cube, worded for the side of it
+ * you were on. A cube blunder has no candidate plays to choose between — the
+ * decision was the cube itself — so this is what its page offers instead.
+ *
+ * The ids are the engine's own words rather than the page's: `cube_decisions`
+ * stores `doublers_best_action` as `double` or `roll` and
+ * `receivers_best_action` as `take` or `pass`. A pick can be marked against the
+ * answer already sitting on the position, with nothing in between to translate.
+ *
+ * Turning the cube comes first in both pairs, so the choices read down in the
+ * same order whichever side of it you were on.
+ */
+export const CUBE_CHOICES: Record<CubeDirection, readonly { id: string; label: string }[]> = {
+  offer: [
+    { id: "double", label: "Offer double" },
+    { id: "roll", label: "Roll instead" },
+  ],
+  receive: [
+    { id: "take", label: "Accept double" },
+    { id: "pass", label: "Drop cube" },
+  ],
+};
+
+/**
  * Every face a doubling cube can read: 1 while it is centred, then doubling to
  * 64. The Cube value filter's stops come from here rather than from the values
  * the data happens to hold, so they stay evenly spaced and a face nobody has
@@ -363,4 +387,23 @@ export function blunderHref(category: string, row: BlunderRow, query: string): s
 export function isOpen(row: BlunderRow, open: OpenBlunder): boolean {
   if (String(row.blunder_id) !== open.id) return false;
   return !row.both || isCubeHalf(row) === (open.decision === "cube");
+}
+
+/**
+ * Which of a blunder's decisions its page is asking about, and so which set of
+ * answers the page offers. Nearly every blunder holds one decision, and that is
+ * the answer whatever the URL says.
+ *
+ * A blunder stored as `both` holds a checker decision and a cube one, and
+ * `?decision=cube` — the param its cube row links with — picks the cube half.
+ * It is read the same way here as `isOpen` reads it in the list, so the row you
+ * clicked and the question you land on are the same decision.
+ */
+export function openDecision(
+  decisions: readonly { kind: BlunderKind }[],
+  decision: string | null,
+): BlunderKind {
+  const kinds = decisions.map(({ kind }) => kind);
+  if (!kinds.includes("cube")) return "checker";
+  return !kinds.includes("checker") || decision === "cube" ? "cube" : "checker";
 }
