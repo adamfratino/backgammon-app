@@ -227,6 +227,10 @@ function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectPro
 const ANY_DIE = "any";
 
 interface DieSelectProps {
+  /**
+   * Named for a reader using a screen reader rather than on the panel, which
+   * carries one "Roll" above the pair instead of a heading over each list.
+   */
   label: string;
   /** The face this list holds, or undefined while it sits on Any. */
   face: number | undefined;
@@ -238,11 +242,17 @@ interface DieSelectProps {
  * stays pickable whatever the other list holds: the pair is matched either way
  * round, so nothing chosen here can make a face in the other list impossible —
  * which is what the Cube value ends disable each other for.
+ *
+ * The name rides on the trigger rather than on `Select` itself. Anything the
+ * component doesn't claim is spread onto Base UI's `Select.Root`, which renders
+ * no element of its own, so an `aria-label` left there reaches no DOM at all and
+ * both lists go out unnamed — two comboboxes reading "Any" with nothing to tell
+ * them apart. `TriggerProps` lands on the button a reader actually focuses.
  */
 function DieSelect({ label, face, onPick }: DieSelectProps) {
   return (
     <Select
-      label={label}
+      TriggerProps={{ "aria-label": label }}
       fullwidth
       size="small"
       value={face === undefined ? ANY_DIE : String(face)}
