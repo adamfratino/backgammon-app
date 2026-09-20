@@ -349,17 +349,19 @@ export function Board({
   const roll = dice ? `, rolling ${dice[0]}-${dice[1]}` : "";
   const play = move ? `, playing ${move}` : "";
 
+  // A <title> names the image for screen readers, but browsers also show it as
+  // a tooltip after hovering the board. aria-label names it without the hover.
+  const label = `Backgammon position — near side ${pipCount(player)} pips, far side ${pipCount(opponent)} pips${roll}${play}`;
+
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
+      aria-label={label}
       className={className}
     >
-      <title>
-        {`Backgammon position — near side ${pipCount(player)} pips, far side ${pipCount(opponent)} pips${roll}${play}`}
-      </title>
       <style>{DEFAULT_STYLES}</style>
 
       <rect className="gammon-frame" x="0" y="0" width={WIDTH} height={HEIGHT} />
