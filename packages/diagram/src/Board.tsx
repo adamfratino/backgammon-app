@@ -246,22 +246,13 @@ function PipCount({ count, side, flipped }: { count: number; side: SideName; fli
   );
 }
 
-interface DieProps {
-  value: number;
-  x: number;
-  y: number;
-  flipped: boolean;
-}
-
-function Die({ value, x, y, flipped }: DieProps) {
+function Die({ value, x, y }: { value: number; x: number; y: number }) {
   // Quarters of the face put the outer pips one quarter in from each edge and
   // the middle one dead centre.
   const step = DIE_SIZE / 4;
 
-  // A mirrored 2 or 3 still reads as a 2 or a 3, but it is a face this diagram
-  // never draws otherwise, so the die turns back with the numbers.
   return (
-    <g transform={flipped ? unmirror(x + DIE_SIZE / 2) : undefined}>
+    <>
       <rect className="gammon-die" x={x} y={y} width={DIE_SIZE} height={DIE_SIZE} rx={1.4} />
       {(DIE_PIPS[value] ?? []).map(([column, row], index) => (
         <circle
@@ -272,10 +263,16 @@ function Die({ value, x, y, flipped }: DieProps) {
           r={0.9}
         />
       ))}
-    </g>
+    </>
   );
 }
 
+/**
+ * The roll, thrown into the half holding the roller's home board. On a flipped
+ * board the pair turns back as a block rather than a die at a time: mirroring
+ * each face on its own would leave them in each other's places, and a 4-1 would
+ * read 1-4.
+ */
 function Dice({
   dice,
   turn,
@@ -289,14 +286,13 @@ function Dice({
   const left = centre - (DIE_SIZE * 2 + DIE_GAP) / 2;
 
   return (
-    <g className="gammon-dice">
+    <g className="gammon-dice" transform={flipped ? unmirror(centre) : undefined}>
       {dice.map((value, index) => (
         <Die
           key={index}
           value={value}
           x={left + index * (DIE_SIZE + DIE_GAP)}
           y={MIDDLE - DIE_SIZE / 2}
-          flipped={flipped}
         />
       ))}
     </g>
@@ -427,7 +423,12 @@ export function Board({
   // out of the lane entirely, so the two are never drawn at once.
   const showCube = offered === null && cube !== null && (cube.value > 1 || cube.owner !== null);
 
-  const roll = dice ? `, rolling ${dice[0]}-${dice[1]}` : "";
+  // A roll is written high first — 41, not 14 — and the XGID makes no promise
+  // about the order the pair arrives in, so the diagram puts it in that order
+  // itself, for the drawing and for the name alike.
+  const highFirst = dice ? ([...dice].sort((a, b) => b - a) as [number, number]) : null;
+
+  const roll = highFirst ? `, rolling ${highFirst[0]}-${highFirst[1]}` : "";
   const play = move ? `, playing ${move}` : "";
 
   // The cube in the lane is a standing state the position speaks for, but an
@@ -505,7 +506,7 @@ export function Board({
           height={PLAY_HEIGHT}
         />
 
-        {dice ? <Dice dice={dice} turn={turn} flipped={flipped} /> : null}
+        {highFirst ? <Dice dice={highFirst} turn={turn} flipped={flipped} /> : null}
         {offered === null ? null : <OfferedCube value={offered} turn={turn} flipped={flipped} />}
         {showCube && cube ? <DoublingCube cube={cube} flipped={flipped} /> : null}
 

@@ -8,7 +8,9 @@ export interface BoardProps {
   position: Position;
 
   /**
-   * The roll being played. Drawn in the half holding the roller's home board.
+   * The roll being played. Drawn in the half holding the roller's home board,
+   * high die first — the way a roll is written — whichever order the pair
+   * arrives in, and in that same order on a flipped board.
    * `null` — a cube decision, taken before the dice are thrown — draws none.
    */
   dice?: [number, number] | null;
