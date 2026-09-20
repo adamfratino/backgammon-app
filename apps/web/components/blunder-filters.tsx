@@ -51,7 +51,7 @@ const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label, description }) => ({
   value: id,
   label,
   children: (
-    <Stack gap={1}>
+    <Stack gap={0}>
       <Text size={0}>{label}</Text>
       <Text size={-1} shade="halftone">
         {description}
