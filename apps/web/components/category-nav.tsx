@@ -1,7 +1,7 @@
 import { Stack, type StackProps, Text } from "@uiid/design-system";
 
 import { caller } from "@/server/caller";
-import { PRIMARY_SIDEBAR_MAXWIDTH } from "@/lib/constants";
+import { SIDEBAR_MINWIDTH } from "@/lib/constants";
 
 import { CategoryCounts } from "./category-counts";
 
@@ -23,7 +23,7 @@ const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
     aria-label="Blunder categories"
     p={OUTER_PADDING}
     gap={OUTER_GAP}
-    minw={PRIMARY_SIDEBAR_MAXWIDTH}
+    minw={SIDEBAR_MINWIDTH}
     ax="stretch"
   >
     {children}

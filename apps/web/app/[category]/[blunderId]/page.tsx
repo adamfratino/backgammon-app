@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Provider } from "jotai";
 import { Stack, Group, Separator } from "@uiid/design-system";
 
-import { SECONDARY_SIDEBAR_MAXWIDTH } from "@/lib/constants";
+import { SIDEBAR_MAXWIDTH } from "@/lib/constants";
 import { caller } from "@/server/caller";
 
 import { BlunderAnalysis } from "@/components/analysis";
@@ -32,7 +32,7 @@ export default async function BlunderPage({ params }: BlunderPageProps) {
     <Provider>
       <Group ay="start" fullwidth p={6} gap={6}>
         <BlunderAnalysis detail={detail} />
-        <Stack gap={6} fullwidth maxw={SECONDARY_SIDEBAR_MAXWIDTH}>
+        <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH}>
           <BlunderStepper category={category} blunderId={blunderId} />
           <Separator />
           <BlunderIntroText

@@ -1,24 +1,16 @@
 import type { PaletteColor } from "@uiid/design-system";
 
 export const PER_PAGE = 15;
-export const PRIMARY_SIDEBAR_MAXWIDTH = 260;
-export const SECONDARY_SIDEBAR_MAXWIDTH = 480;
 
-/**
- * How many page numbers the paginator shows on each side of the current one.
- * The first and last pages are always drawn, so 1 is the narrowest window that
- * still shows where you are: `1 … 15 16 17 … 31`.
- */
+export const SIDEBAR_MINWIDTH = 260;
+export const SIDEBAR_MAXWIDTH = 480;
+
+/** How many page numbers the paginator shows on each side of the current one. */
 export const PAGE_SPREAD = 1;
 
-/**
- * A note is a scratchpad, not a document. The server rejects anything longer,
- * and the textarea stops typing there.
- */
 export const NOTE_MAX_LENGTH = 2000;
 
 export const KINDS = ["checker", "cube"] as const;
-
 export type BlunderKind = (typeof KINDS)[number];
 
 export const CRAWFORD_STATE = [
@@ -26,7 +18,6 @@ export const CRAWFORD_STATE = [
   { id: "crawford", label: "on crawford" },
   { id: "post_crawford", label: "post-crawford" },
 ] as const;
-
 export type CrawfordState = (typeof CRAWFORD_STATE)[number]["id"];
 
 /**
