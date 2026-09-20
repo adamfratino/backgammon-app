@@ -16,7 +16,13 @@ export interface MatchState {
   cubeExponent: number;
   /** 0 or 1 for an owner, 3 when centred. */
   cubeOwner: number;
-  diceOwner: number;
+  /**
+   * The side the board is written from — gnubg's `fMove`. `decodePositionId`
+   * puts this player's checkers in `board[1]`, which the XGID draws in upper
+   * case, so it is the one fact tying the match id's player numbers to the
+   * board string beside them.
+   */
+  onMove: number;
   crawford: boolean;
   gameState: number;
   turn: number;
@@ -66,7 +72,7 @@ export function decodeMatchId(matchId: string): MatchState {
 
   const cubeExponent = read(4);
   const cubeOwner = read(2);
-  const diceOwner = read(1);
+  const onMove = read(1);
   const crawford = read(1) === 1;
   const gameState = read(3);
   const turn = read(1);
@@ -81,7 +87,7 @@ export function decodeMatchId(matchId: string): MatchState {
   return {
     cubeExponent,
     cubeOwner,
-    diceOwner,
+    onMove,
     crawford,
     gameState,
     turn,
@@ -124,16 +130,37 @@ export interface XgidOptions {
   maxCube?: number;
 }
 
+/**
+ * Which side of the board holds the cube, as XG writes it: 0 centred, +1 the
+ * upper-case side, -1 the lower-case one.
+ *
+ * gnubg encodes a centred cube as owner 3 and an owned one as an absolute
+ * player number, which says nothing on its own about which way round the board
+ * beside it was written — so the owner only becomes a side once it is read
+ * through `onMove`.
+ */
+export function cubePositionOf(match: MatchState): number {
+  if (match.cubeOwner === 3) return 0;
+  return match.cubeOwner === match.onMove ? 1 : -1;
+}
+
 export function toXgid(board: Board, match: MatchState, options: XgidOptions = {}): string {
-  // gnubg encodes a centred cube as owner 3; XG writes 0, or +/-1 for an owner.
-  const cubePosition = match.cubeOwner === 3 ? 0 : match.cubeOwner === 1 ? 1 : -1;
+  // Every field below the board is keyed to gnubg's own player numbers, which
+  // say nothing about which way round the board string was written. Reading
+  // each one through `onMove` — the side `decodePositionId` put in upper case —
+  // is what makes them describe the board they are sitting next to.
+  const near = match.onMove;
 
-  // Every position Galaxy returns has gnubg turn 1, which it writes as XG turn
-  // 1. The opposite case is unattested in the data, so it is inferred.
-  const turn = match.turn === 1 ? 1 : -1;
+  // The board is always written from the side about to play — the mover on a
+  // checker play, and the player being doubled on a take/pass — so in XG's
+  // terms, where the field is relative to the board string, the upper-case side
+  // is on roll every time. gnubg's own turn bit is not that fact: it is an
+  // absolute player number, and on a pending double it names the doubler
+  // rather than the side left to answer.
+  const turn = 1;
 
-  // XG lists the scores in the opposite order to gnubg's match id.
-  const [score0, score1] = match.scores;
+  // XG asks for the upper-case side's score first.
+  const [nearScore, farScore] = [match.scores[near], match.scores[1 - near]];
 
   // The trailing field is cube availability: dead during the Crawford game.
   const cubeAvailable = options.maxCube ?? (match.crawford ? 0 : 1);
@@ -141,11 +168,11 @@ export function toXgid(board: Board, match: MatchState, options: XgidOptions = {
   return [
     `XGID=${boardToXgidString(board)}`,
     match.cubeExponent,
-    cubePosition,
+    cubePositionOf(match),
     turn,
     `${match.dice[0]}${match.dice[1]}`,
-    score1,
-    score0,
+    nearScore,
+    farScore,
     match.crawford ? 1 : 0,
     match.matchLength,
     cubeAvailable,

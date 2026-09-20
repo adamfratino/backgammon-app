@@ -3,7 +3,7 @@ import { GalaxyClient } from "./api.ts";
 import { ensureCredentials, login } from "./auth.ts";
 import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
 import { readStoredCredentials } from "./credentials.ts";
-import { openDatabase, writeBatch } from "./db.ts";
+import { openDatabase, reencodeXgids, writeBatch } from "./db.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
 import { normalize } from "./transform.ts";
 import { verifyConverter } from "./verify.ts";
@@ -50,6 +50,7 @@ galaxy-scraper — pull Backgammon Galaxy blunder analysis into SQLite
   categories                 List blunder categories and counts
   scrape [options]           Download category pages into raw/
   load [options]             Build the SQLite database from raw/
+  reencode [options]         Rewrite every XGID from the GNU BG ids already stored
   stats [options]            Summarise what is in the database
   verify                     Check the XGID converter against Galaxy's own XGIDs
 
@@ -165,6 +166,14 @@ async function main(): Promise<void> {
       );
     }
     if (report.exact !== report.total) process.exitCode = 1;
+    return;
+  }
+
+  if (args.command === "reencode") {
+    const db = openDatabase(args.dbPath);
+    const { checked, rewritten } = reencodeXgids(db);
+    db.close();
+    console.log(`Re-encoded ${rewritten} of ${checked} positions in ${args.dbPath}.`);
     return;
   }
 
