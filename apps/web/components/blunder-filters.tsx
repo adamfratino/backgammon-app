@@ -91,10 +91,10 @@ const kindItems = (counts: FilterCounts | undefined): FilterItem[] =>
  * upper bound is read off the next band's floor rather than written out a second
  * time, where it could drift from `min`.
  *
- * The count follows the range rather than replacing it: the range says which
- * errors the band covers, the count how many of them are here, and the two
- * answer different questions. They share the right of the row so the band names
- * stay in one column down the popup.
+ * The range sits with the band name rather than across the row from it: it says
+ * which errors the band covers, which is part of naming the band. That leaves
+ * the count alone on the right, where Kind's and Crawford's counts already are,
+ * so one column of numbers runs down every popup in the panel.
  *
  * `children` draws the row in place of the label, which stays a plain string
  * because it is also what the closed trigger reads back: the popup shows
@@ -111,11 +111,11 @@ const severityItems = (counts: FilterCounts | undefined): FilterItem[] =>
       label,
       children: (
         <>
-          <Text size={0}>{label}</Text>
-          <Group gap={2}>
+          <Group gap={2} ay="center">
+            <Text size={0}>{label}</Text>
             <Badge color={SEVERITY_COLOR[id]}>{range}</Badge>
-            <OptionCount count={counts?.severities[id]} />
           </Group>
+          <OptionCount count={counts?.severities[id]} />
         </>
       ),
     };
