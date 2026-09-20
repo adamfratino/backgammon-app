@@ -57,7 +57,7 @@ export function BoardArea({
   const [flipped, setFlipped] = useAtom(boardFlipped);
 
   return (
-    <Stack aria-label="Backgammon board area" fullwidth gap={1}>
+    <Stack aria-label="Backgammon board area" fullwidth gap={2}>
       {parsed && (
         <Board
           position={parsed.position}
@@ -70,13 +70,14 @@ export function BoardArea({
           flipped={flipped}
         />
       )}
-      <Group ay="center" gap={1} fullwidth ax="space-between">
+      <Group ay="center" gap={2} fullwidth ax="space-between">
         <Text size={-1} shade="muted" family="mono">
           Blunder #{blunder_id}
         </Text>
-        <Group ay="center" gap={2}>
+        <Group ay="center" gap={4}>
           <Switch
             size="xsmall"
+            FieldProps={{ gap: 2 }}
             label="Pip counts"
             checked={visible}
             onCheckedChange={(checked) => {
@@ -87,6 +88,7 @@ export function BoardArea({
           <Switch
             size="xsmall"
             label="Flip board"
+            FieldProps={{ gap: 2 }}
             checked={flipped}
             onCheckedChange={(checked) => {
               setFlipped(checked);

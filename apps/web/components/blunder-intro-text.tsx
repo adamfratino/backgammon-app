@@ -7,6 +7,7 @@ import type { BlunderDetail, PipCounts } from "@/lib/analysis.types";
 import { isWinningText, pips, roll } from "@/lib/analysis.utils";
 import { CRAWFORD_STATE, cubeDirection } from "@/lib/constants";
 import { pipCountsVisible } from "./board-area";
+import { Activity } from "react";
 
 interface BlunderIntroText extends Pick<
   BlunderDetail,
@@ -60,56 +61,61 @@ export function BlunderIntroText({
   const lead = pipCounts ? pipCounts.opponent - pipCounts.player : null;
 
   return (
-    <Text size={3} weight="normal" balance>
-      {(score_black || score_white || match_length) && (
-        <>
-          {isWinningText(score_black! - score_white!)}{" "}
-          <strong>
-            [{score_black} - {score_white}]
-          </strong>{" "}
-          in a match to <strong>[{match_length} points]</strong>
-          {isCrawford ? (
-            <>
-              , and you're <strong>{isCrawford?.label}</strong>.
-            </>
-          ) : (
-            "."
-          )}
-        </>
-      )}
-      {doubled != null && (
-        <>
-          {" "}
-          You&rsquo;ve been doubled to <strong>[{doubled}]</strong>.
-        </>
-      )}
-      {doubled == null && cube_value != null && cube_value > 1 && (
-        <>
-          {" "}
-          The cube is at <strong>[{cube_value}]</strong>.
-        </>
-      )}
-      {/* Only while the board is showing its pip counts: the switch under the
+    <>
+      <Activity mode={doubled != null ? "visible" : "hidden"}>
+        <Text size={3} weight="normal">
+          You've been doubled to <strong>[{doubled}]</strong>.
+        </Text>
+      </Activity>
+      <Text size={3} weight="normal" balance>
+        {(score_black || score_white || match_length) && (
+          <>
+            {isWinningText(score_black! - score_white!)}{" "}
+            <strong>
+              [{score_black}&nbsp;-&nbsp;{score_white}]
+            </strong>{" "}
+            in a match to <strong>[{match_length}&nbsp;points]</strong>
+            {isCrawford ? (
+              <>
+                , and you're <strong>{isCrawford?.label}</strong>.
+              </>
+            ) : (
+              "."
+            )}
+          </>
+        )}
+        {doubled == null && cube_value != null && cube_value > 1 && (
+          <>
+            {" "}
+            The cube is at <strong>[{cube_value}]</strong>.
+          </>
+        )}
+        {/* Only while the board is showing its pip counts: the switch under the
           board turns the race off everywhere it is spelled out, not just there. */}
-      {countsVisible && pipCounts && lead !== null && (
-        <>
-          {" "}
-          {lead === 0 ? (
-            <>
-              You're even at <strong>[{pips(pipCounts.player)}]</strong>.
-            </>
-          ) : (
-            <>
-              You're <strong>[{pips(Math.abs(lead))}]</strong> {lead > 0 ? "ahead" : "behind"}.
-            </>
-          )}
-        </>
-      )}{" "}
-      {rolled && (
-        <>
-          You just rolled <strong>[{roll(die_1, die_2)}]</strong>.
-        </>
-      )}
-    </Text>
+        {countsVisible && pipCounts && lead !== null && (
+          <>
+            {" "}
+            {lead === 0 ? (
+              <>
+                You're even at <strong>[{pips(pipCounts.player)}]</strong>.
+              </>
+            ) : (
+              <>
+                You're{" "}
+                <strong>
+                  [{pips(Math.abs(lead))}&nbsp;{lead > 0 ? "ahead" : "behind"}]
+                </strong>
+                .
+              </>
+            )}
+          </>
+        )}{" "}
+        {rolled && (
+          <>
+            You just rolled <strong>[{roll(die_1, die_2)}]</strong>.
+          </>
+        )}
+      </Text>
+    </>
   );
 }

@@ -60,45 +60,49 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
   // inheriting the last one's pick when Next swaps the page.
   return (
     <Provider>
-      <Group ay="start" fullwidth p={6} gap={6}>
-        <BlunderAnalysis
-          detail={detail}
-          parsed={parsed}
-          pipCounts={pipCounts}
-          showPipCounts={showPipCounts}
-          flipBoard={flipBoard}
-        />
-        <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
+      <Stack gap={6} p={6}>
+        <Group gap={3} ay="center">
           <BlunderStepper category={category} blunderId={blunderId} />
           <Text render={<h1 />} size={3} weight="bold">
             Blunder #{blunderId}
           </Text>
-          <Separator />
-          <BlunderIntroText
-            score_black={detail.score_black}
-            score_white={detail.score_white}
-            match_length={detail.match_length}
-            cube_value={detail.cube_value}
-            crawford_state={detail.crawford_state}
-            die_1={detail.die_1}
-            die_2={detail.die_2}
-            cube_action={detail.cube_action}
+        </Group>
+        <Group ay="start" fullwidth gap={6}>
+          <BlunderAnalysis
+            detail={detail}
+            parsed={parsed}
             pipCounts={pipCounts}
             showPipCounts={showPipCounts}
+            flipBoard={flipBoard}
           />
-          <PreviousDecisions decisions={detail.decisions} />
-          <Separator />
-          {/* A cube blunder has no candidate plays, so it is asked about the
+          <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
+            <Separator />
+            <BlunderIntroText
+              score_black={detail.score_black}
+              score_white={detail.score_white}
+              match_length={detail.match_length}
+              cube_value={detail.cube_value}
+              crawford_state={detail.crawford_state}
+              die_1={detail.die_1}
+              die_2={detail.die_2}
+              cube_action={detail.cube_action}
+              pipCounts={pipCounts}
+              showPipCounts={showPipCounts}
+            />
+            <PreviousDecisions decisions={detail.decisions} />
+            <Separator />
+            {/* A cube blunder has no candidate plays, so it is asked about the
               cube instead. The note below is about whichever was asked. */}
-          {decision === "cube" ? (
-            <BlunderCubeChoices cube_action={detail.cube_action} />
-          ) : (
-            <BlunderPlays candidates={detail.candidates} />
-          )}
-          <Textarea label="Any thoughts about your decision?" />
-          <Button>Submit</Button>
-        </Stack>
-      </Group>
+            {decision === "cube" ? (
+              <BlunderCubeChoices cube_action={detail.cube_action} />
+            ) : (
+              <BlunderPlays candidates={detail.candidates} />
+            )}
+            <Textarea label="Any thoughts about your decision?" />
+            <Button>Submit</Button>
+          </Stack>
+        </Group>
+      </Stack>
     </Provider>
   );
 }

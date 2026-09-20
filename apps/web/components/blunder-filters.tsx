@@ -104,7 +104,9 @@ const severityItems = (counts: FilterCounts | undefined): FilterItem[] =>
   SEVERITY_BANDS.map(({ id, label, min }, index) => {
     const above = SEVERITY_BANDS[index - 1]?.min;
     const range =
-      above === undefined ? `${min.toFixed(3)}+` : `${min.toFixed(3)}–${(above - 0.001).toFixed(3)}`;
+      above === undefined
+        ? `${min.toFixed(3)}+`
+        : `${min.toFixed(3)}–${(above - 0.001).toFixed(3)}`;
 
     return {
       value: id,

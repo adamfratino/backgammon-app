@@ -75,13 +75,11 @@ export function BlunderStepper({ category, blunderId }: BlunderStepperProps) {
       : hrefFor(after?.blunders[0], page + 1);
 
   return (
-    <Group render={<nav />} aria-label="Step through blunders" ax="space-between" fullwidth>
-      <Step href={previous}>
+    <Group render={<nav />} gap={2} aria-label="Step through blunders" ax="space-between">
+      <Step href={previous} tooltip="Previous blunder">
         <ChevronLeftIcon />
-        Previous
       </Step>
-      <Step href={next}>
-        Next
+      <Step href={next} tooltip="Next blunder">
         <ChevronRightIcon />
       </Step>
     </Group>
@@ -92,17 +90,31 @@ export function BlunderStepper({ category, blunderId }: BlunderStepperProps) {
  * A link that looks like a button, or a disabled button when there is nowhere to
  * go. A link can't be disabled, so the end of the list is a real `<button>`.
  */
-function Step({ href, children }: { href: string | null; children: React.ReactNode }) {
+function Step({
+  href,
+  tooltip,
+  children,
+}: {
+  href: string | null;
+  tooltip: string;
+  children: React.ReactNode;
+}) {
   if (href === null) {
     return (
-      <Button size="small" variant="subtle" disabled>
+      <Button size="xsmall" variant="subtle" shape="square" disabled tooltip={tooltip}>
         {children}
       </Button>
     );
   }
 
   return (
-    <Button size="small" variant="subtle" render={<Link href={href} />}>
+    <Button
+      size="xsmall"
+      variant="subtle"
+      shape="square"
+      render={<Link href={href} />}
+      tooltip={tooltip}
+    >
       {children}
     </Button>
   );

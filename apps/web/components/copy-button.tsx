@@ -71,6 +71,7 @@ export function CopyButton({
       tooltip={showLabel ? undefined : (said ?? label)}
       size={size}
       variant={variant}
+      shape={!showLabel ? "square" : undefined}
     >
       <Icon />
       {showLabel && label}

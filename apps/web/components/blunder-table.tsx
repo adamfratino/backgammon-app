@@ -17,7 +17,7 @@ import {
   TableRow,
   Text,
 } from "@uiid/design-system";
-import { EyeIcon } from "@uiid/design-system/icons";
+import { CalendarIcon, GraduationCapIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
 import { CopyButton } from "./copy-button";
@@ -92,8 +92,8 @@ export function BlunderTable({ category }: BlunderTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Error</TableHead>
-              <TableHead>Kind</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Type of play</TableHead>
               <TableHead>Score</TableHead>
               <TableHead>Cube</TableHead>
               <TableHead>Roll</TableHead>
@@ -163,9 +163,23 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
           {error_magnitude.toFixed(3)}
         </Badge>
       </TableCell>
-      <TableCell>{KIND_LABELS[kindCategory(kind, cube_action)]}</TableCell>
-      <TableCell>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</TableCell>
-      <TableCell>{score}</TableCell>
+      <TableCell>
+        <Group gap={2} ay="center">
+          <CalendarIcon size={12} />
+          <Text size={-1}>{finished_on === null ? "—" : DAY.format(new Date(finished_on))}</Text>
+        </Group>
+      </TableCell>
+      <TableCell>
+        <Text size={-1} weight="bold">
+          {KIND_LABELS[kindCategory(kind, cube_action)]}
+        </Text>
+      </TableCell>
+
+      <TableCell>
+        <Text size={-1} weight="bold">
+          {score}
+        </Text>
+      </TableCell>
       {/* A cube still reading 1 was never turned, so the column stays empty until
           there is a stake to show — as on the board, where an unturned cube is
           left out rather than drawn with a face no real cube has. */}
@@ -179,18 +193,19 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
           stays the quieter of the two rather than competing for the same click. */}
       <TableCell collapse>
         <Group gap={1} ay="center">
+          {source_xgid && (
+            <CopyButton value={source_xgid} label="Copy XGID" size="small" variant="subtle" />
+          )}
           <Button
-            size="xsmall"
+            size="small"
+            shape="square"
             variant="subtle"
             render={<Link href={href} />}
-            tooltip="View blunder"
-            aria-label="View blunder"
+            tooltip="Take blunder quiz"
+            aria-label="Take blunderquiz"
           >
-            <EyeIcon />
+            <GraduationCapIcon />
           </Button>
-          {source_xgid && (
-            <CopyButton value={source_xgid} label="Copy XGID" size="xsmall" variant="subtle" />
-          )}
         </Group>
       </TableCell>
     </TableRow>
