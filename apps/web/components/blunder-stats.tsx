@@ -48,12 +48,14 @@ interface StatRow {
 }
 
 /**
- * What this category's mistakes cost, under the filters the table above is
- * already using.
+ * What this category's mistakes cost, under the filters the list is already
+ * using.
  *
  * It reads the filters off the URL rather than taking them as props, the way
  * the table does, so the two can never be looking at different questions: there
- * is one address for a view, and everything on the page reads it.
+ * is one address for a view, and everything on the page reads it. That is what
+ * lets the sidebar stand over both halves — narrowing here and switching back
+ * lands on the same question, asked of the rows instead of the totals.
  */
 export function BlunderStats({ category }: { category: string }) {
   const trpc = useTRPC();
@@ -85,13 +87,14 @@ export function BlunderStats({ category }: { category: string }) {
     }));
 
   return (
+    // No rule above: the border and the padding under it were what separated
+    // these from the table they used to sit beneath, and on their own tab they
+    // start at the top of the column like the table does.
     <Stack
       aria-busy={isPlaceholderData}
       style={{ opacity: isPlaceholderData ? 0.5 : 1 }}
       ax="stretch"
       gap={6}
-      pt={6}
-      bt={1}
     >
       <StatPanel
         title="Equity lost by error level"
@@ -126,10 +129,11 @@ export function BlunderStats({ category }: { category: string }) {
  * One statistic: what it is, what it is counted over, and the circle that
  * divides it.
  *
- * The denominator is on the panel rather than implied by it. The list above
+ * The denominator is on the panel rather than implied by it. The Blunders tab
  * shows one page of rows while these count every decision the filters leave,
- * frequently hundreds — and with nothing saying so, a summary sitting under
- * fifteen rows reads as a summary of those fifteen.
+ * frequently hundreds — and the reader arrives here straight off that page, so
+ * without a figure saying otherwise these read as a summary of the ten rows
+ * they just came from.
  */
 function StatPanel({
   title,
@@ -153,7 +157,7 @@ function StatPanel({
           <data value={denominator}>
             {denominator.toLocaleString()} {denominator === 1 ? "decision" : "decisions"}
           </data>
-          , not the page above.
+          , not the page the Blunders tab shows.
         </Text>
       </Stack>
 

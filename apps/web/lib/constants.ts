@@ -393,14 +393,33 @@ export const SORTS = [
 
 export type BlunderSort = (typeof SORTS)[number]["id"];
 
+/**
+ * The two halves of a category: the mistakes themselves, and what they add up
+ * to. Both are narrowed by the same filters, so this picks which answer the
+ * sidebar is narrowing rather than what is being asked of it.
+ *
+ * Spelled `?tab=` rather than `?view=` because a view here already means the
+ * whole of what the URL is showing — the filters and the sort together, which
+ * is what `viewParams` writes. This is one member of that, not another name
+ * for it.
+ */
+export const CATEGORY_TABS = [
+  { id: "blunders", label: "Blunders" },
+  { id: "statistics", label: "Statistics" },
+] as const;
+
+export type CategoryTab = (typeof CATEGORY_TABS)[number]["id"];
+
 export const KIND_FILTER_IDS = KIND_FILTERS.map(({ id }) => id);
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
+export const CATEGORY_TAB_IDS = CATEGORY_TABS.map(({ id }) => id);
 export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 export const CRAWFORD_FILTER_IDS = CRAWFORD_FILTERS.map(({ id }) => id);
 export const STANDING_FILTER_IDS = STANDING_FILTERS.map(({ id }) => id);
 
 export const DEFAULT_SORT: BlunderSort = "worst";
+export const DEFAULT_TAB: CategoryTab = "blunders";
 export interface BlunderFilters {
   kinds: KindFilter[];
   severities: BlunderSeverity[];
@@ -425,6 +444,15 @@ export function pageFrom(value: string | null): number {
  */
 export function sortFrom(value: string | null): BlunderSort {
   return SORT_IDS.find((id) => id === value) ?? DEFAULT_SORT;
+}
+
+/**
+ * `?tab=` is read the same way as `?sort=`, and for the same reason: a tab is
+ * always showing, so anything that isn't one of ours is the half a category
+ * opens on rather than no half at all.
+ */
+export function tabFrom(value: string | null): CategoryTab {
+  return CATEGORY_TAB_IDS.find((id) => id === value) ?? DEFAULT_TAB;
 }
 
 /**
@@ -545,17 +573,21 @@ export function isFiltered({
 
 /**
  * Everything a link has to carry to land on the view you are already looking at:
- * the filters, in the constants' own order, and the sort. It writes no `?page=`,
- * so a link built from it starts the list at the beginning.
+ * the filters, in the constants' own order, the sort, and which half of the
+ * category is showing. It writes no `?page=`, so a link built from it starts the
+ * list at the beginning.
  *
- * `sort` is a required argument rather than an optional one on purpose. Adding a
- * member to URL state should break every link that writes the URL until each one
- * has been told what to do about it — an optional parameter would instead let
- * every existing caller keep compiling while quietly clearing the sort.
+ * `sort` and `tab` are required arguments rather than optional ones on purpose.
+ * Adding a member to URL state should break every link that writes the URL until
+ * each one has been told what to do about it — an optional parameter would
+ * instead let every existing caller keep compiling while quietly clearing the
+ * sort, or, for `tab`, putting a reader back on the blunders every time they
+ * touched a filter.
  */
 export function viewParams(
   { kinds, severities, crawfords, standings, minLead, dice, cubeValue }: BlunderFilters,
   sort: BlunderSort,
+  tab: CategoryTab,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
@@ -567,22 +599,33 @@ export function viewParams(
   if (cubeValue.min !== null) params.set("cubeMin", String(cubeValue.min));
   if (cubeValue.max !== null) params.set("cubeMax", String(cubeValue.max));
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
+  if (tab !== DEFAULT_TAB) params.set("tab", tab);
   return params;
 }
 
 /**
- * A category's list, carrying the view the URL is already showing: the filters
- * and the sort always, and the page only when it is the category you are in —
- * a `?page=` belongs to the list it was counted for, not to one you have yet to
- * open. That exception is what makes this the way back out of a blunder: it
+ * A category's list, carrying the view the URL is already showing: the filters,
+ * the sort and the tab always, and the page only when it is the category you are
+ * in — a `?page=` belongs to the list it was counted for, not to one you have yet
+ * to open. That exception is what makes this the way back out of a blunder: it
  * lands on the rows you left rather than the top of the list.
+ *
+ * The tab comes along because this is how you move between categories, and the
+ * question you are asking survives that move: on the statistics for one category,
+ * the next one opens on its statistics rather than dropping you back to its rows.
+ * Out of a blunder it reads as nothing, since a row can only be clicked from the
+ * blunders tab and its link writes no `?tab=`.
  */
 export function categoryHref(
   category: string,
   params: Pick<URLSearchParams, "getAll" | "get">,
   { keepPage }: { keepPage: boolean },
 ): string {
-  const query = viewParams(filtersFrom(params), sortFrom(params.get("sort")));
+  const query = viewParams(
+    filtersFrom(params),
+    sortFrom(params.get("sort")),
+    tabFrom(params.get("tab")),
+  );
   const page = pageFrom(params.get("page"));
   if (keepPage && page > 1) query.set("page", String(page));
   return `/${category}${query.size > 0 ? `?${query}` : ""}`;

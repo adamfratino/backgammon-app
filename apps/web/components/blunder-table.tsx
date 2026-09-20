@@ -27,6 +27,7 @@ import { DiceRoll } from "./dice-roll";
 import { SeverityBullet } from "./severity-bullet";
 import {
   blunderHref,
+  DEFAULT_TAB,
   filtersFrom,
   isFiltered,
   KIND_LABELS,
@@ -68,7 +69,10 @@ export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTabl
   const sort = sortFrom(searchParams.get("sort"));
 
   // What every link out of this table has to carry to come back to this view.
-  const params = viewParams(filters, sort);
+  // The tab is the default rather than whatever the URL says: this table is only
+  // drawn on the blunders half, so a row can only be clicked from there, and that
+  // is the half its Back has to land on.
+  const params = viewParams(filters, sort, DEFAULT_TAB);
   if (page > 1) params.set("page", String(page));
   const query = params.size > 0 ? `?${params}` : "";
 

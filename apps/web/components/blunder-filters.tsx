@@ -32,6 +32,7 @@ import {
   STANDING_FILTERS,
   type CubeValueRange,
   type DiceFilter,
+  tabFrom,
   viewParams,
   SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
@@ -571,6 +572,10 @@ export function BlunderFilterPanel({
   const filters = filtersFrom(searchParams);
   const sort = sortFrom(searchParams.get("sort"));
 
+  // The sidebar narrows whichever half is showing and never moves between them,
+  // so every URL it writes carries the tab back out again.
+  const tab = tabFrom(searchParams.get("tab"));
+
   // Every option's count, in one query for the whole panel. Asked for from the
   // browser rather than prefetched with the page: the dropdowns are shut when a
   // page lands, so the badges are there well before anything opens on them.
@@ -606,7 +611,7 @@ export function BlunderFilterPanel({
     const params = new URLSearchParams(searchParams);
     params.delete(param);
     for (const value of values) params.append(param, value);
-    show(viewParams(filtersFrom(params), sort));
+    show(viewParams(filtersFrom(params), sort, tab));
   }
 
   // The two lists are slots in one roll rather than filters of their own, so a
@@ -621,7 +626,7 @@ export function BlunderFilterPanel({
     for (const die of faces) {
       if (die !== undefined) params.append("die", String(die));
     }
-    show(viewParams(filtersFrom(params), sort));
+    show(viewParams(filtersFrom(params), sort, tab));
   }
 
   return (
@@ -631,7 +636,7 @@ export function BlunderFilterPanel({
         aria-label="Sort"
         fullwidth
         value={[sort]}
-        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next)))}
+        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next), tab))}
         size="small"
       >
         {SORTS.map(({ id, label }) => (
@@ -674,18 +679,18 @@ export function BlunderFilterPanel({
         <MinLeadField
           max={maxLead}
           value={filters.minLead}
-          onCommit={(minLead) => show(viewParams({ ...filters, minLead }, sort))}
+          onCommit={(minLead) => show(viewParams({ ...filters, minLead }, sort, tab))}
         />
       </Group>
       <RollFilter
         value={filters.dice}
         onPick={pickDie}
-        onReset={() => show(viewParams({ ...filters, dice: [] }, sort))}
+        onReset={() => show(viewParams({ ...filters, dice: [] }, sort, tab))}
       />
       <CubeValueFilter
         ladder={ladder}
         value={filters.cubeValue}
-        onValueChange={(cubeValue) => show(viewParams({ ...filters, cubeValue }, sort))}
+        onValueChange={(cubeValue) => show(viewParams({ ...filters, cubeValue }, sort, tab))}
       />
     </Stack>
   );
