@@ -9,6 +9,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@uiid/design-system/icons";
 import type { Blunder } from "@/server/router";
 import {
   blunderHref,
+  DEFAULT_TAB,
   filtersFrom,
   isOpen,
   pageFrom,
@@ -61,7 +62,9 @@ export function BlunderStepper({ category, blunderId }: BlunderStepperProps) {
 
   function hrefFor(row: Blunder | undefined, onPage: number): string | null {
     if (row === undefined) return null;
-    const params = viewParams(filters, sort);
+    // Stepping walks the rows of the blunders half, which is the only half that
+    // has rows, so each blunder is handed the same half to go back to.
+    const params = viewParams(filters, sort, DEFAULT_TAB);
     if (onPage > 1) params.set("page", String(onPage));
     return blunderHref(category, row, params.toString());
   }

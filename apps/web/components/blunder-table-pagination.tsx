@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { useTRPC } from "@/trpc/client";
 import {
+  DEFAULT_TAB,
   PAGE_SPREAD,
   PER_PAGE,
   viewParams,
@@ -36,8 +37,10 @@ export function BlunderTablePagination({
   if (pageCount <= 1) return null;
 
   // Rebuilt per link: a page number belongs to one page, the filters to all of them.
+  // Paging is a move within the blunders half — the statistics have no pages —
+  // so every link lands back on the half it was drawn under.
   const hrefFor = (n: number) => {
-    const params = viewParams(filters, sort);
+    const params = viewParams(filters, sort, DEFAULT_TAB);
     params.set("page", String(n));
     return `?${params}`;
   };
