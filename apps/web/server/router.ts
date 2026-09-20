@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   type BlunderSort,
   CUBE_ACTION,
+  CRAWFORD_FILTER_IDS,
   CRAWFORD_IDS,
   cubeDirection,
   DEFAULT_SORT,
@@ -212,6 +213,7 @@ export const appRouter = router({
           page: z.number().int().min(1).default(1),
           kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
           severities: z.array(z.enum(SEVERITIES)).default([]),
+          crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
           sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
         }),
       )
@@ -251,6 +253,15 @@ export const appRouter = router({
             },
           );
           where.push(`(${clauses.join(" OR ")})`);
+        }
+
+        if (input.crawfords.length > 0) {
+          // Derived from the position rather than read from `b.crawford_state`,
+          // which the scraper left null on about one blunder in eight. See
+          // `crawfordFilterOf`.
+          params.push(...input.crawfords);
+          const slots = input.crawfords.map(() => "?").join(", ");
+          where.push(`crawford_filter(b.source_xgid) IN (${slots})`);
         }
 
         const filter = where.join(" AND ");
