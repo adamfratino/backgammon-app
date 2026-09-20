@@ -1,12 +1,13 @@
 "use client";
 
-import { useId } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Button,
   Group,
   Select,
+  Slider,
   Stack,
   Text,
   Toggle,
@@ -15,19 +16,24 @@ import {
 import { RefreshCcwIcon } from "@uiid/design-system/icons";
 
 import {
+  ANY_CUBE_VALUE,
   CRAWFORD_FILTERS,
+  cubeValueLadder,
   filtersFrom,
   KIND_FILTERS,
   SEVERITY_BANDS,
   SEVERITY_COLOR,
   SORTS,
   sortFrom,
+  type CubeValueRange,
   viewParams,
   SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
 
 interface BlunderFilterPanelProps {
   category: string;
+  /** The highest face in the data, which is where the Cube value track stops. */
+  topCubeValue: number;
 }
 
 // Select keys a row by `value`, the constants by `id`.
@@ -89,6 +95,35 @@ const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label, min }, index) => {
   };
 });
 
+interface ResetButtonProps {
+  filter: string;
+  disabled: boolean;
+  onClick: () => void;
+}
+
+/**
+ * The reset for one filter, drawn in the label row opposite its label. Disabled
+ * rather than dropped while there is nothing to reset, so the row keeps its
+ * height and the controls below it never shift as filters come and go.
+ */
+function ResetButton({ filter, disabled, onClick }: ResetButtonProps) {
+  const reset = `Reset ${filter.toLowerCase()}`;
+
+  return (
+    <Button
+      variant="ghost"
+      size="xsmall"
+      shape="square"
+      tooltip={reset}
+      aria-label={reset}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <RefreshCcwIcon />
+    </Button>
+  );
+}
+
 interface FilterSelectProps {
   label: string;
   placeholder: string;
@@ -99,45 +134,194 @@ interface FilterSelectProps {
 
 /**
  * A dropdown under its own label row, which carries a reset for just this
- * dropdown. The row sits outside the Select because the DS Field's label row
- * only takes a hint icon, not a button; once UI-216 gives it an `action` slot,
- * this goes back to Select's `label` with the reset as its action. The popup
- * opens below the trigger rather than over it, leaving the picks in view, where
- * nothing clips the options.
+ * dropdown. Both sit in the Field the design system draws around the control:
+ * `label` on the left of the row, `action` on the right. The popup opens below
+ * the trigger rather than over it, leaving the picks in view, where nothing clips
+ * the options.
  */
 function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectProps) {
-  const labelId = useId();
-  const reset = `Reset ${label.toLowerCase()}`;
-
   return (
-    <Stack gap={1} ax="stretch">
-      <Group ax="space-between" ay="center">
-        <Text id={labelId} size={-1} weight="bold">
-          {label}
-        </Text>
-        <Button
-          variant="ghost"
-          size="xsmall"
-          shape="square"
-          tooltip={reset}
-          aria-label={reset}
+    <Select
+      {...props}
+      label={label}
+      action={
+        <ResetButton
+          filter={label}
           disabled={value.length === 0}
           onClick={() => onValueChange([])}
-        >
-          <RefreshCcwIcon />
-        </Button>
+        />
+      }
+      multiple
+      fullwidth
+      value={value}
+      onValueChange={onValueChange}
+      size="small"
+      PositionerProps={{ alignItemWithTrigger: false }}
+    />
+  );
+}
+
+interface CubeValueFilterProps {
+  /** The faces the track steps through, lowest first. At least two of them. */
+  ladder: number[];
+  value: CubeValueRange;
+  onValueChange: (cubeValue: CubeValueRange) => void;
+}
+
+interface FaceSelectProps {
+  label: string;
+  ladder: number[];
+  /** Which stop on the ladder this end currently sits on. */
+  position: number;
+  /** Stops this end may take; the rest would cross the other end. */
+  allows: (position: number) => boolean;
+  onPick: (position: number) => void;
+}
+
+/**
+ * One end of the range as a list of faces. It is addressed by position on the
+ * ladder rather than by the face itself, so it speaks the coordinate the slider
+ * beside it moves in and the two can be set from the same pair of numbers.
+ *
+ * A face that would put this end past the other one is listed but disabled,
+ * rather than dropped: the list keeps its length as the other end moves, so the
+ * row a face sits on doesn't shift under the pointer between openings.
+ */
+function FaceSelect({ label, ladder, position, allows, onPick }: FaceSelectProps) {
+  return (
+    <Select
+      label={label}
+      fullwidth
+      size="small"
+      value={String(position)}
+      onValueChange={(next) => onPick(Number(next))}
+      items={ladder.map((face, stop) => ({
+        value: String(stop),
+        label: String(face),
+        disabled: !allows(stop),
+      }))}
+      PositionerProps={{ alignItemWithTrigger: false }}
+    />
+  );
+}
+
+/**
+ * The cube value as a span of the cube's own faces: a track to sweep both ends
+ * at once, and a list under each end to name it exactly. All three read and
+ * write one range, so moving a thumb re-reads the lists and picking from a list
+ * moves a thumb.
+ *
+ * The slider moves through positions on the ladder rather than through the faces
+ * themselves, so 1 to 2 is the same drag as 32 to 64 and the stops stay evenly
+ * spaced; the readout beside it names the faces those positions stand for.
+ *
+ * An end parked on the end of the ladder is no bound at all rather than a bound
+ * at that face. That keeps the range honest as the data grows: a link saved while
+ * the track stopped at 4 asks for "2 and up", not "2 to 4", so a cube turned to 8
+ * next month falls inside it rather than just outside.
+ */
+function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps) {
+  const end = ladder.length - 1;
+
+  // The slider counts in positions, but nothing a reader sees or hears should: a
+  // position is a 0 or a 2 that is on no cube. Every way out of this component
+  // goes through here, so it can only ever report a real face.
+  const faceAt = (position: number) => ladder[position] ?? 1;
+
+  // The track carries every face the URL can name — `cubeValueLadder` is asked for
+  // one that reaches the bounds as well as the data — so a bound always finds its
+  // position.
+  const asked = [
+    value.min === null ? 0 : ladder.indexOf(value.min),
+    value.max === null ? end : ladder.indexOf(value.max),
+  ];
+
+  // Both ends are driven from here rather than straight off the URL. Reading them
+  // from the URL means every step of a drag has to be written to it first, and a
+  // `router.push` per pointer move is a server round trip per pointer move: the
+  // thumb stops following the pointer and starts lagging behind it, landing
+  // wherever the last navigation to resolve says it should. Dragging this track
+  // end to end cost eight navigations that way; it costs one now.
+  const [held, setHeld] = useState(asked);
+
+  // Anything that moves the range without touching this filter — the reset, the
+  // back button, a link — changes the URL under us, so the controls follow it.
+  // Comparing during the render keeps them in step without a pass through the DOM.
+  const [seen, setSeen] = useState(asked.join());
+  if (seen !== asked.join()) {
+    setSeen(asked.join());
+    setHeld(asked);
+  }
+
+  const [low = 0, high = end] = held;
+
+  // Moves all three at once, then writes the range the URL has to carry.
+  function commit(lowest: number, highest: number) {
+    setHeld([lowest, highest]);
+    onValueChange({
+      min: lowest === 0 ? null : faceAt(lowest),
+      max: highest === end ? null : faceAt(highest),
+    });
+  }
+
+  return (
+    <Group gap={3} fullwidth>
+      <Stack fullwidth ax="stretch">
+        <Slider
+          label="Cube value"
+          action={
+            <ResetButton
+              filter="Cube value"
+              disabled={value.min === null && value.max === null}
+              onClick={() => {
+                setHeld([0, end]);
+                onValueChange(ANY_CUBE_VALUE);
+              }}
+            />
+          }
+          fullwidth
+          size="small"
+          min={0}
+          max={end}
+          value={held}
+          // Every step of the drag, which only has to move the controls.
+          onValueChange={(next) => setHeld(typeof next === "number" ? [next] : [...next])}
+          // Once, when the thumb is let go. This is the one that reaches the URL.
+          onValueCommitted={(next) => {
+            const [lowest = 0, highest = end] = typeof next === "number" ? [next] : next;
+            commit(lowest, highest);
+          }}
+          ValueProps={{
+            // Both ends on one face reads as that face rather than as a span from it
+            // to itself, which is what a set of the two gives for free.
+            children: (_, thumbs) => [...new Set(thumbs.map(faceAt))].join("–"),
+          }}
+          ThumbProps={{
+            // Each thumb otherwise announces its position on the track, so a reader
+            // using a screen reader hears a 0 where the readout beside it says 1.
+            // Base UI's own wording for which end of the span a thumb holds is kept.
+            getAriaValueText: (_, position, index) =>
+              `${faceAt(position)} ${index === 0 ? "start" : "end"} range`,
+          }}
+        />
+      </Stack>
+      <Group gap={1.5}>
+        <FaceSelect
+          label="Min"
+          ladder={ladder}
+          position={low}
+          allows={(stop) => stop <= high}
+          onPick={(stop) => commit(stop, high)}
+        />
+        <FaceSelect
+          label="Max"
+          ladder={ladder}
+          position={high}
+          allows={(stop) => stop >= low}
+          onPick={(stop) => commit(low, stop)}
+        />
       </Group>
-      <Select
-        {...props}
-        multiple
-        fullwidth
-        value={value}
-        onValueChange={onValueChange}
-        size="small"
-        TriggerProps={{ "aria-labelledby": labelId }}
-        PositionerProps={{ alignItemWithTrigger: false }}
-      />
-    </Stack>
+    </Group>
   );
 }
 
@@ -148,11 +332,18 @@ function FilterSelect({ label, value, onValueChange, ...props }: FilterSelectPro
  * Every change goes through `viewParams`, which writes no `?page=`, so the list
  * starts again at page 1.
  */
-export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
+export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filters = filtersFrom(searchParams);
   const sort = sortFrom(searchParams.get("sort"));
+
+  // The track covers the data, and also whatever a hand-written URL asks about,
+  // so a face nobody has reached yet still parks its end where it says it is
+  // rather than somewhere the reader has to guess at.
+  const ladder = cubeValueLadder(
+    Math.max(topCubeValue, filters.cubeValue.min ?? 1, filters.cubeValue.max ?? 1),
+  );
 
   function show(params: URLSearchParams) {
     const query = params.toString();
@@ -205,6 +396,11 @@ export function BlunderFilterPanel({ category }: BlunderFilterPanelProps) {
         items={CRAWFORD_ITEMS}
         value={filters.crawfords}
         onValueChange={(values) => pick("crawford", values)}
+      />
+      <CubeValueFilter
+        ladder={ladder}
+        value={filters.cubeValue}
+        onValueChange={(cubeValue) => show(viewParams({ ...filters, cubeValue }, sort))}
       />
     </Stack>
   );

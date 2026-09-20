@@ -109,6 +109,43 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
 }
 
 /**
+ * Every face a doubling cube can read: 1 while it is centred, then doubling to
+ * 64. The Cube value filter's stops come from here rather than from the values
+ * the data happens to hold, so they stay evenly spaced and a face nobody has
+ * reached yet needs no new constant to appear — only a blunder that reaches it.
+ */
+export const CUBE_LADDER: readonly number[] = [1, 2, 4, 8, 16, 32, 64];
+
+/**
+ * The ladder up to `top`, which is the highest face the data reaches. Stopping
+ * there keeps every stop on the track able to change the list, rather than
+ * running out to 64 past four faces no blunder has played.
+ *
+ * Always at least two stops: a slider whose min equals its max has nothing to
+ * drag, so a database holding only centred cubes still gets a usable control.
+ */
+export function cubeValueLadder(top: number): number[] {
+  const reached = CUBE_LADDER.findIndex((face) => face >= top);
+  const stops = reached === -1 ? CUBE_LADDER.length : reached + 1;
+  return CUBE_LADDER.slice(0, Math.max(stops, 2));
+}
+
+/**
+ * Which cube values the list is narrowed to, held as the bounds that actually
+ * narrow it: a null end is no bound at all rather than a bound sitting on the
+ * ladder's edge. That is what lets the range be read off a URL without knowing
+ * where the data tops out — and it means `?cubeMin=2` still means "2 and up" on
+ * the day the first cube reaches 8, instead of having silently meant "2 to 4".
+ */
+export interface CubeValueRange {
+  min: number | null;
+  max: number | null;
+}
+
+/** Nothing narrowed: every value, whatever the data turns out to hold. */
+export const ANY_CUBE_VALUE: CubeValueRange = { min: null, max: null };
+
+/**
  * What the Kind filter offers: checker plays, and cube decisions split by which
  * side of the cube you were on. Ticking several widens the list, so "Checker
  * plays" and "Offering the cube" is either one.
@@ -160,6 +197,7 @@ export interface BlunderFilters {
   kinds: KindFilter[];
   severities: BlunderSeverity[];
   crawfords: CrawfordFilter[];
+  cubeValue: CubeValueRange;
 }
 
 /** `?page=` is whatever was in the URL bar, so anything that isn't a page is page 1. */
@@ -178,13 +216,40 @@ export function sortFrom(value: string | null): BlunderSort {
 }
 
 /**
- * The filters, read from `?kind=&severity=&crawford=`. Anything that isn't one of
- * ours is dropped, and each group comes back in the constants' own order — which
- * is what lets the browser and the server build the same cache key from the same
- * URL. Takes anything with `getAll`, so the read-only search params in the
- * browser and a plain `URLSearchParams` on the server both fit.
+ * One end of the cube value range. Only a real cube face counts, so anything
+ * else — a 3, a word, an empty value — is no bound rather than a bound of its
+ * own, the same way an unrecognised `?kind=` is dropped. A face the data has not
+ * reached is still a face, and narrows the list to nothing rather than ignored.
  */
-export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFilters {
+function cubeValueFrom(value: string | null): number | null {
+  const face = Number(value);
+  return CUBE_LADDER.includes(face) ? face : null;
+}
+
+/**
+ * The cube value range, read from `?cubeMin=&cubeMax=`. Two params rather than
+ * one because either end stands on its own: a floor with no ceiling is just
+ * `?cubeMin=`, with no second half of a pair left conspicuously empty.
+ */
+function cubeValueRangeFrom(params: Pick<URLSearchParams, "get">): CubeValueRange {
+  const min = cubeValueFrom(params.get("cubeMin"));
+  const max = cubeValueFrom(params.get("cubeMax"));
+
+  // Crossed bounds are two real faces in the wrong order, so they read as the
+  // range between them — a typed-in URL gets the list it plainly meant rather
+  // than the empty one a literal reading would give.
+  if (min !== null && max !== null && min > max) return { min: max, max: min };
+  return { min, max };
+}
+
+/**
+ * The filters, read from `?kind=&severity=&crawford=&cubeMin=&cubeMax=`. Anything that
+ * isn't one of ours is dropped, and each group comes back in the constants' own
+ * order — which is what lets the browser and the server build the same cache key
+ * from the same URL. Takes anything that can be read like search params, so the
+ * read-only ones in the browser and a plain `URLSearchParams` on the server both fit.
+ */
+export function filtersFrom(params: Pick<URLSearchParams, "getAll" | "get">): BlunderFilters {
   const pick = <T extends string>(key: string, allowed: readonly T[]): T[] => {
     const chosen = new Set(params.getAll(key));
     return allowed.filter((value) => chosen.has(value));
@@ -194,7 +259,24 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
     kinds: pick("kind", KIND_FILTER_IDS),
     severities: pick("severity", SEVERITIES),
     crawfords: pick("crawford", CRAWFORD_FILTER_IDS),
+    cubeValue: cubeValueRangeFrom(params),
   };
+}
+
+/**
+ * Whether anything is narrowing the list, which is what tells an empty page
+ * whether to blame the filters or the category. It names every member rather
+ * than walking the object, so a filter that isn't a list of ticks — the cube
+ * value range is the first — cannot quietly read as "nothing set".
+ */
+export function isFiltered({ kinds, severities, crawfords, cubeValue }: BlunderFilters): boolean {
+  return (
+    kinds.length > 0 ||
+    severities.length > 0 ||
+    crawfords.length > 0 ||
+    cubeValue.min !== null ||
+    cubeValue.max !== null
+  );
 }
 
 /**
@@ -208,13 +290,15 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll">): BlunderFil
  * every existing caller keep compiling while quietly clearing the sort.
  */
 export function viewParams(
-  { kinds, severities, crawfords }: BlunderFilters,
+  { kinds, severities, crawfords, cubeValue }: BlunderFilters,
   sort: BlunderSort,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
   for (const crawford of crawfords) params.append("crawford", crawford);
+  if (cubeValue.min !== null) params.set("cubeMin", String(cubeValue.min));
+  if (cubeValue.max !== null) params.set("cubeMax", String(cubeValue.max));
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
 }
