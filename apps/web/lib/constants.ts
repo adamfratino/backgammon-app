@@ -123,6 +123,66 @@ export const MIN_CHART_DECISIONS = 10;
 export const FORM_WINDOW = 25;
 
 /**
+ * How a block of play reads against your own record, warmest first.
+ *
+ * The severity bands cannot do this job, though they are the same idea. They
+ * divide one error magnitude, and only one of the three form measures is an
+ * error magnitude at all: the cost of a mistake sits between 0.145 and 0.197
+ * across every block, which is `moderate` from end to end, so every bar would
+ * wear one colour. Mistakes per match runs from 1.72 to 4.48 and would read as
+ * `catastrophic` throughout while meaning nothing of the kind.
+ *
+ * So the scale is your own average rather than a fixed number of equity. A block
+ * is warm when it is worse than you usually are and cool when it is better,
+ * which is a question worth asking of all three measures and needs no threshold
+ * invented per measure. It also re-levels as you improve: a stretch that was
+ * average last year reads warm once the average comes down.
+ *
+ * `min` is a ratio to that average. Higher is worse on every form measure —
+ * each counts something that went wrong — so the bands run one way and no
+ * measure needs to say which direction is good.
+ *
+ * The band either side of 1 is deliberately narrow: within 5% of your own
+ * average is not a change, and widening it would paint ordinary noise as
+ * improvement.
+ */
+/**
+ * The floor of the scale, named rather than indexed off the end of the array so
+ * that `formBandOf` has something to fall back to that is a band and not
+ * `undefined`. Nothing is below it: every ratio is at or above zero.
+ */
+const COOLEST = {
+  id: "cool",
+  label: "below your average",
+  min: 0,
+  color: "neutral",
+} as const;
+
+export const FORM_BANDS = [
+  { id: "hot", label: "well above your average", min: 1.25, color: "red" },
+  { id: "warm", label: "above your average", min: 1.05, color: "orange" },
+  { id: "level", label: "about your average", min: 0.95, color: "yellow" },
+  COOLEST,
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  min: number;
+  color: PaletteColor;
+}[];
+
+export type FormBand = (typeof FORM_BANDS)[number];
+
+/**
+ * Which band a block falls in, against the average of the blocks it is drawn
+ * beside. An average of zero is a record with nothing in it to be worse than, so
+ * it reads as the coolest band rather than dividing by nothing.
+ */
+export function formBandOf(value: number, average: number): FormBand {
+  const ratio = average <= 0 ? 0 : value / average;
+  return FORM_BANDS.find(({ min }) => ratio >= min) ?? COOLEST;
+}
+
+/**
  * The band thresholds as a track reads them: ascending, and without the bottom
  * band's floor of 0, which is the start of the track rather than a division in
  * it. Derived from `SEVERITY_BANDS` so a band that moves takes this with it.

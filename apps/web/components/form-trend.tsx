@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Delta } from "@microcharts/react/delta";
 import { SparkBar } from "@microcharts/react/sparkbar";
 import {
@@ -12,6 +13,7 @@ import {
   Text,
 } from "@uiid/design-system";
 
+import { FORM_BANDS, type FormBand, formBandOf, paletteVar } from "@/lib/constants";
 import { caller } from "@/server/caller";
 import type { FormPoint } from "@/server/router";
 
@@ -116,6 +118,13 @@ interface FormRowProps {
 }
 
 function FormRow({ label, decimals, value, previous, series }: FormRowProps) {
+  // Against the blocks actually drawn beside it rather than against every match
+  // ever played, so the bar is warm or cool relative to the same record the row
+  // is showing — a reader can check the colour against the bars.
+  const average = series.reduce((sum, point) => sum + point, 0) / (series.length || 1);
+  const bands = series.map((point) => formBandOf(point, average));
+  const band = formBandOf(value, average);
+
   return (
     <TableRow>
       <TableCell>
@@ -139,24 +148,74 @@ function FormRow({ label, decimals, value, previous, series }: FormRowProps) {
         )}
       </TableCell>
       <TableCell>
+        <TrendBars label={label} series={series} bands={bands} latest={band} />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+interface TrendBarsProps {
+  label: string;
+  series: number[];
+  /** Each block's band, indexed alongside `series`. */
+  bands: FormBand[];
+  /** The newest block's band, for the accessible name. */
+  latest: FormBand;
+}
+
+/**
+ * The blocks as bars, each one wearing how it compares with your own average.
+ *
+ * `SparkBar` fills every bar from a single `color`, so a temperature per bar is
+ * drawn as one chart per band stacked on top of each other: each layer is handed
+ * the whole series with every block outside its band nulled out. The library
+ * treats a null as a gap and still lays out from the full array — a bar's slot
+ * is its index, not its position among the values that survived — so the layers
+ * line up exactly and between them draw each block once, in its own colour.
+ *
+ * Every layer needs the same `domain`, since a layer left to fit its own subset
+ * would scale a handful of blocks against each other instead of against the
+ * row. `--mc-accent` is set to match each layer's own colour because `SparkBar`
+ * draws the last bar it finds with the accent ink rather than with `color`, and
+ * the last bar of a layer is not the last block of the row.
+ */
+function TrendBars({ label, series, bands, latest }: TrendBarsProps) {
+  const domain = [0, Math.max(...series)] as const;
+
+  return (
+    <span
+      role="img"
+      aria-label={`${label}, ${series.length} blocks, latest ${latest.label}`}
+      style={{ display: "grid", width: TREND_WIDTH, height: TREND_HEIGHT }}
+    >
+      {FORM_BANDS.map((band) => (
         <SparkBar
-          data={series}
-          // Anchored at zero rather than fitted to the series, which is the
-          // difference between this panel saying something and saying nothing.
-          // `mistakes` and `lost` both swing better than twofold across the
-          // database where `cost` swings by a third, and bars fitted to their
-          // own range would draw all three at full height — the flat one would
-          // read exactly like the climbing ones. A bar measured from anywhere
-          // but zero is not a length anyway.
-          domain={[0, Math.max(...series)]}
-          color="var(--mc-accent)"
+          key={band.id}
+          data={series.map((value, index) => (bands[index] === band ? value : null))}
+          // Anchored at zero rather than fitted, which is the difference between
+          // this panel saying something and saying nothing. `mistakes` and
+          // `lost` both swing better than twofold across the database where
+          // `cost` swings by a third, and bars fitted to their own range would
+          // draw all three rows at full height — the flat one would read exactly
+          // like the climbing ones. A bar measured from anywhere but zero is not
+          // a length anyway.
+          domain={domain}
+          color={paletteVar(band.color)}
+          style={
+            {
+              gridArea: "1 / 1",
+              "--mc-accent": paletteVar(band.color),
+            } as CSSProperties
+          }
           width={TREND_WIDTH}
           height={TREND_HEIGHT}
           label="none"
-          summary={`${label}, ${series.length} blocks`}
+          // The name is on the wrapper: four layers each announcing themselves
+          // would read the row out four times over.
+          summary={false}
         />
-      </TableCell>
-    </TableRow>
+      ))}
+    </span>
   );
 }
 
