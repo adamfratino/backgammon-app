@@ -1,7 +1,7 @@
-import { Stack, type StackProps, Text, List, ListItem, Badge } from "@uiid/design-system";
+import { Stack, type StackProps, Text } from "@uiid/design-system";
 import { caller } from "@/server/caller";
 
-import { CategoryLink } from "./category-link";
+import { CategoryCounts } from "./category-counts";
 
 const OUTER_PADDING: StackProps["p"] = 0;
 const OUTER_GAP: StackProps["gap"] = 6;
@@ -27,20 +27,12 @@ const CategoryTitle = () => (
   </Text>
 );
 
+/**
+ * Asked for with nothing narrowed, which is every category's total. The server
+ * has no URL to read filters from — layouts are not given `searchParams`, and
+ * this one is the root's — so the counting is the browser's job from here.
+ */
 const CategoryList = async () => {
-  const categories = await caller.categories.list();
-  return (
-    <List gap={1}>
-      {categories.map(({ category, count }) => (
-        <ListItem key={category}>
-          <CategoryLink category={category}>
-            <Text>{category}</Text>
-            <Badge size="small" color="neutral">
-              <data value={count}>{count}</data>
-            </Badge>
-          </CategoryLink>
-        </ListItem>
-      ))}
-    </List>
-  );
+  const categories = await caller.categories.list({});
+  return <CategoryCounts categories={categories} />;
 };
