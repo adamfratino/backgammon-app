@@ -64,7 +64,7 @@ export function BoardArea({
           dice={parsed.dice}
           cube={parsed.cube}
           doubleOffered={doubleOffered}
-          turn="player"
+          turn={parsed.turn}
           move={selected}
           pipCounts={visible ? pipCounts : null}
           flipped={flipped}

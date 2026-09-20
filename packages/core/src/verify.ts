@@ -31,6 +31,8 @@ interface Row {
   die_2: number | null;
   match_length: number | null;
   cube_value: number | null;
+  score_black: number | null;
+  score_white: number | null;
 }
 
 /** `board[1]` is the upper-case side of the XGID, which the parser calls `player`. */
@@ -116,8 +118,8 @@ function sameSide(a: Side, b: Side): boolean {
  * Replays every candidate's notation from the near side of the position it was
  * played in, and compares the outcome with the XGID Galaxy gives for the
  * position after it. Agreement proves both `parseMove` and that the side on
- * roll is always drawn near — which the board's arrows rely on, and which the
- * XGID's own turn field does not reliably say.
+ * roll is always drawn near — which the board's arrows rely on, and which is
+ * what the turn field checked above is asserting.
  */
 function checkPlays(db: DatabaseSync): { checked: number; problems: string[] } {
   const plays = db
@@ -161,7 +163,7 @@ function main(): void {
   const rows = db
     .prepare(
       `SELECT blunder_id, kind, source_xgid, source_position_value,
-              die_1, die_2, match_length, cube_value
+              die_1, die_2, match_length, cube_value, score_black, score_white
        FROM blunders
        WHERE source_xgid IS NOT NULL AND source_position_value IS NOT NULL`,
     )
@@ -200,6 +202,41 @@ function main(): void {
 
     if (row.cube_value !== null && parsed.cube.value !== row.cube_value) {
       problems.push(`${row.blunder_id}: cube ${parsed.cube.value}, column says ${row.cube_value}`);
+    }
+
+    // The three fields `toXgid` has to read through the side the board was
+    // written from. Each was wrong on most rows while they were copied out of
+    // the match id as gnubg numbers them — see BG-23.
+
+    // A source position is one somebody was about to play, and the board is
+    // always written from that side, so the upper-case side is on roll. The
+    // plays checked below replay from that same side, which is what makes this
+    // more than a restatement of the field.
+    if (parsed.turn !== "player") {
+      problems.push(`${row.blunder_id}: XGID says the lower-case side is on roll`);
+    }
+
+    // Every blunder scraped is one of yours and you are white in all of them,
+    // so the upper-case side's score is `score_white` — see `matchScoreOf` in
+    // the web app, which the Advantage filter reads through.
+    if (row.score_white !== null && parsed.scores.player !== row.score_white) {
+      problems.push(
+        `${row.blunder_id}: upper-case score ${parsed.scores.player}, column says ${row.score_white}`,
+      );
+    }
+    if (row.score_black !== null && parsed.scores.opponent !== row.score_black) {
+      problems.push(
+        `${row.blunder_id}: lower-case score ${parsed.scores.opponent}, column says ${row.score_black}`,
+      );
+    }
+
+    // A cube nobody has turned is still centred, and a turned one is owned.
+    // The owner's side is checked by the scores above rather than here: both
+    // are read through the same value, so a wrong one shows up there.
+    if ((parsed.cube.value === 1) !== (parsed.cube.owner === null)) {
+      problems.push(
+        `${row.blunder_id}: cube on ${parsed.cube.value} ${parsed.cube.owner === null ? "centred" : `owned by the ${parsed.cube.owner} side`}`,
+      );
     }
   }
 

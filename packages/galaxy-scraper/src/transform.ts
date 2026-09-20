@@ -1,4 +1,4 @@
-import { decodeMatchId, gnubgIdToXgid } from "./position.ts";
+import { cubePositionOf, decodeMatchId, gnubgIdToXgid } from "./position.ts";
 import type { BlunderEvent, CandidateMove, MatchAttributes, Review } from "./types.ts";
 
 export interface NormalizedMatch {
@@ -283,13 +283,7 @@ export function normalize(
       gnubg_id: gnubgId,
       source_xgid: gnubgId ? gnubgIdToXgid(gnubgId) : null,
       cube_value: sourceMatchState ? 2 ** sourceMatchState.cubeExponent : null,
-      cube_position: sourceMatchState
-        ? sourceMatchState.cubeOwner === 3
-          ? 0
-          : sourceMatchState.cubeOwner === 1
-            ? 1
-            : -1
-        : null,
+      cube_position: sourceMatchState ? cubePositionOf(sourceMatchState) : null,
       played_notation: played?.notation ?? null,
       best_notation: best?.notation ?? null,
       played_rank: played?.rank ?? null,

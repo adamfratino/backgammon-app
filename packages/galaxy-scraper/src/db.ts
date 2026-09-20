@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { cubePositionOf, decodeMatchId, decodePositionId, toXgid } from "./position.ts";
 import type { NormalizedBatch } from "./transform.ts";
 
 const SCHEMA = `
@@ -180,4 +181,62 @@ export function writeBatch(db: DatabaseSync, batch: NormalizedBatch): WriteCount
   }
 
   return counts;
+}
+
+export interface ReencodeCounts {
+  checked: number;
+  rewritten: number;
+}
+
+/**
+ * Rebuilds the columns derived from a blunder's GNU BG ids — the XGID and the
+ * two cube columns — from `source_position_value` and `source_match_value`,
+ * which every row keeps.
+ *
+ * `load` can only reach rows whose category pages are still in `raw/`, and
+ * those age out well before the database does: a page the API has since
+ * repaginated leaves its blunders in place with no way to rewrite them. So a
+ * change to how positions are encoded would otherwise land on some rows and
+ * not others, which is worse than landing on none. This reaches all of them
+ * and needs no network.
+ */
+export function reencodeXgids(db: DatabaseSync): ReencodeCounts {
+  const rows = db
+    .prepare(
+      `SELECT blunder_id, source_position_value, source_match_value
+         FROM blunders
+        WHERE source_position_value IS NOT NULL AND source_match_value IS NOT NULL`,
+    )
+    .all() as unknown as {
+    blunder_id: number;
+    source_position_value: string;
+    source_match_value: string;
+  }[];
+
+  const update = db.prepare(
+    `UPDATE blunders SET source_xgid = ?, cube_value = ?, cube_position = ?
+      WHERE blunder_id = ?`,
+  );
+
+  let rewritten = 0;
+  db.exec("BEGIN");
+  try {
+    for (const row of rows) {
+      const match = decodeMatchId(row.source_match_value);
+      const xgid = toXgid(decodePositionId(row.source_position_value), match);
+      const changed = update.run(
+        xgid,
+        2 ** match.cubeExponent,
+        cubePositionOf(match),
+        row.blunder_id,
+      );
+      rewritten += Number(changed.changes);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return { checked: rows.length, rewritten };
 }

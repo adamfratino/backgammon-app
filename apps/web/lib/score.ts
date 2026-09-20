@@ -46,20 +46,20 @@ export function matchScoreOf(
  * to the columns alone, better than one row in eight would fall outside every
  * tick of a filter it belongs in.
  *
- * `scores` is keyed by gnubg's player number while the board is written on-roll
- * first, so which of the two fields is yours depends on `turn` and not on the
- * side the position draws nearest: `scores[turn]` is the score of whoever is on
- * roll, and that is you. Checked against the 1,482 rows that kept their
- * columns, where it agrees on 1,464, and against match winning chance, where it
- * reproduces the curve above exactly.
+ * Both fields read off the side the board draws them on, so neither needs
+ * turning round here. The scraper used to copy them out of gnubg's match id in
+ * gnubg's own player order, which is unrelated to which way round the board
+ * beside them was written, and they came out swapped on most rows; BG-23 made
+ * it write the on-roll side's score first instead. The on-roll side is you —
+ * every scraped blunder is one of yours — so `player` is yours and `opponent`
+ * theirs, on every row. `pnpm --filter @repo/core verify` checks exactly this
+ * against the 1,482 rows that kept their columns.
  */
 function scoresFromXgid(xgid: string | null): MatchScore | null {
   const position = xgid === null ? null : parseXgid(xgid);
   if (!position) return null;
 
-  const { scores, turn } = position;
-  const yours = scores[turn];
-  const theirs = turn === "player" ? scores.opponent : scores.player;
+  const { player: yours, opponent: theirs } = position.scores;
 
   // `parseXgid` reads both fields with `Number`, so a malformed one is a NaN
   // rather than a throw, and a NaN lead would compare false against every tick.

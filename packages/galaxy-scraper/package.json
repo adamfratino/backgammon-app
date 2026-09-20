@@ -19,6 +19,7 @@
     "categories": "node --disable-warning=ExperimentalWarning src/cli.ts categories",
     "scrape": "node --disable-warning=ExperimentalWarning src/cli.ts scrape",
     "load": "node --disable-warning=ExperimentalWarning src/cli.ts load",
+    "reencode": "node --disable-warning=ExperimentalWarning src/cli.ts reencode",
     "all": "node --disable-warning=ExperimentalWarning src/cli.ts all",
     "stats": "node --disable-warning=ExperimentalWarning src/cli.ts stats",
     "check-types": "tsc --noEmit",
