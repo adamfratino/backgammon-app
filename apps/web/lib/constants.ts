@@ -14,8 +14,8 @@ export const NOTE_MAX_LENGTH = 2000;
  * A category as a person reads it. The database stores them the way a column
  * does — `middle_game`, `one_man_back` — and the sidebar, the topbar and the
  * breadcrumb all draw the same name, so the one place it turns into prose is
- * here. Sentence case, like every other label in this file: "Worst first", not
- * "Worst First".
+ * here. Sentence case, like every other label in this file: "Checker plays", not
+ * "Checker Plays".
  */
 export function categoryLabel(category: string): string {
   const words = category.replaceAll("_", " ");
@@ -385,10 +385,10 @@ export const KIND_LABELS: Record<KindFilter, string> = {
 };
 
 export const SORTS = [
-  { id: "worst", label: "Worst first" },
-  { id: "mildest", label: "Mildest first" },
-  { id: "newest", label: "Newest first" },
-  { id: "oldest", label: "Oldest first" },
+  { id: "worst", label: "Worst" },
+  { id: "mildest", label: "Mildest" },
+  { id: "newest", label: "Newest" },
+  { id: "oldest", label: "Oldest" },
 ] as const;
 
 export type BlunderSort = (typeof SORTS)[number]["id"];
