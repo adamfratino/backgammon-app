@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Badge,
   Button,
@@ -29,6 +30,8 @@ import {
   viewParams,
   SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
+import type { FilterCounts } from "@/server/router";
+import { useTRPC } from "@/trpc/client";
 
 interface BlunderFilterPanelProps {
   category: string;
@@ -36,8 +39,87 @@ interface BlunderFilterPanelProps {
   topCubeValue: number;
 }
 
-// Select keys a row by `value`, the constants by `id`.
-const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
+/** One row of a dropdown: Select keys it by `value`, the constants by `id`. */
+interface FilterItem {
+  value: string;
+  label: string;
+  children: React.ReactNode;
+}
+
+interface OptionCountProps {
+  /** Undefined until the counts land, or if the query for them failed. */
+  count: number | undefined;
+}
+
+/**
+ * How many rows the option beside it would leave, counted under everything
+ * ticked outside its own dropdown — so a 0 is an option that leads nowhere, and
+ * reads as one before it is picked rather than after.
+ *
+ * Nothing is drawn until the count arrives, so a row that has none is the row it
+ * was before rather than a badge standing empty.
+ */
+function OptionCount({ count }: OptionCountProps) {
+  if (count === undefined) return null;
+
+  return <Badge color="neutral">{count}</Badge>;
+}
+
+/**
+ * The three kinds, each with what picking it would leave. The name is drawn
+ * through `children` rather than left to `label` so the count has somewhere to
+ * sit beside it; `label` stays what the closed trigger reads back and what
+ * typeahead matches, as it does in the two groups below.
+ */
+const kindItems = (counts: FilterCounts | undefined): FilterItem[] =>
+  KIND_FILTERS.map(({ id, label }) => ({
+    value: id,
+    label,
+    children: (
+      <>
+        <Text size={0}>{label}</Text>
+        <OptionCount count={counts?.kinds[id]} />
+      </>
+    ),
+  }));
+
+/**
+ * Each band beside the slice of the error scale it covers, in the same badge the
+ * table's Error column draws, so a severity is the same color in the filter as
+ * in the list it filters. The bands run high to low, so a band stops a
+ * thousandth short of the one above it and the top band is open-ended — the
+ * upper bound is read off the next band's floor rather than written out a second
+ * time, where it could drift from `min`.
+ *
+ * The count follows the range rather than replacing it: the range says which
+ * errors the band covers, the count how many of them are here, and the two
+ * answer different questions. They share the right of the row so the band names
+ * stay in one column down the popup.
+ *
+ * `children` draws the row in place of the label, which stays a plain string
+ * because it is also what the closed trigger reads back: the popup shows
+ * "Catastrophic 0.400+ 13" in red, the trigger still shows "Catastrophic".
+ */
+const severityItems = (counts: FilterCounts | undefined): FilterItem[] =>
+  SEVERITY_BANDS.map(({ id, label, min }, index) => {
+    const above = SEVERITY_BANDS[index - 1]?.min;
+    const range =
+      above === undefined ? `${min.toFixed(3)}+` : `${min.toFixed(3)}–${(above - 0.001).toFixed(3)}`;
+
+    return {
+      value: id,
+      label,
+      children: (
+        <>
+          <Text size={0}>{label}</Text>
+          <Group gap={2}>
+            <Badge color={SEVERITY_COLOR[id]}>{range}</Badge>
+            <OptionCount count={counts?.severities[id]} />
+          </Group>
+        </>
+      ),
+    };
+  });
 
 /**
  * Each state with a line saying what it means for the cube, a size smaller and a
@@ -53,47 +135,22 @@ const KIND_ITEMS = KIND_FILTERS.map(({ id, label }) => ({ value: id, label }));
  * is still what the closed trigger shows and what typeahead matches. Raised
  * upstream as UI-218.
  */
-const CRAWFORD_ITEMS = CRAWFORD_FILTERS.map(({ id, label, description }) => ({
-  value: id,
-  label,
-  children: (
-    <Stack gap={0}>
-      <Text size={0}>{label}</Text>
-      <Text size={-1} shade="halftone">
-        {description}
-      </Text>
-    </Stack>
-  ),
-}));
-
-/**
- * Each band beside the slice of the error scale it covers, in the same badge the
- * table's Error column draws, so a severity is the same color in the filter as
- * in the list it filters. The bands run high to low, so a band stops a
- * thousandth short of the one above it and the top band is open-ended — the
- * upper bound is read off the next band's floor rather than written out a second
- * time, where it could drift from `min`.
- *
- * `children` draws the row in place of the label, which stays a plain string
- * because it is also what the closed trigger reads back: the popup shows
- * "Catastrophic 0.400+" in red, the trigger still shows "Catastrophic".
- */
-const SEVERITY_ITEMS = SEVERITY_BANDS.map(({ id, label, min }, index) => {
-  const above = SEVERITY_BANDS[index - 1]?.min;
-  const range =
-    above === undefined ? `${min.toFixed(3)}+` : `${min.toFixed(3)}–${(above - 0.001).toFixed(3)}`;
-
-  return {
+const crawfordItems = (counts: FilterCounts | undefined): FilterItem[] =>
+  CRAWFORD_FILTERS.map(({ id, label, description }) => ({
     value: id,
     label,
     children: (
       <>
-        <Text size={0}>{label}</Text>
-        <Badge color={SEVERITY_COLOR[id]}>{range}</Badge>
+        <Stack gap={0}>
+          <Text size={0}>{label}</Text>
+          <Text size={-1} shade="halftone">
+            {description}
+          </Text>
+        </Stack>
+        <OptionCount count={counts?.crawfords[id]} />
       </>
     ),
-  };
-});
+  }));
 
 interface ResetButtonProps {
   filter: string;
@@ -127,7 +184,7 @@ function ResetButton({ filter, disabled, onClick }: ResetButtonProps) {
 interface FilterSelectProps {
   label: string;
   placeholder: string;
-  items: { value: string; label: string; children?: React.ReactNode }[];
+  items: FilterItem[];
   value: string[];
   onValueChange: (values: string[]) => void;
 }
@@ -333,10 +390,22 @@ function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps)
  * starts again at page 1.
  */
 export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPanelProps) {
+  const trpc = useTRPC();
   const router = useRouter();
   const searchParams = useSearchParams();
   const filters = filtersFrom(searchParams);
   const sort = sortFrom(searchParams.get("sort"));
+
+  // Every option's count, in one query for the whole panel. Asked for from the
+  // browser rather than prefetched with the page: the dropdowns are shut when a
+  // page lands, so the badges are there well before anything opens on them.
+  //
+  // Held from a tick ago while the next ones land, so the numbers change in
+  // place rather than emptying out and refilling under an open popup.
+  const { data: counts } = useQuery({
+    ...trpc.blunders.filterCounts.queryOptions({ category, ...filters }),
+    placeholderData: keepPreviousData,
+  });
 
   // The track covers the data, and also whatever a hand-written URL asks about,
   // so a face nobody has reached yet still parks its end where it says it is
@@ -379,21 +448,21 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
       <FilterSelect
         label="Kind"
         placeholder="All kinds"
-        items={KIND_ITEMS}
+        items={kindItems(counts)}
         value={filters.kinds}
         onValueChange={(values) => pick("kind", values)}
       />
       <FilterSelect
         label="Severity"
         placeholder="All severities"
-        items={SEVERITY_ITEMS}
+        items={severityItems(counts)}
         value={filters.severities}
         onValueChange={(values) => pick("severity", values)}
       />
       <FilterSelect
         label="Crawford"
         placeholder="All games"
-        items={CRAWFORD_ITEMS}
+        items={crawfordItems(counts)}
         value={filters.crawfords}
         onValueChange={(values) => pick("crawford", values)}
       />
