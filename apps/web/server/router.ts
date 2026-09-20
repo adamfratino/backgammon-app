@@ -6,11 +6,15 @@ import {
   type BlunderSort,
   CUBE_ACTION,
   CRAWFORD_FILTER_IDS,
+  CRAWFORD_FILTERS,
   CRAWFORD_IDS,
+  type CrawfordFilter,
   cubeDirection,
   DEFAULT_SORT,
   KIND_FILTER_IDS,
+  KIND_FILTERS,
   KINDS,
+  type KindFilter,
   NOTE_MAX_LENGTH,
   PER_PAGE,
   SEVERITIES,
@@ -192,7 +196,8 @@ const TIE_BREAKER = "d.blunder_id ASC, d.kind ASC";
 
 /**
  * What the list can be narrowed by. Declared apart from the procedure that lists
- * so the sidebar's counts can ask for the same thing in the same words.
+ * so the sidebar's counts and the filter panel's can ask for the same thing in
+ * the same words.
  */
 const blunderFilters = z.object({
   kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
@@ -211,65 +216,155 @@ const blunderFilters = z.object({
 type BlunderFilters = z.infer<typeof blunderFilters>;
 
 /**
- * The filters as SQL: one clause per filter that was set, and the values those
- * clauses compare against, in the order the clauses bind them. Every value is
- * bound, so nothing from the URL is ever part of the SQL itself.
- *
- * The page of rows and the sidebar's counts both come through here. A count that
- * read the filters its own way would eventually disagree with the page it is
- * counting, and what the reader would see is a sidebar that lies.
+ * A piece of SQL and the values its `?`s take, in that order. The two travel
+ * together because composing clauses composes their values with them: join the
+ * SQL one way and concatenate the values another, and every filter binds the
+ * wrong thing.
  */
-function filterClauses(filters: BlunderFilters) {
-  const clauses: string[] = [];
-  const params: (string | number)[] = [];
+interface Clause {
+  sql: string;
+  params: (string | number)[];
+}
 
-  if (filters.kinds.length > 0) {
-    // A cube decision's side of the cube is read off the action taken.
-    const kinds = filters.kinds.map((kind) => {
-      if (kind === "checker") return "d.kind = 'checker'";
-      const actions = CUBE_ACTION.filter((action) => cubeDirection(action) === kind);
-      params.push(...actions);
-      return `(d.kind = 'cube' AND b.cube_action IN (${actions.map(() => "?").join(", ")}))`;
-    });
-    clauses.push(`(${kinds.join(" OR ")})`);
-  }
+/** All of them have to hold. Nothing to ask is `1`, which narrows nothing. */
+function allOf(clauses: Clause[]): Clause {
+  return {
+    sql: clauses.length > 0 ? clauses.map(({ sql }) => sql).join(" AND ") : "1",
+    params: clauses.flatMap(({ params }) => params),
+  };
+}
 
-  if (filters.severities.length > 0) {
-    // A band runs from its own `min` up to the next one above it, and the top
-    // band has no ceiling.
-    const bands = SEVERITY_BANDS.filter((band) => filters.severities.includes(band.id)).map(
-      (band) => {
-        const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
-        params.push(band.min);
-        if (!above) return "d.error_magnitude >= ?";
-        params.push(above.min);
-        return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
-      },
-    );
-    clauses.push(`(${bands.join(" OR ")})`);
-  }
+/** Any one of them is enough, and nothing to ask is no clause at all. */
+function anyOf(clauses: Clause[]): Clause | null {
+  if (clauses.length === 0) return null;
 
-  if (filters.crawfords.length > 0) {
-    // Derived from the position rather than read from `b.crawford_state`, which
-    // the scraper left null on about one blunder in eight. See `crawfordFilterOf`.
-    params.push(...filters.crawfords);
-    const slots = filters.crawfords.map(() => "?").join(", ");
-    clauses.push(`crawford_filter(b.source_xgid) IN (${slots})`);
-  }
+  return {
+    sql: `(${clauses.map(({ sql }) => sql).join(" OR ")})`,
+    params: clauses.flatMap(({ params }) => params),
+  };
+}
 
-  // Each end is its own clause, so a floor with no ceiling asks only what it
-  // means. A row whose cube value is unknown is outside any range that was asked
-  // for, and drops out of a narrowed list rather than riding along.
-  if (filters.cubeValue.min !== null) {
-    clauses.push("b.cube_value >= ?");
-    params.push(filters.cubeValue.min);
-  }
-  if (filters.cubeValue.max !== null) {
-    clauses.push("b.cube_value <= ?");
-    params.push(filters.cubeValue.max);
-  }
+/** A cube decision's side of the cube is read off the action taken. */
+function kindClause(kind: KindFilter): Clause {
+  if (kind === "checker") return { sql: "d.kind = 'checker'", params: [] };
 
-  return { clauses, params };
+  const actions = CUBE_ACTION.filter((action) => cubeDirection(action) === kind);
+  return {
+    sql: `(d.kind = 'cube' AND b.cube_action IN (${actions.map(() => "?").join(", ")}))`,
+    params: [...actions],
+  };
+}
+
+/**
+ * A band runs from its own `min` up to the next one above it, and the top band
+ * has no ceiling.
+ */
+function severityClause(min: number): Clause {
+  const above = SEVERITY_BANDS.filter((band) => band.min > min).at(-1);
+  if (!above) return { sql: "d.error_magnitude >= ?", params: [min] };
+
+  return { sql: "(d.error_magnitude >= ? AND d.error_magnitude < ?)", params: [min, above.min] };
+}
+
+/**
+ * Derived from the position rather than read from `b.crawford_state`, which the
+ * scraper left null on about one blunder in eight. See `crawfordFilterOf`.
+ */
+function crawfordClause(crawford: CrawfordFilter): Clause {
+  return { sql: "crawford_filter(b.source_xgid) = ?", params: [crawford] };
+}
+
+/**
+ * The filters that are a list of options, which are the ones that can be counted
+ * one option at a time. Cube value is a range instead, so it has no options to
+ * count — but it still narrows every count here, like any group that isn't the
+ * one being counted.
+ */
+const COUNTED_GROUPS = ["kinds", "severities", "crawfords"] as const;
+
+type CountedGroup = (typeof COUNTED_GROUPS)[number];
+
+/**
+ * How many rows each option of each counted group would leave. Records over the
+ * ids rather than free-form objects, so an option the SQL forgot to count fails
+ * `.output()` here instead of arriving as a blank badge.
+ */
+const filterCounts = z.object({
+  kinds: z.record(z.enum(KIND_FILTER_IDS), z.number()),
+  severities: z.record(z.enum(SEVERITIES), z.number()),
+  crawfords: z.record(z.enum(CRAWFORD_FILTER_IDS), z.number()),
+});
+
+export type FilterCounts = z.infer<typeof filterCounts>;
+
+interface FilterOption {
+  group: CountedGroup;
+  id: string;
+  /** What ticking this one option, and nothing else in its group, asks for. */
+  clause: Clause;
+}
+
+/**
+ * Every option of every counted group, in the order the panel lists them. A
+ * group's clause is the OR of the options ticked in it, so these same
+ * definitions narrow the list and count the badges — one place where an option
+ * says what it means.
+ */
+const FILTER_OPTIONS: FilterOption[] = [
+  ...KIND_FILTERS.map(({ id }) => ({ group: "kinds" as const, id, clause: kindClause(id) })),
+  ...SEVERITY_BANDS.map(({ id, min }) => ({
+    group: "severities" as const,
+    id,
+    clause: severityClause(min),
+  })),
+  ...CRAWFORD_FILTERS.map(({ id }) => ({
+    group: "crawfords" as const,
+    id,
+    clause: crawfordClause(id),
+  })),
+];
+
+/** The options one group has ticked, which widen it rather than narrow it. */
+function groupClause(group: CountedGroup, ticked: readonly string[]): Clause | null {
+  const ticks = FILTER_OPTIONS.filter(
+    (option) => option.group === group && ticked.includes(option.id),
+  );
+
+  return anyOf(ticks.map(({ clause }) => clause));
+}
+
+/**
+ * Each end is its own clause, so a floor with no ceiling asks only what it
+ * means. A row whose cube value is unknown is outside any range that was asked
+ * for, and drops out of a narrowed list rather than riding along.
+ */
+function cubeValueClause({ min, max }: BlunderFilters["cubeValue"]): Clause | null {
+  const ends: Clause[] = [];
+  if (min !== null) ends.push({ sql: "b.cube_value >= ?", params: [min] });
+  if (max !== null) ends.push({ sql: "b.cube_value <= ?", params: [max] });
+
+  return ends.length > 0 ? allOf(ends) : null;
+}
+
+/**
+ * The filters as SQL: one clause per group that was set, each carrying the
+ * values it binds. Every value is bound, so nothing from the URL is ever part of
+ * the SQL itself.
+ *
+ * The page of rows, the sidebar's counts and the panel's counts all come through
+ * here. A count that read the filters its own way would eventually disagree with
+ * the page it is counting, and what the reader would see is a sidebar that lies.
+ *
+ * `without` leaves one group out, which is what lets an option be counted: a
+ * badge has to read what picking that option gives, not what it adds to what is
+ * already ticked beside it.
+ */
+function filterClauses(filters: BlunderFilters, without?: CountedGroup): Clause[] {
+  const groups = COUNTED_GROUPS.filter((group) => group !== without).map((group) =>
+    groupClause(group, filters[group]),
+  );
+
+  return [...groups, cubeValueClause(filters.cubeValue)].filter((clause) => clause !== null);
 }
 
 export const appRouter = router({
@@ -286,15 +381,14 @@ export const appRouter = router({
       .input(blunderFilters)
       .output(z.array(category))
       .query(({ ctx, input }) => {
-        const { clauses, params } = filterClauses(input);
         // Nothing asked for narrows nothing, so every row counts towards both.
-        const matches = clauses.length > 0 ? clauses.join(" AND ") : "1";
+        const { sql, params } = allOf(filterClauses(input));
 
         const rows = ctx.db
           .prepare(
             `${WITH_DECISIONS}
              SELECT bc.category, COUNT(*) AS total,
-                    SUM(CASE WHEN ${matches} THEN 1 ELSE 0 END) AS count
+                    SUM(CASE WHEN ${sql} THEN 1 ELSE 0 END) AS count
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
@@ -324,10 +418,11 @@ export const appRouter = router({
       )
       .query(({ ctx, input }) => {
         // The category is this procedure's own; the rest of the narrowing is the
-        // same narrowing the sidebar counts under.
-        const { clauses, params: bounds } = filterClauses(input);
-        const filter = ["bc.category = ?", ...clauses].join(" AND ");
-        const params = [input.category, ...bounds];
+        // same narrowing the sidebar and the filter panel count under.
+        const { sql: filter, params } = allOf([
+          { sql: "bc.category = ?", params: [input.category] },
+          ...filterClauses(input),
+        ]);
 
         const rows = ctx.db
           .prepare(
@@ -363,6 +458,72 @@ export const appRouter = router({
           blunders: rows.map((row) => ({ ...row, both: row.both === 1 })) as unknown as Blunder[],
           total,
         };
+      }),
+
+    /**
+     * What each option in Kind, Severity and Crawford would leave in this
+     * category, so the panel can badge them: one number per option, all of them
+     * out of one pass over the category's rows.
+     *
+     * Every group is counted with its own ticks left out and every other group's
+     * kept, so an option reads as what picking it gives rather than what it adds
+     * to what is already picked beside it. In `blitz` under Severity =
+     * Catastrophic the three Kind options divide that band between them — 13, 0
+     * and 10 — where counted the other way, ticking Checker plays would leave
+     * the other two reading 13 and 23 and none of the three meaning anything.
+     */
+    filterCounts: publicProcedure
+      .input(blunderFilters.extend({ category: z.string() }))
+      .output(filterCounts)
+      .query(({ ctx, input }) => {
+        // What the rest of the panel narrows to — once per group, rather than
+        // once per option, since every option in a group is counted under it.
+        const rest = {
+          kinds: allOf(filterClauses(input, "kinds")),
+          severities: allOf(filterClauses(input, "severities")),
+          crawfords: allOf(filterClauses(input, "crawfords")),
+        };
+
+        // One column per option. `group` and `id` are this file's own constants
+        // rather than anything a request sent, which is what makes them safe to
+        // name a column with; every value is still bound.
+        const columns = FILTER_OPTIONS.map(({ group, id, clause }) => ({
+          sql: `SUM(CASE WHEN ${rest[group].sql} AND ${clause.sql} THEN 1 ELSE 0 END) AS ${group}_${id}`,
+          params: [...rest[group].params, ...clause.params],
+        }));
+
+        // The columns bind before the category does: a SELECT list is read
+        // before the WHERE that follows it.
+        const bound = [...columns.flatMap((column) => column.params), input.category];
+
+        const row = ctx.db
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT ${columns.map(({ sql }) => sql).join(", ")}
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             WHERE bc.category = ?`,
+          )
+          .get(...bound) as Record<string, number | null>;
+
+        // A category holding no rows at all sums to null rather than to zero,
+        // which is every count on a category that doesn't exist.
+        const counts = (group: CountedGroup) =>
+          Object.fromEntries(
+            FILTER_OPTIONS.filter((option) => option.group === group).map(({ id }) => [
+              id,
+              row[`${group}_${id}`] ?? 0,
+            ]),
+          );
+
+        // Safe only because `.output()` re-checks the real shape at runtime, and
+        // its records name every option: a group that lost one fails there.
+        return {
+          kinds: counts("kinds"),
+          severities: counts("severities"),
+          crawfords: counts("crawfords"),
+        } as FilterCounts;
       }),
 
     /**
