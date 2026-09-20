@@ -21,6 +21,7 @@ import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
 import { CubeIcon } from "./cube-icon";
+import { DiceRoll } from "./dice-roll";
 import {
   blunderHref,
   filtersFrom,
@@ -36,7 +37,6 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-import { roll } from "@/lib/analysis.utils";
 import { BlunderTablePagination } from "./blunder-table-pagination";
 
 interface BlunderTableProps {
@@ -171,7 +171,7 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
         {cube_value !== null && cube_value > 1 ? <CubeIcon value={cube_value} /> : "—"}
       </TableCell>
       {/* A cube decision is made before the dice are thrown, so only a checker play has a roll. */}
-      <TableCell>{kind === "checker" ? roll(die_1, die_2) : "—"}</TableCell>
+      <TableCell>{kind === "checker" ? <DiceRoll die_1={die_1} die_2={die_2} /> : "—"}</TableCell>
       <TableCell collapse>
         <Button
           size="xsmall"
