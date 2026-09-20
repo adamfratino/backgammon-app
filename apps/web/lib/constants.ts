@@ -194,6 +194,23 @@ export const DIE_FACES: readonly number[] = [1, 2, 3, 4, 5, 6];
 export type DiceFilter = number[];
 
 /**
+ * What the Advantage filter offers: where the match stood when the blunder was
+ * made, read from your side of it — see `matchScoreOf` for which side that is.
+ *
+ * Ahead, level, behind, which is the order a scoreboard runs through and the
+ * order `isWinningText` already words them in. No descriptions under the names,
+ * as Kind has none: a reader who knows what a match score is knows what these
+ * three mean, and a line repeating the name would only push the counts apart.
+ */
+export const STANDING_FILTERS = [
+  { id: "winning", label: "Winning" },
+  { id: "tied", label: "Tied" },
+  { id: "losing", label: "Losing" },
+] as const;
+
+export type StandingFilter = (typeof STANDING_FILTERS)[number]["id"];
+
+/**
  * What the Kind filter offers: checker plays, and cube decisions split by which
  * side of the cube you were on. Ticking several widens the list, so "Checker
  * plays" and "Offering the cube" is either one.
@@ -239,12 +256,16 @@ export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
 export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 export const CRAWFORD_FILTER_IDS = CRAWFORD_FILTERS.map(({ id }) => id);
+export const STANDING_FILTER_IDS = STANDING_FILTERS.map(({ id }) => id);
 
 export const DEFAULT_SORT: BlunderSort = "worst";
 export interface BlunderFilters {
   kinds: KindFilter[];
   severities: BlunderSeverity[];
   crawfords: CrawfordFilter[];
+  standings: StandingFilter[];
+  /** The smallest lead, either way round, a row has to show. Null is no floor. */
+  minLead: number | null;
   dice: DiceFilter;
   cubeValue: CubeValueRange;
 }
@@ -312,7 +333,25 @@ function diceFrom(params: Pick<URLSearchParams, "getAll">): DiceFilter {
 }
 
 /**
- * The filters, read from `?kind=&severity=&crawford=&die=&cubeMin=&cubeMax=`. Anything that
+ * The floor on how far apart the scores were, read from `?lead=`. A lead is a
+ * gap rather than a direction, so this counts either way round and it takes a
+ * whole number of points from 1 up: 0 is every row there is, which is where
+ * the field rests anyway, and anything else — a word, a minus, a half — is no
+ * floor rather than a floor of its own.
+ *
+ * A lead longer than any match in the data is still a lead, and narrows the
+ * list to nothing rather than being ignored, the way a cube face the data has
+ * not reached does. That is what keeps a saved link honest: `?lead=4` asks the
+ * same question on the day the first 5-point match lands as it did before.
+ */
+function minLeadFrom(value: string | null): number | null {
+  const lead = Number(value);
+  return Number.isInteger(lead) && lead >= 1 ? lead : null;
+}
+
+/**
+ * The filters, read from
+ * `?kind=&severity=&crawford=&standing=&lead=&die=&cubeMin=&cubeMax=`. Anything that
  * isn't one of ours is dropped, and each group comes back in the constants' own
  * order — which is what lets the browser and the server build the same cache key
  * from the same URL. Takes anything that can be read like search params, so the
@@ -328,6 +367,8 @@ export function filtersFrom(params: Pick<URLSearchParams, "getAll" | "get">): Bl
     kinds: pick("kind", KIND_FILTER_IDS),
     severities: pick("severity", SEVERITIES),
     crawfords: pick("crawford", CRAWFORD_FILTER_IDS),
+    standings: pick("standing", STANDING_FILTER_IDS),
+    minLead: minLeadFrom(params.get("lead")),
     dice: diceFrom(params),
     cubeValue: cubeValueRangeFrom(params),
   };
@@ -343,6 +384,8 @@ export function isFiltered({
   kinds,
   severities,
   crawfords,
+  standings,
+  minLead,
   dice,
   cubeValue,
 }: BlunderFilters): boolean {
@@ -350,6 +393,8 @@ export function isFiltered({
     kinds.length > 0 ||
     severities.length > 0 ||
     crawfords.length > 0 ||
+    standings.length > 0 ||
+    minLead !== null ||
     dice.length > 0 ||
     cubeValue.min !== null ||
     cubeValue.max !== null
@@ -367,13 +412,15 @@ export function isFiltered({
  * every existing caller keep compiling while quietly clearing the sort.
  */
 export function viewParams(
-  { kinds, severities, crawfords, dice, cubeValue }: BlunderFilters,
+  { kinds, severities, crawfords, standings, minLead, dice, cubeValue }: BlunderFilters,
   sort: BlunderSort,
 ): URLSearchParams {
   const params = new URLSearchParams();
   for (const kind of kinds) params.append("kind", kind);
   for (const severity of severities) params.append("severity", severity);
   for (const crawford of crawfords) params.append("crawford", crawford);
+  for (const standing of standings) params.append("standing", standing);
+  if (minLead !== null) params.set("lead", String(minLead));
   for (const die of dice) params.append("die", String(die));
   if (cubeValue.min !== null) params.set("cubeMin", String(cubeValue.min));
   if (cubeValue.max !== null) params.set("cubeMax", String(cubeValue.max));

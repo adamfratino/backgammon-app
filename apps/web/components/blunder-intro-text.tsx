@@ -5,6 +5,7 @@ import { useHydrateAtoms } from "jotai/utils";
 import { Text } from "@uiid/design-system";
 import type { BlunderDetail, PipCounts } from "@/lib/analysis.types";
 import { isWinningText, pips, roll } from "@/lib/analysis.utils";
+import { matchScoreOf } from "@/lib/score";
 import { CRAWFORD_STATE, cubeDirection } from "@/lib/constants";
 import { pipCountsVisible } from "./board-area";
 import { Activity } from "react";
@@ -55,6 +56,12 @@ export function BlunderIntroText({
   const doubled =
     cubeDirection(cube_action) === "receive" && cube_value != null ? cube_value * 2 : null;
 
+  // Your points first, and the verb that goes with them. `score_white` is
+  // yours — see `matchScoreOf`, which the table's Score column reads the same
+  // way. A blunder the scraper kept no score for kept no match length either,
+  // never one without the other, so this is the whole sentence's guard.
+  const score = matchScoreOf(score_black, score_white);
+
   // Pips are what each side has left to bear off, so the smaller count is the
   // one in front: the near side leads by whatever the far side still owes, and a
   // dead heat is both sides sitting on the same number.
@@ -68,11 +75,11 @@ export function BlunderIntroText({
         </Text>
       </Activity>
       <Text size={3} weight="normal" balance>
-        {(score_black || score_white || match_length) && (
+        {score && (
           <>
-            {isWinningText(score_black! - score_white!)}{" "}
+            {isWinningText(score.yours - score.theirs)}{" "}
             <strong>
-              [{score_black}&nbsp;-&nbsp;{score_white}]
+              [{score.yours}&nbsp;-&nbsp;{score.theirs}]
             </strong>{" "}
             in a match to <strong>[{match_length}&nbsp;points]</strong>
             {isCrawford ? (

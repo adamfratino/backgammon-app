@@ -8,6 +8,7 @@ import {
   Button,
   Field,
   Group,
+  NumberField,
   Select,
   Slider,
   Stack,
@@ -28,6 +29,7 @@ import {
   SEVERITY_COLOR,
   SORTS,
   sortFrom,
+  STANDING_FILTERS,
   type CubeValueRange,
   type DiceFilter,
   viewParams,
@@ -40,6 +42,8 @@ interface BlunderFilterPanelProps {
   category: string;
   /** The highest face in the data, which is where the Cube value track stops. */
   topCubeValue: number;
+  /** The longest match in the data, which is what caps the Min. score field. */
+  longestMatch: number;
 }
 
 /** One row of a dropdown: Select keys it by `value`, the constants by `id`. */
@@ -157,6 +161,23 @@ const crawfordItems = (counts: FilterCounts | undefined): FilterItem[] =>
     ),
   }));
 
+/**
+ * Where the match stood, each with what picking it would leave. Plain names and
+ * a count, the way Kind's are: these three need no line under them saying what
+ * they mean, and `STANDING_FILTERS` carries none to draw.
+ */
+const standingItems = (counts: FilterCounts | undefined): FilterItem[] =>
+  STANDING_FILTERS.map(({ id, label }) => ({
+    value: id,
+    label,
+    children: (
+      <>
+        <Text size={0}>{label}</Text>
+        <OptionCount count={counts?.standings[id]} />
+      </>
+    ),
+  }));
+
 interface ResetButtonProps {
   filter: string;
   disabled: boolean;
@@ -169,7 +190,10 @@ interface ResetButtonProps {
  * height and the controls below it never shift as filters come and go.
  */
 function ResetButton({ filter, disabled, onClick }: ResetButtonProps) {
-  const reset = `Reset ${filter.toLowerCase()}`;
+  // Only the first letter comes down, rather than the whole name: "Cube value"
+  // still reads "Reset cube value", but a label carrying a symbol keeps it, and
+  // "Min. score (Δ)" no longer asks to be reset as a lower-case delta.
+  const reset = `Reset ${filter.charAt(0).toLowerCase()}${filter.slice(1)}`;
 
   return (
     <Button
@@ -299,6 +323,72 @@ function RollFilter({ value, onPick, onReset }: RollFilterProps) {
   );
 }
 
+interface MinLeadFieldProps {
+  /** The biggest lead the data could hold: one less than its longest match. */
+  max: number;
+  value: number | null;
+  onCommit: (minLead: number | null) => void;
+}
+
+/**
+ * How far apart the scores had to be, as a number of points typed or stepped.
+ * A field rather than a track because the ceiling moves with the data: every
+ * match scraped so far is to 3 or 5 points, so the lead runs 1 to 4 today, but
+ * matches are commonly played to 19 or 21 — a slider stretched to those would
+ * be mostly stops that empty the list, while a field reads the same at either
+ * size.
+ *
+ * It rests at 0, which is no floor: a minimum of 0 asks for every row there is,
+ * so the field sitting there and the field never touched are the same question.
+ * `?lead=` is left off the URL for it either way, and the reset stays disabled
+ * until a real floor is set.
+ *
+ * It says nothing about which side is ahead — that is what the Advantage ticks
+ * beside it are for, and the two read together as one sentence: Losing, by 2 or
+ * more.
+ */
+function MinLeadField({ max, value, onCommit }: MinLeadFieldProps) {
+  // Held here rather than read straight off the URL, for the reason the cube
+  // track's ends are: every keystroke would otherwise be a `router.push`, and
+  // so a server round trip per digit, with the field lagging the typing.
+  const [held, setHeld] = useState(value);
+
+  // Anything that moves the floor without touching this field — the reset, the
+  // back button, a link — changes the URL under us, so the field follows it.
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    setHeld(value);
+  }
+
+  return (
+    <NumberField
+      label="Min. score (Δ)"
+      action={
+        <ResetButton
+          filter="Min. score (Δ)"
+          disabled={value === null}
+          onClick={() => {
+            setHeld(null);
+            onCommit(null);
+          }}
+        />
+      }
+      FieldProps={{ fullwidth: true }}
+      size="small"
+      min={0}
+      max={max}
+      value={held ?? 0}
+      onValueChange={(next) => setHeld(next)}
+      // The URL is written when the value settles — on blur after typing, on
+      // release after a stepper — and not on the way there. Committing is also
+      // where the value has been clamped into `min`..`max`, so a 9 typed into a
+      // field that stops at 4 asks for the 4 it visibly became.
+      onValueCommitted={(next) => onCommit(next !== null && next >= 1 ? next : null)}
+    />
+  );
+}
+
 interface CubeValueFilterProps {
   /** The faces the track steps through, lowest first. At least two of them. */
   ladder: number[];
@@ -345,7 +435,7 @@ function FaceSelect({ label, ladder, position, allows, onPick }: FaceSelectProps
 
 /**
  * The cube value as a span of the cube's own faces: a track to sweep both ends
- * at once, and a list under each end to name it exactly. All three read and
+ * at once, and a list over each end to name it exactly. All three read and
  * write one range, so moving a thumb re-reads the lists and picking from a list
  * moves a thumb.
  *
@@ -404,6 +494,22 @@ function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps)
 
   return (
     <Group gap={3} fullwidth>
+      <Group gap={1.5}>
+        <FaceSelect
+          label="Min."
+          ladder={ladder}
+          position={low}
+          allows={(stop) => stop <= high}
+          onPick={(stop) => commit(stop, high)}
+        />
+        <FaceSelect
+          label="Max."
+          ladder={ladder}
+          position={high}
+          allows={(stop) => stop >= low}
+          onPick={(stop) => commit(low, stop)}
+        />
+      </Group>
       <Stack fullwidth ax="stretch">
         <Slider
           label="Cube value"
@@ -443,22 +549,6 @@ function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps)
           }}
         />
       </Stack>
-      <Group gap={1.5}>
-        <FaceSelect
-          label="Min"
-          ladder={ladder}
-          position={low}
-          allows={(stop) => stop <= high}
-          onPick={(stop) => commit(stop, high)}
-        />
-        <FaceSelect
-          label="Max"
-          ladder={ladder}
-          position={high}
-          allows={(stop) => stop >= low}
-          onPick={(stop) => commit(low, stop)}
-        />
-      </Group>
     </Group>
   );
 }
@@ -470,7 +560,11 @@ function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps)
  * Every change goes through `viewParams`, which writes no `?page=`, so the list
  * starts again at page 1.
  */
-export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPanelProps) {
+export function BlunderFilterPanel({
+  category,
+  topCubeValue,
+  longestMatch,
+}: BlunderFilterPanelProps) {
   const trpc = useTRPC();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -495,6 +589,12 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
     Math.max(topCubeValue, filters.cubeValue.min ?? 1, filters.cubeValue.max ?? 1),
   );
 
+  // A match to n points can be led by n - 1 of them. The field reaches whatever
+  // a hand-written URL already asks for as well, so a floor typed past the data
+  // reads back as the number it is set to rather than being clamped to one the
+  // reader never asked for. At least 1, so the ceiling is never under the floor.
+  const maxLead = Math.max(longestMatch - 1, filters.minLead ?? 1, 1);
+
   function show(params: URLSearchParams) {
     const query = params.toString();
     router.push(query ? `/${category}?${query}` : `/${category}`);
@@ -502,7 +602,7 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
 
   // Select hands back the values in the order they were ticked, so they go
   // through `filtersFrom` to come out in the constants' order, like the server's.
-  function pick(param: "kind" | "severity" | "crawford", values: string[]) {
+  function pick(param: "kind" | "severity" | "crawford" | "standing", values: string[]) {
     const params = new URLSearchParams(searchParams);
     params.delete(param);
     for (const value of values) params.append(param, value);
@@ -562,6 +662,21 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
         value={filters.crawfords}
         onValueChange={(values) => pick("crawford", values)}
       />
+
+      <Group gap={2} evenly fullwidth>
+        <FilterSelect
+          label="Advantage"
+          placeholder="All scores"
+          items={standingItems(counts)}
+          value={filters.standings}
+          onValueChange={(values) => pick("standing", values)}
+        />
+        <MinLeadField
+          max={maxLead}
+          value={filters.minLead}
+          onCommit={(minLead) => show(viewParams({ ...filters, minLead }, sort))}
+        />
+      </Group>
       <RollFilter
         value={filters.dice}
         onPick={pickDie}
