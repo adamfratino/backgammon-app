@@ -1,11 +1,12 @@
 "use client";
 
 import { atom, useAtom } from "jotai";
-import { Button, RadioGroup, Stack, Textarea } from "@uiid/design-system";
+import { RadioGroup, Stack } from "@uiid/design-system";
 import type { BlunderDetail } from "@/lib/analysis.types";
 
 export const selectedPlay = atom<string | null>(null);
 
+/** The answers to a checker blunder: every play the engine weighed. */
 export function BlunderPlays({ candidates }: Pick<BlunderDetail, "candidates">) {
   const [value, setValue] = useAtom(selectedPlay);
 
@@ -22,8 +23,6 @@ export function BlunderPlays({ candidates }: Pick<BlunderDetail, "candidates">) 
           label: play.notation as string,
         }))}
       />
-      <Textarea label="Any thoughts about your decision?" fullwidth />
-      <Button>Submit</Button>
       {/* <ol style={{ paddingLeft: "1.5em" }}>
         {candidates.map((play) => (
           <li key={play.rank} style={{ marginBottom: 12 }}>
