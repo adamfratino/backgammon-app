@@ -87,10 +87,6 @@ export function BlunderQuickView({
         </Button>
       }
       footer={
-        // Walks the page the reader is already looking at, in the order the
-        // table drew it, and stops at its edges. Reaching past them is what
-        // paging the table is for; the stepper on a blunder's own page is the
-        // one that crosses, because it has the URL to carry the new page in.
         <Group
           render={<nav />}
           aria-label="Step through blunders"
@@ -101,13 +97,13 @@ export function BlunderQuickView({
           <Button
             size="xsmall"
             variant="subtle"
-            shape="square"
             disabled={index <= 0}
             onClick={() => setIndex(index - 1)}
             tooltip="Previous blunder"
             aria-label="Previous blunder"
           >
             <ChevronLeftIcon />
+            Previous
           </Button>
           <Text size={-1} shade="muted">
             {index + 1} of {rows.length} on this page
@@ -115,12 +111,12 @@ export function BlunderQuickView({
           <Button
             size="xsmall"
             variant="subtle"
-            shape="square"
             disabled={index >= rows.length - 1}
             onClick={() => setIndex(index + 1)}
             tooltip="Next blunder"
             aria-label="Next blunder"
           >
+            Next
             <ChevronRightIcon />
           </Button>
         </Group>

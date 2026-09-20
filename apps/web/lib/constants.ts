@@ -1,11 +1,9 @@
 import type { PaletteColor } from "@uiid/design-system";
 
-export const PER_PAGE = 10;
-
 export const SIDEBAR_MINWIDTH = 260;
 export const SIDEBAR_MAXWIDTH = 480;
 
-/** How many page numbers the paginator shows on each side of the current one. */
+export const PER_PAGE = 15;
 export const PAGE_SPREAD = 1;
 
 export const NOTE_MAX_LENGTH = 2000;
@@ -201,7 +199,7 @@ export const CUBE_ERRORS = [
   },
   {
     id: "wrong_take",
-    label: "Wrong take",
+    label: "Too aggressive, should've dropped it",
     action: "double_accepted",
     side: "receive",
     tendency: "aggressive",
@@ -209,7 +207,7 @@ export const CUBE_ERRORS = [
   },
   {
     id: "wrong_pass",
-    label: "Wrong pass",
+    label: "Too passive, should've accepted it",
     action: "double_rejected",
     side: "receive",
     tendency: "passive",

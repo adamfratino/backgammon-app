@@ -10,6 +10,7 @@ import {
   Group,
   NumberField,
   Select,
+  Separator,
   Slider,
   Stack,
   Text,
@@ -655,6 +656,10 @@ export function BlunderFilterPanel({
 
   return (
     <Stack w={SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
+      <Text render={<h2 />} size={2} weight="bold">
+        Filters
+      </Text>
+      <Separator />
       {/* A sort is always set, so pressing the pressed one again changes nothing. */}
       <ToggleGroup
         aria-label="Sort"

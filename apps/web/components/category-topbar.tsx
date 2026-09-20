@@ -28,7 +28,12 @@ export function CategoryTopbar({ category }: { category: string }) {
   const { blunderId } = useParams<{ blunderId?: string }>();
 
   return (
-    <Stack px={6} py={4} bb={1}>
+    <Stack
+      px={6}
+      py={4}
+      bb={1}
+      style={{ position: "sticky", top: 0, zIndex: 1, backgroundColor: "var(--shade-background)" }}
+    >
       <Suspense
         fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}
       >

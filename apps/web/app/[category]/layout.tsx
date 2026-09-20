@@ -38,7 +38,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
   }
 
   return (
-    <Stack render={<main />} ax="stretch" minw={0} style={{ flex: 1 }}>
+    <Stack render={<main />} ax="stretch" minw={0} fullscreen style={{ overflowY: "auto" }}>
       <CategoryTopbar category={category} />
       <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>
     </Stack>
