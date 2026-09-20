@@ -37,6 +37,7 @@ import {
   sortFrom,
   viewParams,
 } from "@/lib/constants";
+import { matchScoreOf } from "@/lib/score";
 import { useTRPC } from "@/trpc/client";
 
 import { BlunderTablePagination } from "./blunder-table-pagination";
@@ -175,10 +176,9 @@ function BlunderTableRow({
   } = blunder;
 
   // Blunders without a match score have none of the three, never just one.
-  const score =
-    match_length === null || score_black === null || score_white === null
-      ? "—"
-      : `${score_black}–${score_white} to ${match_length}`;
+  // Your points first, as on the blunder page — see `matchScoreOf`.
+  const standing = match_length === null ? null : matchScoreOf(score_black, score_white);
+  const score = standing === null ? "—" : `${standing.yours}–${standing.theirs} to ${match_length}`;
 
   return (
     <TableRow>

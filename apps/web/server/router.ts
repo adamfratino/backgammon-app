@@ -20,6 +20,9 @@ import {
   SEVERITIES,
   SEVERITY_BANDS,
   SORT_IDS,
+  STANDING_FILTER_IDS,
+  STANDING_FILTERS,
+  type StandingFilter,
 } from "@/lib/constants";
 import { describeBoard } from "@/server/board";
 import { publicProcedure, router } from "@/server/trpc";
@@ -212,6 +215,11 @@ const blunderFilters = z.object({
   kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
   severities: z.array(z.enum(SEVERITIES)).default([]),
   crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
+  standings: z.array(z.enum(STANDING_FILTER_IDS)).default([]),
+  // A whole number of points from 1 up, or no floor at all. A lead longer than
+  // any match in the data is still a lead and narrows the list to nothing, the
+  // way a cube face nobody has reached does — see `minLeadFrom`.
+  minLead: z.number().int().min(1).nullable().default(null),
   // At most two faces, since a roll has two dice, and in no particular order —
   // see `DiceFilter`. `diceClause` sorts them itself rather than trusting the
   // caller to, so a request that sends them low face first still asks for the
@@ -289,12 +297,44 @@ function crawfordClause(crawford: CrawfordFilter): Clause {
 }
 
 /**
+ * How far ahead you were when the blunder was made, in points — positive
+ * winning, negative losing, zero tied. Written once and shared by both the
+ * filters that read it, so the Advantage ticks and the Min. score field can
+ * never disagree about what a lead is. See `leadOf` for which score is yours and how
+ * the rows the scraper left without one are still answered.
+ */
+const SCORE_LEAD = "score_lead(b.score_black, b.score_white, b.source_xgid)";
+
+/**
+ * Where the match stood, as the sign of that lead. A row whose score is unknown
+ * compares as null against all three, and so falls outside every tick rather
+ * than riding along in each — the way an unknown cube value sits outside any
+ * range. No row in the data is one: the XGID carries a score for all 1,675.
+ */
+function standingClause(standing: StandingFilter): Clause {
+  const sign = standing === "winning" ? ">" : standing === "losing" ? "<" : "=";
+  return { sql: `${SCORE_LEAD} ${sign} 0`, params: [] };
+}
+
+/**
+ * How far apart the scores had to be, counted either way round: the field asks
+ * about the size of a gap, and which side of it you were on is what the ticks
+ * beside it are for. Asking for both is the pair read together — "losing by two
+ * or more" — and asking for a floor with Tied ticked is a contradiction the
+ * panel shows rather than hides, as a 0 on the Tied option.
+ */
+function minLeadClause(minLead: number | null): Clause | null {
+  if (minLead === null) return null;
+  return { sql: `ABS(${SCORE_LEAD}) >= ?`, params: [minLead] };
+}
+
+/**
  * The filters that are a list of options, which are the ones that can be counted
  * one option at a time. Cube value is a range instead, so it has no options to
  * count — but it still narrows every count here, like any group that isn't the
  * one being counted.
  */
-const COUNTED_GROUPS = ["kinds", "severities", "crawfords"] as const;
+const COUNTED_GROUPS = ["kinds", "severities", "crawfords", "standings"] as const;
 
 type CountedGroup = (typeof COUNTED_GROUPS)[number];
 
@@ -307,6 +347,7 @@ const filterCounts = z.object({
   kinds: z.record(z.enum(KIND_FILTER_IDS), z.number()),
   severities: z.record(z.enum(SEVERITIES), z.number()),
   crawfords: z.record(z.enum(CRAWFORD_FILTER_IDS), z.number()),
+  standings: z.record(z.enum(STANDING_FILTER_IDS), z.number()),
 });
 
 export type FilterCounts = z.infer<typeof filterCounts>;
@@ -335,6 +376,11 @@ const FILTER_OPTIONS: FilterOption[] = [
     group: "crawfords" as const,
     id,
     clause: crawfordClause(id),
+  })),
+  ...STANDING_FILTERS.map(({ id }) => ({
+    group: "standings" as const,
+    id,
+    clause: standingClause(id),
   })),
 ];
 
@@ -410,9 +456,12 @@ function filterClauses(filters: BlunderFilters, without?: CountedGroup): Clause[
     groupClause(group, filters[group]),
   );
 
-  return [...groups, diceClause(filters.dice), cubeValueClause(filters.cubeValue)].filter(
-    (clause) => clause !== null,
-  );
+  return [
+    ...groups,
+    minLeadClause(filters.minLead),
+    diceClause(filters.dice),
+    cubeValueClause(filters.cubeValue),
+  ].filter((clause) => clause !== null);
 }
 
 export const appRouter = router({
@@ -527,10 +576,16 @@ export const appRouter = router({
       .query(({ ctx, input }) => {
         // What the rest of the panel narrows to — once per group, rather than
         // once per option, since every option in a group is counted under it.
-        const rest = {
+        //
+        // Typed by `CountedGroup` rather than left to infer, so a group added to
+        // `COUNTED_GROUPS` fails to compile here until it has been told what the
+        // rest of the panel means for it — the way `viewParams` breaks every
+        // caller that writes the URL rather than quietly dropping one.
+        const rest: Record<CountedGroup, Clause> = {
           kinds: allOf(filterClauses(input, "kinds")),
           severities: allOf(filterClauses(input, "severities")),
           crawfords: allOf(filterClauses(input, "crawfords")),
+          standings: allOf(filterClauses(input, "standings")),
         };
 
         // One column per option. `group` and `id` are this file's own constants
@@ -572,6 +627,7 @@ export const appRouter = router({
           kinds: counts("kinds"),
           severities: counts("severities"),
           crawfords: counts("crawfords"),
+          standings: counts("standings"),
         } as FilterCounts;
       }),
 
@@ -593,6 +649,32 @@ export const appRouter = router({
       // An empty database has no top face; `cubeValueLadder` floors the track at
       // two stops regardless, so the centred cube is a safe answer.
       return top ?? 1;
+    }),
+
+    /**
+     * The longest match the data holds, which is what caps the Min. score
+     * field: a match to `n` points can only ever be led by `n - 1` of them, so
+     * anything above that is a floor no row could clear. Read from the data for
+     * the reason the cube's track is — every 1,675 blunders scraped so far come
+     * from 3- and 5-point matches, and a field offering the 20 a 21-point match
+     * allows would be mostly stops that empty the list.
+     *
+     * `match_points` rather than the column: the 193 rows the scraper left
+     * without a match length still name one in their XGID, so a longer match
+     * can't hide among them and cap the field below a lead the data holds.
+     *
+     * One number for the whole database rather than per category, as the cube's
+     * top face is: a field that changed its own ceiling as you moved between
+     * categories would be harder to read than one that stops where the data does.
+     */
+    longestMatch: publicProcedure.output(z.number()).query(({ ctx }) => {
+      const { longest } = ctx.db
+        .prepare("SELECT MAX(match_points(match_length, source_xgid)) AS longest FROM blunders")
+        .get() as { longest: number | null };
+
+      // An empty database has no longest match. Two points is the shortest one
+      // that can be led at all, which keeps the field's floor under its ceiling.
+      return longest ?? 2;
     }),
 
     /**

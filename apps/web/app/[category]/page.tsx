@@ -17,12 +17,13 @@ interface CategoryPageProps {
 }
 
 export default async function CategoryPage({ params }: CategoryPageProps) {
-  // The Cube value track stops where the data does, and the panel is drawn here,
-  // so the ceiling comes down as a prop rather than as a second round trip from
-  // the browser.
-  const [{ category }, topCubeValue, jar] = await Promise.all([
+  // The Cube value track and the Min. score field both stop where the data
+  // does, and the panel is drawn here, so both ceilings come down as props
+  // rather than as a second round trip from the browser.
+  const [{ category }, topCubeValue, longestMatch, jar] = await Promise.all([
     params,
     caller.blunders.topCubeValue(),
+    caller.blunders.longestMatch(),
     cookies(),
   ]);
 
@@ -45,7 +46,11 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         <Stack ax="stretch" minw={0} style={{ flex: 1 }}>
           <BlunderTable category={category} showPipCounts={showPipCounts} flipBoard={flipBoard} />
         </Stack>
-        <BlunderFilterPanel category={category} topCubeValue={topCubeValue} />
+        <BlunderFilterPanel
+          category={category}
+          topCubeValue={topCubeValue}
+          longestMatch={longestMatch}
+        />
       </Group>
     </Stack>
   );

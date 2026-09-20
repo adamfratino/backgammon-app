@@ -2,8 +2,13 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { DB_PATH } from "@repo/galaxy-scraper/config";
 
+import { leadOf, matchPointsOf } from "@/lib/score";
 import { crawfordFilterOf } from "@/server/crawford";
 import { createSqliteNotesStore, type NotesStore } from "@/server/notes";
+
+/** SQLite hands a function whatever the column held, which may be any type. */
+const asNumber = (value: unknown): number | null => (typeof value === "number" ? value : null);
+const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 const BLUNDERS_DB_PATH = process.env.BLUNDERS_DB_PATH ?? DB_PATH;
 
@@ -12,16 +17,28 @@ const BLUNDERS_DB_PATH = process.env.BLUNDERS_DB_PATH ?? DB_PATH;
 const globalForDb = globalThis as { db?: DatabaseSync; notes?: NotesStore };
 
 /**
- * SQL has no way to pick a field out of an XGID, so the Crawford rule is applied
- * in JS and handed to SQLite as a function — which lets the list filter on it
- * where it filters on everything else, in one query with one count and one page.
- * It reads a column and returns a string, so it stays safe on a read-only handle.
+ * SQL has no way to pick a field out of an XGID, so the rules that need one are
+ * applied in JS and handed to SQLite as functions — which lets the list filter
+ * on them where it filters on everything else, in one query with one count and
+ * one page. Each reads columns and returns a value, so they stay safe on a
+ * read-only handle.
  */
 function openBlunders(): DatabaseSync {
   const database = new DatabaseSync(BLUNDERS_DB_PATH, { readOnly: true });
 
   database.function("crawford_filter", { deterministic: true }, (xgid) =>
-    crawfordFilterOf(typeof xgid === "string" ? xgid : null),
+    crawfordFilterOf(asText(xgid)),
+  );
+
+  // Both of these prefer the columns and reach for the XGID only where the
+  // scraper left them null, which is why each takes the row rather than just
+  // the string — see `leadOf`.
+  database.function("score_lead", { deterministic: true }, (black, white, xgid) =>
+    leadOf(asNumber(black), asNumber(white), asText(xgid)),
+  );
+
+  database.function("match_points", { deterministic: true }, (length, xgid) =>
+    matchPointsOf(asNumber(length), asText(xgid)),
   );
 
   return database;
