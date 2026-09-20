@@ -24,6 +24,7 @@ import { BlunderQuickView } from "./blunder-quick-view";
 import { CopyButton } from "./copy-button";
 import { CubeIcon } from "./cube-icon";
 import { DiceRoll } from "./dice-roll";
+import { SeverityBullet } from "./severity-bullet";
 import {
   blunderHref,
   filtersFrom,
@@ -175,6 +176,8 @@ function BlunderTableRow({
     source_xgid,
   } = blunder;
 
+  const severity = severityOf(error_magnitude);
+
   // Blunders without a match score have none of the three, never just one.
   // Your points first, as on the blunder page — see `matchScoreOf`.
   const standing = match_length === null ? null : matchScoreOf(score_black, score_white);
@@ -182,10 +185,14 @@ function BlunderTableRow({
 
   return (
     <TableRow>
+      {/* The badge keeps the figure and the colour; the track beside it says
+          where that figure sits on the scale the bands divide, which is the one
+          thing neither the number nor the colour can show. */}
       <TableCell>
-        <Badge color={SEVERITY_COLOR[severityOf(error_magnitude)]}>
-          {error_magnitude.toFixed(3)}
-        </Badge>
+        <Group gap={2} ay="center">
+          <Badge color={SEVERITY_COLOR[severity]}>{error_magnitude.toFixed(3)}</Badge>
+          <SeverityBullet errorMagnitude={error_magnitude} severity={severity} />
+        </Group>
       </TableCell>
       <TableCell>
         <Group gap={2} ay="center">

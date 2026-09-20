@@ -9,6 +9,8 @@ import {
   CRAWFORD_FILTERS,
   CRAWFORD_IDS,
   type CrawfordFilter,
+  CUBE_ERROR_IDS,
+  CUBE_ERRORS,
   cubeDirection,
   DEFAULT_SORT,
   KIND_FILTER_IDS,
@@ -352,6 +354,45 @@ const filterCounts = z.object({
 
 export type FilterCounts = z.infer<typeof filterCounts>;
 
+/**
+ * What one group of mistakes cost: how many decisions were in it, and the equity
+ * they gave up between them. Both, because the two disagree — the moderate band
+ * holds 901 of the database's 1,697 decisions and gives up 123.43 equity, where
+ * the 81 catastrophic ones give up 45.28. A number drawn from either alone tells
+ * the opposite story to the one drawn from the other.
+ */
+const errorTotals = z.object({
+  decisions: z.number(),
+  equityLost: z.number(),
+});
+
+/**
+ * The category's decisions as the filters leave them, divided two ways: by how
+ * bad each was, and — for the cube decisions among them — by which mistake it
+ * was.
+ *
+ * `decisions` is the total the bands divide, and it is there to be named on
+ * screen: the list shows one page of rows while these describe every decision
+ * the filters leave, and without the denominator in front of you a panel
+ * sitting under fifteen rows reads as a summary of those fifteen.
+ *
+ * Records over the ids rather than arrays, as `filterCounts` is, so a group the
+ * SQL forgets to sum fails `.output()` here instead of arriving as a blank row.
+ */
+const blunderStats = z.object({
+  decisions: z.number(),
+  bands: z.record(z.enum(SEVERITIES), errorTotals),
+  /**
+   * The same totals for each way a cube decision goes wrong. Every cube decision
+   * here is already an error, so these four divide them completely and their
+   * counts sum to the cube decisions the filters leave — which is what the cube
+   * panels use as their own denominator rather than asking for a fifth number.
+   */
+  cube: z.record(z.enum(CUBE_ERROR_IDS), errorTotals),
+});
+
+type BlunderStats = z.infer<typeof blunderStats>;
+
 interface FilterOption {
   group: CountedGroup;
   id: string;
@@ -436,6 +477,25 @@ function diceClause(dice: number[]): Clause | null {
     { sql: "MAX(b.die_1, b.die_2) = ?", params: [high] },
     { sql: "MIN(b.die_1, b.die_2) = ?", params: [low] },
   ]);
+}
+
+/**
+ * The pair of columns every statistic is made of: how many decisions matched,
+ * and what they cost between them. `name` is this file's own constant rather
+ * than anything a request sent, which is what makes it safe to name a column
+ * with; the clause's own values are still bound.
+ */
+function totalsFor(name: string, match: Clause): Clause[] {
+  return [
+    {
+      sql: `SUM(CASE WHEN ${match.sql} THEN 1 ELSE 0 END) AS ${name}_decisions`,
+      params: match.params,
+    },
+    {
+      sql: `SUM(CASE WHEN ${match.sql} THEN d.error_magnitude ELSE 0 END) AS ${name}_equity`,
+      params: match.params,
+    },
+  ];
 }
 
 /**
@@ -629,6 +689,76 @@ export const appRouter = router({
           crawfords: counts("crawfords"),
           standings: counts("standings"),
         } as FilterCounts;
+      }),
+
+    /**
+     * What this category's decisions cost, banded by severity — the numbers
+     * behind the stats panel under the table.
+     *
+     * Narrowed by `filterClauses`, the same helper behind the list, the
+     * sidebar's counts and the panel's. A statistic that read the filters its
+     * own way would eventually disagree with the table it sits under, and what
+     * the reader would see is a panel that lies.
+     *
+     * Counts and equity together, in one pass, because the two disagree and
+     * that disagreement is what the panel is for. `severityClause` draws the
+     * band bounds rather than a CASE written here, so a band that moves takes
+     * the filter, its badge and these totals with it.
+     */
+    stats: publicProcedure
+      .input(blunderFilters.extend({ category: z.string() }))
+      .output(blunderStats)
+      .query(({ ctx, input }) => {
+        const { sql: filter, params: filterParams } = allOf([
+          { sql: "bc.category = ?", params: [input.category] },
+          ...filterClauses(input),
+        ]);
+
+        const columns = [
+          ...SEVERITY_BANDS.flatMap(({ id, min }) => {
+            const band = severityClause(min);
+            return totalsFor(id, band);
+          }),
+          // A cube error is named by the action taken and nothing else: the row
+          // is already a mistake, so `dice_rolled` on a cube decision can only
+          // be a double that should have been turned.
+          ...CUBE_ERRORS.flatMap(({ id, action }) =>
+            totalsFor(id, {
+              sql: "(d.kind = 'cube' AND b.cube_action = ?)",
+              params: [action],
+            }),
+          ),
+        ];
+
+        // The SELECT list binds before the WHERE that follows it.
+        const bound = [...columns.flatMap(({ params }) => params), ...filterParams];
+
+        const row = ctx.db
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT COUNT(*) AS decisions, ${columns.map(({ sql }) => sql).join(", ")}
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             WHERE ${filter}`,
+          )
+          .get(...bound) as Record<string, number | null>;
+
+        // A category the filters empty sums to null rather than to zero.
+        const totals = (ids: readonly string[]) =>
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              { decisions: row[`${id}_decisions`] ?? 0, equityLost: row[`${id}_equity`] ?? 0 },
+            ]),
+          );
+
+        // Safe only because `.output()` re-checks the real shape at runtime.
+        return {
+          decisions: row.decisions ?? 0,
+          bands: totals(SEVERITIES),
+          cube: totals(CUBE_ERROR_IDS),
+        } as BlunderStats;
       }),
 
     /**

@@ -91,6 +91,60 @@ export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
   mild: "neutral",
 };
 
+/**
+ * How few decisions a chart will draw from before it says so instead.
+ *
+ * Cube decisions are thin per category — `close_out` holds none at all,
+ * `opening_game` holds one, and seven of the seventeen hold fewer than ten
+ * before a filter is touched. A chart drawn from four decisions is a shape
+ * without a subject, and the reader has no way to tell it from one drawn from
+ * four hundred.
+ *
+ * Under this a chart keeps its place in the panel and names the count it has
+ * rather than disappearing, so the panel's shape doesn't change as you move
+ * between categories. One number for every chart: a threshold that varied by
+ * chart would be a second thing to learn.
+ */
+export const MIN_CHART_DECISIONS = 10;
+
+/**
+ * The band thresholds as a track reads them: ascending, and without the bottom
+ * band's floor of 0, which is the start of the track rather than a division in
+ * it. Derived from `SEVERITY_BANDS` so a band that moves takes this with it.
+ */
+export const SEVERITY_THRESHOLDS = SEVERITY_BANDS.map(({ min }) => min)
+  .filter((min) => min > 0)
+  .sort((a, b) => a - b);
+
+/**
+ * Where the row-level track stops, and so the scale every row is drawn against.
+ *
+ * Fixed rather than fitted to the row: a bullet that sized itself to its own
+ * value would put every row at the same length and compare nothing, which is
+ * the one thing a column of them is for.
+ *
+ * 0.6 rather than the 1.369 the data actually reaches. Pinning the ceiling to
+ * the worst decision ever made would squeeze the range nearly every row lives
+ * in — 1,616 of 1,697 sit under 0.4 — into the first quarter of the track. This
+ * gives the catastrophic band real width while pegging 21 decisions, 1.2% of
+ * them, at the end. The badge beside it carries the exact number, so a pegged
+ * row loses nothing but its last fraction of travel.
+ */
+export const ERROR_TRACK_MAX = 0.6;
+
+/**
+ * A hue as a value rather than a class. `palette-red` publishes the
+ * `--palette-*` names a component's own CSS reads, which is no use to an SVG
+ * fill handed in as a prop — so this names the token that class resolves to.
+ *
+ * The 400 step, because that is the one the palette classes land on: a Status
+ * dot drawn `red` computes to `#ff6358`, which is `--color-red-400`. Anything
+ * else would put a chart segment a shade away from the dot beside it.
+ */
+export function paletteVar(color: PaletteColor): string {
+  return `var(--color-${color}-400)`;
+}
+
 export const CUBE_ACTION = [
   "double_accepted",
   "double_requested",
@@ -111,6 +165,94 @@ export function cubeDirection(direction: BlunderCubeAction): CubeDirection {
   if (direction === "double_accepted" || direction === "double_rejected") return "receive";
   return "offer";
 }
+
+/**
+ * The four ways a cube decision goes wrong, which is every cube decision we
+ * hold: each row in the database is already an error, so there is no correct
+ * half to separate out and `cube_action` alone names which mistake was made.
+ * That is why there is no "what the engine said" here — on a wrong decision it
+ * is always the opposite of what was done.
+ *
+ * `tendency` is the reading that survives having only errors. Doubling when you
+ * should wait and taking when you should pass are the same fault at two moments
+ * — the cube is worth less to you than you think — and missing a double or
+ * passing a live take are its mirror. Which of the two you pay more for is a
+ * fact about how you play, and it needs no correct decisions to compute.
+ *
+ * Warm for aggressive and cool for passive, so a share bar reads as a
+ * temperature before it is read as a legend.
+ */
+export const CUBE_ERRORS = [
+  {
+    id: "premature_double",
+    label: "Doubled too early",
+    action: "double_requested",
+    side: "offer",
+    tendency: "aggressive",
+    color: "orange",
+  },
+  {
+    id: "missed_double",
+    label: "Missed double",
+    action: "dice_rolled",
+    side: "offer",
+    tendency: "passive",
+    color: "blue",
+  },
+  {
+    id: "wrong_take",
+    label: "Wrong take",
+    action: "double_accepted",
+    side: "receive",
+    tendency: "aggressive",
+    color: "red",
+  },
+  {
+    id: "wrong_pass",
+    label: "Wrong pass",
+    action: "double_rejected",
+    side: "receive",
+    tendency: "passive",
+    color: "indigo",
+  },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  action: (typeof CUBE_ACTION)[number];
+  side: CubeDirection;
+  tendency: string;
+  color: PaletteColor;
+}[];
+
+export type CubeError = (typeof CUBE_ERRORS)[number]["id"];
+export const CUBE_ERROR_IDS = CUBE_ERRORS.map(({ id }) => id);
+
+/**
+ * The heading each side of the cube gets, keyed by the direction the filters
+ * already name so the two can never drift apart. The titles are the reader's
+ * words for the moment rather than the filter's: a panel is about a decision
+ * you made, where a filter is about a set you are asking for.
+ */
+export const CUBE_PANELS: Record<CubeDirection, { title: string; description: string }> = {
+  offer: {
+    title: "Doubling decisions",
+    description:
+      "Cubes you turned when you should have rolled, and cubes you left in the middle when you should have turned them.",
+  },
+  receive: {
+    title: "Take/pass decisions",
+    description:
+      "Doubles you took that were droppers, and doubles you dropped that were worth playing on.",
+  },
+};
+
+/** Which way a cube error leans, and what the share bar calls each side. */
+export const CUBE_TENDENCIES = [
+  { id: "aggressive", label: "too aggressive" },
+  { id: "passive", label: "too passive" },
+] as const;
+
+export type CubeTendency = (typeof CUBE_TENDENCIES)[number]["id"];
 
 /**
  * The two things you could have done with the cube, worded for the side of it
