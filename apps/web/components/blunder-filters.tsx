@@ -16,7 +16,13 @@ import {
   Toggle,
   ToggleGroup,
 } from "@uiid/design-system";
-import { RefreshCcwIcon } from "@uiid/design-system/icons";
+import {
+  BombIcon,
+  CalendarArrowDownIcon,
+  CalendarArrowUpIcon,
+  FeatherIcon,
+  RefreshCcwIcon,
+} from "@uiid/design-system/icons";
 
 import {
   ANY_CUBE_VALUE,
@@ -30,6 +36,7 @@ import {
   SORTS,
   sortFrom,
   STANDING_FILTERS,
+  type BlunderSort,
   type CubeValueRange,
   type DiceFilter,
   tabFrom,
@@ -555,6 +562,23 @@ function CubeValueFilter({ ladder, value, onValueChange }: CubeValueFilterProps)
 }
 
 /**
+ * What each ordering puts at the top. The first pair names the blunder the sort
+ * leads with — a bomb against a feather, the two ends of the same scale the
+ * severity colours run along — and the second pair names the direction the date
+ * runs, down for newest first the way a descending sort is drawn everywhere
+ * else.
+ *
+ * Kept here beside the toggles rather than next to the labels in the constants,
+ * which the server imports and which has no business holding components.
+ */
+const SORT_ICONS: Record<BlunderSort, typeof BombIcon> = {
+  worst: BombIcon,
+  mildest: FeatherIcon,
+  newest: CalendarArrowDownIcon,
+  oldest: CalendarArrowUpIcon,
+};
+
+/**
  * A sidebar of fixed width, so ticking never changes the table's width; a long
  * list of picks truncates instead. Nothing ticked in a dropdown means nothing
  * is filtered out, so the empty state says "All" rather than looking unset.
@@ -639,11 +663,30 @@ export function BlunderFilterPanel({
         onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next), tab))}
         size="small"
       >
-        {SORTS.map(({ id, label }) => (
-          <Toggle key={id} value={id}>
-            {label}
-          </Toggle>
-        ))}
+        {/* Grouped and wrapped the way the view toggle's icons are: a `Toggle`
+            holds no gap of its own where `Button` does, it collapses to a
+            square on `:has(svg:only-child)` — which a bare text node does not
+            break — and it sizes an icon's height without the `width: auto`
+            that would keep the glyph square. */}
+        {SORTS.map(({ id, label }) => {
+          const Icon = SORT_ICONS[id];
+
+          return (
+            <Toggle key={id} value={id}>
+              <Group ay="center" gap={2}>
+                {/* Drawn at the size the view toggle draws its own pair at,
+                    rather than the larger one this group's `small` would hand
+                    it: that is the size the sidebar's own reset already uses,
+                    so these join what is around them instead of setting a
+                    third size. Pointed at the token that toggle resolves
+                    through rather than the 12px it currently comes out as, so
+                    the two keep matching if the design system retunes it. */}
+                <Icon style={{ width: "auto", height: "var(--forms-size-xs-icon-size)" }} />
+                <span>{label}</span>
+              </Group>
+            </Toggle>
+          );
+        })}
       </ToggleGroup>
 
       <FilterSelect
