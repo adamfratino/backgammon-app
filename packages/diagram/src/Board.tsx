@@ -1,6 +1,5 @@
 import {
   checkersOn,
-  pipCount,
   POINT_COUNT,
   type Cube,
   type Position,
@@ -349,9 +348,16 @@ export function Board({
   const roll = dice ? `, rolling ${dice[0]}-${dice[1]}` : "";
   const play = move ? `, playing ${move}` : "";
 
+  // The name describes what is drawn, so the counts are named only when they
+  // are shown. Reading out a number the board is deliberately withholding
+  // would hand the answer to a screen reader alone.
+  const race = pipCounts
+    ? ` — near side ${pipCounts.player} pips, far side ${pipCounts.opponent} pips`
+    : "";
+
   // A <title> names the image for screen readers, but browsers also show it as
   // a tooltip after hovering the board. aria-label names it without the hover.
-  const label = `Backgammon position — near side ${pipCount(player)} pips, far side ${pipCount(opponent)} pips${roll}${play}`;
+  const label = `Backgammon position${race}${roll}${play}`;
 
   return (
     <svg

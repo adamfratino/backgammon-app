@@ -39,7 +39,8 @@ export interface BoardProps {
    * near side's below it, the far side's above — on a chip in that side's
    * checker colours. The diagram draws the numbers it is given rather than
    * counting them; `pipCount` from `@repo/core` gives the raw race count.
-   * `null` draws none.
+   * `null` draws none, and leaves them out of the diagram's accessible name
+   * too — a hidden count that a screen reader still reads out is not hidden.
    */
   pipCounts?: Record<SideName, number> | null;
 
