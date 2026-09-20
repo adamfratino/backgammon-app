@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import { Provider } from "jotai";
 import { Button, Stack, Group, Separator, Text, Textarea } from "@uiid/design-system";
 
+import { parseXgid, pipCount } from "@repo/core";
+
 import { openDecision, SIDEBAR_MAXWIDTH } from "@/lib/constants";
+import { PIP_COUNTS_COOKIE, pipCountsFrom } from "@/lib/pip-counts";
 import { caller } from "@/server/caller";
 
 import { BlunderAnalysis } from "@/components/analysis";
@@ -33,12 +37,29 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
   const asked = typeof query.decision === "string" ? query.decision : null;
   const decision = openDecision(detail.decisions, asked);
 
+  // Both columns describe the same position — the board draws the pip counts and
+  // the intro text says who the race favours — so it is parsed and counted once
+  // here rather than once each, where the two could drift apart.
+  const parsed = detail.source_xgid ? parseXgid(detail.source_xgid) : null;
+  const pipCounts = parsed
+    ? { player: pipCount(parsed.position.player), opponent: pipCount(parsed.position.opponent) }
+    : null;
+
+  // Read here rather than in the components, so the first paint already matches
+  // the setting instead of correcting itself once the browser takes over.
+  const showPipCounts = pipCountsFrom((await cookies()).get(PIP_COUNTS_COOKIE)?.value);
+
   // The picked play is per blunder, so each blunder gets a fresh store rather than
   // inheriting the last one's pick when Next swaps the page.
   return (
     <Provider>
       <Group ay="start" fullwidth p={6} gap={6}>
-        <BlunderAnalysis detail={detail} />
+        <BlunderAnalysis
+          detail={detail}
+          parsed={parsed}
+          pipCounts={pipCounts}
+          showPipCounts={showPipCounts}
+        />
         <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
           <BlunderStepper category={category} blunderId={blunderId} />
           <Text render={<h1 />} size={3} weight="bold">
@@ -54,6 +75,8 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
             die_1={detail.die_1}
             die_2={detail.die_2}
             cube_action={detail.cube_action}
+            pipCounts={pipCounts}
+            showPipCounts={showPipCounts}
           />
           <PreviousDecisions decisions={detail.decisions} />
           <Separator />

@@ -4,10 +4,10 @@ import { atom, useAtom, useAtomValue } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { Stack, Group, Switch, Text } from "@uiid/design-system";
 
-import type { SideName, Xgid } from "@repo/core";
+import type { Xgid } from "@repo/core";
 import { Board } from "@repo/diagram";
 
-import type { BlunderDetail } from "@/lib/analysis.types";
+import type { BlunderDetail, PipCounts } from "@/lib/analysis.types";
 import { cubeDirection } from "@/lib/constants";
 import { rememberPipCounts } from "@/lib/pip-counts";
 
@@ -21,7 +21,7 @@ interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "blunder_id
   /** `source_xgid`, parsed on the server so `@repo/core` stays out of the browser bundle. */
   parsed: Xgid | null;
   /** Each side's pip count in `parsed`, counted on the server for the same reason. */
-  pipCounts: Record<SideName, number> | null;
+  pipCounts: PipCounts | null;
   /** The setting as the server read it, which is what this render drew. */
   showPipCounts: boolean;
 }
