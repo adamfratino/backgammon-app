@@ -397,6 +397,16 @@ export function Board({
   // decision has in place of a roll. A board that draws it has to say it.
   const offer = offered === null ? "" : `, doubled to ${offered}`;
 
+  // Whose the cube is decides who may turn it next, so a name carrying only
+  // the face would leave out half of what the drawing says. The two are never
+  // both named: an offer takes the cube out of the lane.
+  const stake =
+    !showCube || cube === null
+      ? ""
+      : cube.owner === null
+        ? `, cube at ${cube.value}, centred`
+        : `, cube at ${cube.value}, held by the ${cube.owner === "player" ? "near" : "far"} side`;
+
   // The name describes what is drawn, so the counts are named only when they
   // are shown. Reading out a number the board is deliberately withholding
   // would hand the answer to a screen reader alone.
@@ -406,7 +416,7 @@ export function Board({
 
   // A <title> names the image for screen readers, but browsers also show it as
   // a tooltip after hovering the board. aria-label names it without the hover.
-  const label = `Backgammon position${race}${offer}${roll}${play}`;
+  const label = `Backgammon position${race}${stake}${offer}${roll}${play}`;
 
   return (
     <svg

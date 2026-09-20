@@ -1,7 +1,7 @@
 import { Text } from "@uiid/design-system";
 import type { BlunderDetail } from "@/lib/analysis.types";
 import { isWinningText, roll } from "@/lib/analysis.utils";
-import { CRAWFORD_STATE } from "@/lib/constants";
+import { CRAWFORD_STATE, cubeDirection } from "@/lib/constants";
 
 interface BlunderIntroText extends Pick<
   BlunderDetail,
@@ -12,6 +12,7 @@ interface BlunderIntroText extends Pick<
   | "crawford_state"
   | "die_1"
   | "die_2"
+  | "cube_action"
 > {}
 
 export function BlunderIntroText({
@@ -22,9 +23,17 @@ export function BlunderIntroText({
   crawford_state,
   die_1,
   die_2,
+  cube_action,
 }: BlunderIntroText) {
   const isCrawford = CRAWFORD_STATE.find((cr) => cr.id !== "none" && cr.id === crawford_state);
   const rolled = die_1 != null && die_2 != null;
+
+  // A double you have to answer is worth twice the face the row stores, which
+  // is where the cube stood before it was turned. That earlier face is the one
+  // thing in the position nobody is playing for any more, so naming it as well
+  // would sit beside the board contradicting the cube drawn on it.
+  const doubled =
+    cubeDirection(cube_action) === "receive" && cube_value != null ? cube_value * 2 : null;
 
   return (
     <Text size={3} weight="normal" balance>
@@ -44,7 +53,13 @@ export function BlunderIntroText({
           )}
         </>
       )}
-      {cube_value && cube_value > 1 && (
+      {doubled != null && (
+        <>
+          {" "}
+          You&rsquo;ve been doubled to <strong>[{doubled}]</strong>.
+        </>
+      )}
+      {doubled == null && cube_value != null && cube_value > 1 && (
         <>
           {" "}
           The cube is at <strong>[{cube_value}]</strong>.
