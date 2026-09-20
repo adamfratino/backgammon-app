@@ -74,8 +74,9 @@ export async function FormTrend() {
           One bar per {window} matches played, across{" "}
           <data value={matches}>{matches.toLocaleString()} matches</data> — blocks rather than days,
           because a day here is anything from a single match to a whole session. Newest on the
-          right, and each bar is coloured by where that stretch ranks against the others: red is
-          your worst quarter, grey your best. The figure above is the two rows multiplied together.
+          right, and each bar is coloured by where that stretch ranks against the others: red is the
+          worse half of your record, yellow your best. The figure above is the two rows multiplied
+          together.
         </Text>
       </Stack>
 

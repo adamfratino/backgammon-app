@@ -123,15 +123,15 @@ export const MIN_CHART_DECISIONS = 10;
 export const FORM_WINDOW = 25;
 
 /**
- * The best quarter of your blocks — the floor of the scale, named rather than
- * indexed off the end of the array so `formBandsFor` has something to fall back
- * to that is a band and not `undefined`. Nothing sorts below it.
+ * Your best stretches — the floor of the scale, named rather than indexed off the
+ * end of the array so `formBandsFor` has something to fall back to that is a band
+ * and not `undefined`. Nothing sorts below it.
  */
 const BEST = {
   id: "best",
-  label: "among your best blocks",
+  label: "among your best stretches",
   from: 0,
-  color: "neutral",
+  color: "yellow",
 } as const;
 
 /**
@@ -148,22 +148,29 @@ const BEST = {
  * a ratio to their mean. A ratio was the first attempt and it wasted half the
  * strip: these measures trend, so the mean sits in the middle of the climb and
  * every early block lands under it — thirteen consecutive bars in one colour,
- * saying only "before the middle". Cutting at quartiles spends the four colours
- * evenly whatever shape the series has, so a bar always says where that stretch
- * ranks among the others beside it.
+ * saying only "before the middle". Quantiles spend the colours on the spread
+ * whatever shape the series has, so a bar always says where that stretch ranks
+ * among the others beside it.
  *
- * The trade is that this is a rank and not a level: your best quarter reads cool
- * even in a bad season. That is the right way round for a panel whose question
- * is whether you are improving — and the figures beside the bars carry the level.
+ * Three bands rather than four, and no neutral among them. Neutral is what
+ * `SEVERITY_COLOR` gives the mildest blunder, and it earns that there because a
+ * single mild error nearly is nothing. A block is 25 matches and some sixty
+ * mistakes, so there is no stretch of play here that amounts to nothing — a grey
+ * bar would say one did, and half the strip was grey while saying it. Your best
+ * stretches are yellow, which is the palette's way of saying "still a cost".
+ *
+ * Red takes the whole worse half rather than a quarter of it. Evenly cut
+ * quartiles read as four ranks of equal standing, when what the panel is for is
+ * spotting the bad runs: the half of your record that is worse than the other
+ * half should look like the problem it is.
  *
  * Higher is worse on every form measure, since each counts something that went
  * wrong, so the bands run one way and no measure needs to say which direction is
  * good.
  */
 export const FORM_BANDS = [
-  { id: "worst", label: "among your worst blocks", from: 0.75, color: "red" },
-  { id: "poor", label: "worse than most", from: 0.5, color: "orange" },
-  { id: "fair", label: "better than most", from: 0.25, color: "yellow" },
+  { id: "worst", label: "in your worse half", from: 0.5, color: "red" },
+  { id: "middling", label: "middling for you", from: 0.25, color: "orange" },
   BEST,
 ] as const satisfies readonly {
   id: string;
