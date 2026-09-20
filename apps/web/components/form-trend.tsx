@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Delta } from "@microcharts/react/delta";
 import { SparkBar } from "@microcharts/react/sparkbar";
 import {
+  Group,
   Stack,
   TableBody,
   TableCell,
@@ -13,7 +14,7 @@ import {
   Text,
 } from "@uiid/design-system";
 
-import { FORM_BANDS, type FormBand, formBandOf, paletteVar } from "@/lib/constants";
+import { FORM_BANDS, type FormBand, formBandsFor, paletteVar } from "@/lib/constants";
 import { caller } from "@/server/caller";
 import type { FormPoint } from "@/server/router";
 
@@ -24,22 +25,23 @@ const TREND_WIDTH = 220;
 const TREND_HEIGHT = 28;
 
 /**
- * One line of the panel: a measure, how it is written, and which way is good.
+ * The two rows of the panel: how often you go wrong, and what going wrong costs.
  *
- * The product comes first and its two factors under it, because the panel's
- * whole point is that the three disagree about what has been happening. Reading
- * down, the first row is the second times the third.
+ * Equity given up per match is not among them, though it is the figure that
+ * matters most — it is the product of these two, and drawn beside them it was
+ * simply the top one again. Across this database it tracks mistakes per match at
+ * a correlation of 0.958, because the other factor barely moves; two bars of the
+ * same shape spend a row of the panel saying one thing. It is the headline above
+ * the table instead, where it costs no shape at all.
  *
- * `decimals` differs per row because the quantities do: equity per match moves
- * in hundredths where the cost of one mistake moves in thousandths, and rounding
- * that one to two places would print the same number for every window it has.
+ * What is left are the two that genuinely differ — they correlate at -0.257, so
+ * each tells the reader something the other does not.
+ *
+ * `decimals` differs per row because the quantities do: mistakes per match moves
+ * in hundredths where the cost of one moves in thousandths, and rounding that
+ * one to two places would print the same number for every block it has.
  */
 const MEASURES = [
-  {
-    id: "lost",
-    label: "Equity given up per match",
-    decimals: 2,
-  },
   {
     id: "mistakes",
     label: "Mistakes per match",
@@ -72,39 +74,63 @@ export async function FormTrend() {
           One bar per {window} matches played, across{" "}
           <data value={matches}>{matches.toLocaleString()} matches</data> — blocks rather than days,
           because a day here is anything from a single match to a whole session. Newest on the
-          right. The first line is the two under it multiplied together.
+          right, and each bar is coloured by where that stretch ranks against the others: red is
+          your worst quarter, grey your best. The figure above is the two rows multiplied together.
         </Text>
       </Stack>
 
       {now === null ? (
         <TooShort matches={matches} window={window} />
       ) : (
-        <TableContainer>
-          <TableRoot striped>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Measure</TableHead>
-                <TableHead>Now</TableHead>
-                <TableHead>vs previous {window}</TableHead>
-                <TableHead>Trend</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {MEASURES.map(({ id, label, decimals }) => (
-                <FormRow
-                  key={id}
-                  label={label}
-                  decimals={decimals}
-                  value={now[id]}
-                  previous={before?.[id] ?? null}
-                  series={points.map((point) => point[id])}
-                />
-              ))}
-            </TableBody>
-          </TableRoot>
-        </TableContainer>
+        <>
+          <Headline value={now.lost} previous={before?.lost ?? null} />
+          <TableContainer>
+            <TableRoot striped>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Measure</TableHead>
+                  <TableHead>Now</TableHead>
+                  <TableHead>vs previous {window}</TableHead>
+                  <TableHead>Trend</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {MEASURES.map(({ id, label, decimals }) => (
+                  <FormRow
+                    key={id}
+                    label={label}
+                    decimals={decimals}
+                    value={now[id]}
+                    previous={before?.[id] ?? null}
+                    series={points.map((point) => point[id])}
+                  />
+                ))}
+              </TableBody>
+            </TableRoot>
+          </TableContainer>
+        </>
       )}
     </Stack>
+  );
+}
+
+/**
+ * What the mistakes cost, as one figure rather than a row of bars.
+ *
+ * This is the number the panel is really about, and it is the two rows below
+ * multiplied together — so it gets the size, and they get the shapes.
+ */
+function Headline({ value, previous }: { value: number; previous: number | null }) {
+  return (
+    <Group ay="baseline" gap={3}>
+      <Text size={2} weight="bold">
+        <data value={value}>{value.toFixed(2)}</data>
+      </Text>
+      <Text size={-1} shade="muted">
+        equity given up per match
+      </Text>
+      {previous !== null && <Delta value={value} from={previous} positive="down" />}
+    </Group>
   );
 }
 
@@ -118,12 +144,11 @@ interface FormRowProps {
 }
 
 function FormRow({ label, decimals, value, previous, series }: FormRowProps) {
-  // Against the blocks actually drawn beside it rather than against every match
-  // ever played, so the bar is warm or cool relative to the same record the row
-  // is showing — a reader can check the colour against the bars.
-  const average = series.reduce((sum, point) => sum + point, 0) / (series.length || 1);
-  const bands = series.map((point) => formBandOf(point, average));
-  const band = formBandOf(value, average);
+  // Ranked against the blocks actually drawn beside it rather than against every
+  // match ever played, so a reader can check a bar's colour against the bars it
+  // sits among.
+  const bands = formBandsFor(series);
+  const latest = bands[bands.length - 1];
 
   return (
     <TableRow>
@@ -148,7 +173,7 @@ function FormRow({ label, decimals, value, previous, series }: FormRowProps) {
         )}
       </TableCell>
       <TableCell>
-        <TrendBars label={label} series={series} bands={bands} latest={band} />
+        <TrendBars label={label} series={series} bands={bands} latest={latest} />
       </TableCell>
     </TableRow>
   );
@@ -159,8 +184,8 @@ interface TrendBarsProps {
   series: number[];
   /** Each block's band, indexed alongside `series`. */
   bands: FormBand[];
-  /** The newest block's band, for the accessible name. */
-  latest: FormBand;
+  /** The newest block's band, for the accessible name. Absent on an empty series. */
+  latest: FormBand | undefined;
 }
 
 /**
@@ -185,7 +210,7 @@ function TrendBars({ label, series, bands, latest }: TrendBarsProps) {
   return (
     <span
       role="img"
-      aria-label={`${label}, ${series.length} blocks, latest ${latest.label}`}
+      aria-label={`${label}, ${series.length} blocks${latest ? `, latest ${latest.label}` : ""}`}
       style={{ display: "grid", width: TREND_WIDTH, height: TREND_HEIGHT }}
     >
       {FORM_BANDS.map((band) => (
