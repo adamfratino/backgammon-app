@@ -82,20 +82,15 @@ function CategoryRow({ href, active, children }: CategoryRowProps) {
   return (
     <Group
       render={<Link href={href} />}
-      // `aria-current` is the semantic half, which the design system writes but
-      // never paints; the tint below is the half you can see.
       aria-current={active ? "page" : undefined}
       ax="space-between"
       ay="center"
-      gap={2}
+      gap={4}
       fullwidth
       style={{
         padding: "var(--list-item-padding-y) var(--list-item-padding-x)",
         borderRadius: "var(--globals-border-radius)",
         backgroundColor: active ? "var(--shade-accent)" : undefined,
-        // A box of its own is what makes the row clickable, and it is also what
-        // gives the global anchor underline something to sit on. The name is a
-        // row in a list, not a link in a sentence.
         textDecoration: "none",
       }}
     >

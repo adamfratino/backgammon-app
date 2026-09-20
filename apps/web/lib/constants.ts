@@ -1,7 +1,8 @@
 import type { PaletteColor } from "@uiid/design-system";
 
 export const PER_PAGE = 15;
-export const SIDEBAR_MAXWIDTH = 480;
+export const PRIMARY_SIDEBAR_MAXWIDTH = 260;
+export const SECONDARY_SIDEBAR_MAXWIDTH = 480;
 
 /**
  * How many page numbers the paginator shows on each side of the current one.

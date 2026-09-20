@@ -27,7 +27,7 @@ import {
   sortFrom,
   type CubeValueRange,
   viewParams,
-  SIDEBAR_MAXWIDTH,
+  SECONDARY_SIDEBAR_MAXWIDTH,
 } from "@/lib/constants";
 
 interface BlunderFilterPanelProps {
@@ -360,7 +360,7 @@ export function BlunderFilterPanel({ category, topCubeValue }: BlunderFilterPane
   }
 
   return (
-    <Stack w={SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
+    <Stack w={SECONDARY_SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
       {/* A sort is always set, so pressing the pressed one again changes nothing. */}
       <ToggleGroup
         aria-label="Sort"
