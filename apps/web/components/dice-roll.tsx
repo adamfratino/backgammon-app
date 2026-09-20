@@ -21,6 +21,19 @@ const DIE_ICONS: Record<number, Icon> = {
   6: Dice6Icon,
 };
 
+/**
+ * Shared with `CubeIcon`, which sits in the column beside this one.
+ *
+ * A pip is a zero-length line with a round cap, so its diameter is exactly the
+ * stroke width and nothing else makes the pips bigger. Lucide spaces them four
+ * units apart on a 24-unit grid, so 3 is the ceiling — past it neighbouring
+ * pips touch and a 5 stops looking like a 5.
+ */
+const DIE_STROKE = 3;
+
+/** Larger than the row's text, because a pip has to be counted, not just seen. */
+const DIE_SIZE = "2em";
+
 interface DiceRollProps {
   die_1: number | null;
   die_2: number | null;
@@ -47,8 +60,8 @@ export function DiceRoll({ die_1, die_2 }: DiceRollProps) {
 
   return (
     <Group gap={1} role="img" aria-label={`Roll ${roll(die_1, die_2)}`}>
-      <High size="1.5em" strokeWidth={1.5} />
-      <Low size="1.5em" strokeWidth={1.5} />
+      <High size={DIE_SIZE} strokeWidth={DIE_STROKE} />
+      <Low size={DIE_SIZE} strokeWidth={DIE_STROKE} />
     </Group>
   );
 }
