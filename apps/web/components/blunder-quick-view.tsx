@@ -45,12 +45,16 @@ export function BlunderQuickView({
   // briefly point past the end. The row this button belongs to is always a row.
   const current = rows[index] ?? blunder;
 
-  // Every way out runs through here — the button below, Escape, the backdrop —
-  // so each visit starts at the row that was clicked rather than wherever the
-  // last one wandered off to.
-  function close() {
-    setOpen(false);
-    setIndex(startIndex);
+  // Every way in and out runs through here — the button below, Escape, the
+  // backdrop — so each visit starts at the row that was clicked rather than
+  // wherever the last one wandered off to. The rewind happens on the way in:
+  // Base UI holds the popup mounted through its exit transition, so putting the
+  // index back while closing redrew the starting board under a dialog still on
+  // screen. Going in is the moment nobody is looking, and it reads `startIndex`
+  // as the table last handed it down.
+  function openChange(next: boolean) {
+    if (next) setIndex(startIndex);
+    setOpen(next);
   }
 
   return (
@@ -58,13 +62,13 @@ export function BlunderQuickView({
       size="large"
       title={`Blunder #${current.blunder_id}`}
       open={open}
-      onOpenChange={(next) => (next ? setOpen(true) : close())}
+      onOpenChange={openChange}
       action={
         <Button
           size="small"
           variant="subtle"
           shape="square"
-          onClick={close}
+          onClick={() => openChange(false)}
           tooltip="Close"
           aria-label="Close quick view"
         >
