@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Group, Stack, Text } from "@uiid/design-system";
 
 import { BlunderFilterPanel } from "@/components/blunder-filters";
+import { BlunderStats } from "@/components/blunder-stats";
 import { BlunderTable } from "@/components/blunder-table";
 import {
   FLIP_BOARD_COOKIE,
@@ -45,6 +46,11 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         {/* Takes whatever the sidebar leaves, and may shrink below its content. */}
         <Stack ax="stretch" minw={0} style={{ flex: 1 }}>
           <BlunderTable category={category} showPipCounts={showPipCounts} flipBoard={flipBoard} />
+          {/* Under the table and inside its column, so the stats sit beneath the
+              rows they describe rather than beside the filters that narrow
+              both. Fetched in the browser rather than prefetched here: a page
+              is `PER_PAGE` rows, so the panel is below the fold on arrival. */}
+          <BlunderStats category={category} />
         </Stack>
         <BlunderFilterPanel
           category={category}

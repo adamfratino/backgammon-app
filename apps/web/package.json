@@ -11,6 +11,7 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@microcharts/react": "^0.19.1",
     "@repo/core": "workspace:*",
     "@repo/diagram": "workspace:*",
     "@repo/galaxy-scraper": "workspace:*",

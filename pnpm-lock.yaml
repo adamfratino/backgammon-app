@@ -20,6 +20,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@microcharts/react':
+        specifier: ^0.19.1
+        version: 0.19.1(react@19.2.8)
       '@repo/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -662,6 +665,12 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@microcharts/react@0.19.1':
+    resolution: {integrity: sha512-Mw3tAEgkruW8bQy+nwN8R5Mvoz2gdNqljl4XwJbQtFhouzZgcXhG/Kbamf7AaglmlgL1SJVLfoLiqeYF34g6Xw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
 
   '@next/env@16.3.4':
     resolution: {integrity: sha512-cjWZnUUa6jZq2kFaNe/ZyJdZonOZ/QoN0Zka2nz/FLOrfx14pQuM9c5RaSVkWMqgdt4ksgPAMWPyHSs/CyV48Q==}
@@ -2251,6 +2260,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@microcharts/react@0.19.1(react@19.2.8)':
+    dependencies:
+      react: 19.2.8
 
   '@next/env@16.3.4': {}
 
