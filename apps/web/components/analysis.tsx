@@ -9,7 +9,7 @@ import { BoardArea } from "./board-area";
 import { CubeEquities } from "./cube-equities";
 
 export async function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
-  const { blunder_id, decisions, source_xgid, cube } = detail;
+  const { blunder_id, decisions, source_xgid, cube, cube_action } = detail;
 
   const parsed = source_xgid ? parseXgid(source_xgid) : null;
   const pipCounts = parsed
@@ -28,6 +28,7 @@ export async function BlunderAnalysis({ detail }: { detail: BlunderDetail }) {
       <BoardArea
         source_xgid={source_xgid}
         blunder_id={blunder_id}
+        cube_action={cube_action}
         parsed={parsed}
         pipCounts={pipCounts}
         showPipCounts={showPipCounts}
