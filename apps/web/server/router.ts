@@ -27,7 +27,10 @@ import { publicProcedure, router } from "@/server/trpc";
  */
 const category = z.object({
   category: z.string(),
+  /** How many of its blunders the filters leave; its total when none were asked for. */
   count: z.number(),
+  /** How many it holds in all, which is what `count` is out of. */
+  total: z.number(),
 });
 
 const blunder = z.object({
@@ -138,7 +141,7 @@ const note = z.object({
   updated_at: z.string(),
 });
 
-type Category = z.infer<typeof category>;
+export type Category = z.infer<typeof category>;
 export type Blunder = z.infer<typeof blunder>;
 type BlunderDetail = z.infer<typeof blunderDetail>;
 
@@ -187,42 +190,129 @@ const SORT_ORDER_BY: Record<BlunderSort, string> = {
  */
 const TIE_BREAKER = "d.blunder_id ASC, d.kind ASC";
 
+/**
+ * What the list can be narrowed by. Declared apart from the procedure that lists
+ * so the sidebar's counts can ask for the same thing in the same words.
+ */
+const blunderFilters = z.object({
+  kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
+  severities: z.array(z.enum(SEVERITIES)).default([]),
+  crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
+  // Either end may be absent, which is no bound rather than a bound at the edge
+  // of the cube's ladder — see `CubeValueRange`.
+  cubeValue: z
+    .object({
+      min: z.number().int().positive().nullable(),
+      max: z.number().int().positive().nullable(),
+    })
+    .default(ANY_CUBE_VALUE),
+});
+
+type BlunderFilters = z.infer<typeof blunderFilters>;
+
+/**
+ * The filters as SQL: one clause per filter that was set, and the values those
+ * clauses compare against, in the order the clauses bind them. Every value is
+ * bound, so nothing from the URL is ever part of the SQL itself.
+ *
+ * The page of rows and the sidebar's counts both come through here. A count that
+ * read the filters its own way would eventually disagree with the page it is
+ * counting, and what the reader would see is a sidebar that lies.
+ */
+function filterClauses(filters: BlunderFilters) {
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (filters.kinds.length > 0) {
+    // A cube decision's side of the cube is read off the action taken.
+    const kinds = filters.kinds.map((kind) => {
+      if (kind === "checker") return "d.kind = 'checker'";
+      const actions = CUBE_ACTION.filter((action) => cubeDirection(action) === kind);
+      params.push(...actions);
+      return `(d.kind = 'cube' AND b.cube_action IN (${actions.map(() => "?").join(", ")}))`;
+    });
+    clauses.push(`(${kinds.join(" OR ")})`);
+  }
+
+  if (filters.severities.length > 0) {
+    // A band runs from its own `min` up to the next one above it, and the top
+    // band has no ceiling.
+    const bands = SEVERITY_BANDS.filter((band) => filters.severities.includes(band.id)).map(
+      (band) => {
+        const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
+        params.push(band.min);
+        if (!above) return "d.error_magnitude >= ?";
+        params.push(above.min);
+        return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
+      },
+    );
+    clauses.push(`(${bands.join(" OR ")})`);
+  }
+
+  if (filters.crawfords.length > 0) {
+    // Derived from the position rather than read from `b.crawford_state`, which
+    // the scraper left null on about one blunder in eight. See `crawfordFilterOf`.
+    params.push(...filters.crawfords);
+    const slots = filters.crawfords.map(() => "?").join(", ");
+    clauses.push(`crawford_filter(b.source_xgid) IN (${slots})`);
+  }
+
+  // Each end is its own clause, so a floor with no ceiling asks only what it
+  // means. A row whose cube value is unknown is outside any range that was asked
+  // for, and drops out of a narrowed list rather than riding along.
+  if (filters.cubeValue.min !== null) {
+    clauses.push("b.cube_value >= ?");
+    params.push(filters.cubeValue.min);
+  }
+  if (filters.cubeValue.max !== null) {
+    clauses.push("b.cube_value <= ?");
+    params.push(filters.cubeValue.max);
+  }
+
+  return { clauses, params };
+}
+
 export const appRouter = router({
   categories: router({
-    /** Drives the sidebar. Changes rarely, so this one is server-rendered. */
-    list: publicProcedure.output(z.array(category)).query(({ ctx }) => {
-      const rows = ctx.db
-        .prepare(
-          `${WITH_DECISIONS}
-           SELECT bc.category, COUNT(*) AS count
-           FROM decisions d
-           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-           GROUP BY bc.category
-           ORDER BY count DESC, bc.category ASC`,
-        )
-        .all();
+    /**
+     * Drives the sidebar: what each category holds, and how much of that the
+     * filters leave. Both numbers come out of one pass, so the sidebar costs one
+     * query however many categories there are.
+     *
+     * Ordered by the total rather than by the count, so ticking a filter changes
+     * the numbers without moving the categories out from under the pointer.
+     */
+    list: publicProcedure
+      .input(blunderFilters)
+      .output(z.array(category))
+      .query(({ ctx, input }) => {
+        const { clauses, params } = filterClauses(input);
+        // Nothing asked for narrows nothing, so every row counts towards both.
+        const matches = clauses.length > 0 ? clauses.join(" AND ") : "1";
 
-      return rows as unknown as Category[];
-    }),
+        const rows = ctx.db
+          .prepare(
+            `${WITH_DECISIONS}
+             SELECT bc.category, COUNT(*) AS total,
+                    SUM(CASE WHEN ${matches} THEN 1 ELSE 0 END) AS count
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             GROUP BY bc.category
+             ORDER BY total DESC, bc.category ASC`,
+          )
+          .all(...params);
+
+        return rows as unknown as Category[];
+      }),
   }),
 
   blunders: router({
     byCategory: publicProcedure
       .input(
-        z.object({
+        blunderFilters.extend({
           category: z.string(),
           page: z.number().int().min(1).default(1),
-          kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
-          severities: z.array(z.enum(SEVERITIES)).default([]),
-          crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
-          // Either end may be absent, which is no bound rather than a bound at
-          // the edge of the cube's ladder — see `CubeValueRange`.
-          cubeValue: z
-            .object({
-              min: z.number().int().positive().nullable(),
-              max: z.number().int().positive().nullable(),
-            })
-            .default(ANY_CUBE_VALUE),
           sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
         }),
       )
@@ -233,59 +323,11 @@ export const appRouter = router({
         }),
       )
       .query(({ ctx, input }) => {
-        // Conditions are assembled here; every value they compare against is
-        // bound, so nothing from the URL is ever part of the SQL itself.
-        const where = ["bc.category = ?"];
-        const params: (string | number)[] = [input.category];
-
-        if (input.kinds.length > 0) {
-          // A cube decision's side of the cube is read off the action taken.
-          const clauses = input.kinds.map((kind) => {
-            if (kind === "checker") return "d.kind = 'checker'";
-            const actions = CUBE_ACTION.filter((action) => cubeDirection(action) === kind);
-            params.push(...actions);
-            return `(d.kind = 'cube' AND b.cube_action IN (${actions.map(() => "?").join(", ")}))`;
-          });
-          where.push(`(${clauses.join(" OR ")})`);
-        }
-
-        if (input.severities.length > 0) {
-          // A band runs from its own `min` up to the next one above it, and the
-          // top band has no ceiling.
-          const clauses = SEVERITY_BANDS.filter((band) => input.severities.includes(band.id)).map(
-            (band) => {
-              const above = SEVERITY_BANDS.filter(({ min }) => min > band.min).at(-1);
-              params.push(band.min);
-              if (!above) return "d.error_magnitude >= ?";
-              params.push(above.min);
-              return "(d.error_magnitude >= ? AND d.error_magnitude < ?)";
-            },
-          );
-          where.push(`(${clauses.join(" OR ")})`);
-        }
-
-        if (input.crawfords.length > 0) {
-          // Derived from the position rather than read from `b.crawford_state`,
-          // which the scraper left null on about one blunder in eight. See
-          // `crawfordFilterOf`.
-          params.push(...input.crawfords);
-          const slots = input.crawfords.map(() => "?").join(", ");
-          where.push(`crawford_filter(b.source_xgid) IN (${slots})`);
-        }
-
-        // Each end is its own clause, so a floor with no ceiling asks only what
-        // it means. A row whose cube value is unknown is outside any range that
-        // was asked for, and drops out of a narrowed list rather than riding along.
-        if (input.cubeValue.min !== null) {
-          where.push("b.cube_value >= ?");
-          params.push(input.cubeValue.min);
-        }
-        if (input.cubeValue.max !== null) {
-          where.push("b.cube_value <= ?");
-          params.push(input.cubeValue.max);
-        }
-
-        const filter = where.join(" AND ");
+        // The category is this procedure's own; the rest of the narrowing is the
+        // same narrowing the sidebar counts under.
+        const { clauses, params: bounds } = filterClauses(input);
+        const filter = ["bc.category = ?", ...clauses].join(" AND ");
+        const params = [input.category, ...bounds];
 
         const rows = ctx.db
           .prepare(
