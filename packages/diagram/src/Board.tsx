@@ -1,10 +1,4 @@
-import {
-  checkersOn,
-  POINT_COUNT,
-  type Cube,
-  type Position,
-  type SideName,
-} from "@repo/core";
+import { checkersOn, POINT_COUNT, type Cube, type Position, type SideName } from "@repo/core";
 
 import {
   BAR_CENTRE,
@@ -285,18 +279,20 @@ function Dice({ dice, turn }: { dice: [number, number]; turn: SideName }) {
   );
 }
 
-/** Sits at its owner's end of the lane, or centred while nobody owns it. */
-function DoublingCube({ cube }: { cube: Cube }) {
-  const x = CUBE_LANE_LEFT + (CUBE_LANE_WIDTH - CUBE_SIZE) / 2;
-  const y =
-    cube.owner === "player"
-      ? BOTTOM - CUBE_SIZE
-      : cube.owner === "opponent"
-        ? TOP
-        : MIDDLE - CUBE_SIZE / 2;
-
+/** The cube itself: a face with the stake written on it, drawn from its top left. */
+function CubeFace({
+  value,
+  x,
+  y,
+  className,
+}: {
+  value: number;
+  x: number;
+  y: number;
+  className: string;
+}) {
   return (
-    <g className="gammon-cube">
+    <g className={className}>
       <rect
         className="gammon-cube-body"
         x={x}
@@ -312,9 +308,49 @@ function DoublingCube({ cube }: { cube: Cube }) {
         textAnchor="middle"
         dominantBaseline="central"
       >
-        {cube.value}
+        {value}
       </text>
     </g>
+  );
+}
+
+/** Sits at its owner's end of the lane, or centred while nobody owns it. */
+function DoublingCube({ cube }: { cube: Cube }) {
+  const y =
+    cube.owner === "player"
+      ? BOTTOM - CUBE_SIZE
+      : cube.owner === "opponent"
+        ? TOP
+        : MIDDLE - CUBE_SIZE / 2;
+
+  return (
+    <CubeFace
+      className="gammon-cube"
+      value={cube.value}
+      x={CUBE_LANE_LEFT + (CUBE_LANE_WIDTH - CUBE_SIZE) / 2}
+      y={y}
+    />
+  );
+}
+
+/**
+ * A double waiting to be answered, drawn the way it is played: the cube turned
+ * to its new face and pushed across into the half the answer is owed from —
+ * where that side's dice would land, and the one part of the board that is
+ * otherwise empty on a cube decision. It is the whole of what is happening in
+ * the position, so it sits in the middle of the board rather than out in the
+ * lane, which it only reaches once the double is taken.
+ */
+function OfferedCube({ value, turn }: { value: number; turn: SideName }) {
+  const centre = turn === "player" ? NEAR_HALF_CENTRE : FAR_HALF_CENTRE;
+
+  return (
+    <CubeFace
+      className="gammon-cube gammon-cube--offered"
+      value={value}
+      x={centre - CUBE_SIZE / 2}
+      y={MIDDLE - CUBE_SIZE / 2}
+    />
   );
 }
 
@@ -331,6 +367,7 @@ export function Board({
   position,
   dice = null,
   cube = null,
+  doubleOffered = false,
   turn = "player",
   move = null,
   pipCounts = null,
@@ -341,12 +378,34 @@ export function Board({
 
   const columns = Array.from({ length: COLUMNS }, (_, column) => column);
 
+  // Doubling turns the cube to twice the face it was on, and that is the face
+  // the offer is worth — so a 1 centred at the start of a game is offered as a
+  // 2. Without a cube there is no face to turn, and a roll on the board means
+  // the dice have been thrown, which only happens once the offer is settled.
+  const offered = doubleOffered && cube !== null && dice === null ? cube.value * 2 : null;
+
   // A centred cube still at 1 has never been turned. Drawing it would mean
-  // putting a "1" on a face no real doubling cube has.
-  const showCube = cube !== null && (cube.value > 1 || cube.owner !== null);
+  // putting a "1" on a face no real doubling cube has. An offer takes the cube
+  // out of the lane entirely, so the two are never drawn at once.
+  const showCube = offered === null && cube !== null && (cube.value > 1 || cube.owner !== null);
 
   const roll = dice ? `, rolling ${dice[0]}-${dice[1]}` : "";
   const play = move ? `, playing ${move}` : "";
+
+  // The cube in the lane is a standing state the position speaks for, but an
+  // offer is an act someone has just taken, and it is the only thing a cube
+  // decision has in place of a roll. A board that draws it has to say it.
+  const offer = offered === null ? "" : `, doubled to ${offered}`;
+
+  // Whose the cube is decides who may turn it next, so a name carrying only
+  // the face would leave out half of what the drawing says. The two are never
+  // both named: an offer takes the cube out of the lane.
+  const stake =
+    !showCube || cube === null
+      ? ""
+      : cube.owner === null
+        ? `, cube at ${cube.value}, centred`
+        : `, cube at ${cube.value}, held by the ${cube.owner === "player" ? "near" : "far"} side`;
 
   // The name describes what is drawn, so the counts are named only when they
   // are shown. Reading out a number the board is deliberately withholding
@@ -357,7 +416,7 @@ export function Board({
 
   // A <title> names the image for screen readers, but browsers also show it as
   // a tooltip after hovering the board. aria-label names it without the hover.
-  const label = `Backgammon position${race}${roll}${play}`;
+  const label = `Backgammon position${race}${stake}${offer}${roll}${play}`;
 
   return (
     <svg
@@ -401,6 +460,7 @@ export function Board({
       <rect className="gammon-tray" x={TRAY_LEFT} y={TOP} width={TRAY_WIDTH} height={PLAY_HEIGHT} />
 
       {dice ? <Dice dice={dice} turn={turn} /> : null}
+      {offered === null ? null : <OfferedCube value={offered} turn={turn} />}
       {showCube && cube ? <DoublingCube cube={cube} /> : null}
 
       <g className="gammon-checkers">

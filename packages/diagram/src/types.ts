@@ -21,6 +21,19 @@ export interface BoardProps {
   cube?: Cube | null;
 
   /**
+   * A double waiting to be answered. The cube is drawn turned to its new face —
+   * twice `cube.value`, the stake the answer is worth — in the middle of the
+   * half the answer is owed from, where that side's dice would land and where
+   * nothing else stands until they are thrown. It reaches the lane only once
+   * the double is taken, so the lane stays empty while the offer is open.
+   *
+   * Needs a `cube` to double from, and a position the dice have not reached:
+   * with `dice` set the offer has already been settled, and drawing it would
+   * put a cube on top of the roll.
+   */
+  doubleOffered?: boolean;
+
+  /**
    * Which side is on roll, which decides where the dice land and whose
    * checkers `move` refers to. Defaults to the near side.
    */

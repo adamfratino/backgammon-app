@@ -53,6 +53,7 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
             crawford_state={detail.crawford_state}
             die_1={detail.die_1}
             die_2={detail.die_2}
+            cube_action={detail.cube_action}
           />
           <PreviousDecisions decisions={detail.decisions} />
           <Separator />

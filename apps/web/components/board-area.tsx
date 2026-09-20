@@ -8,6 +8,7 @@ import type { SideName, Xgid } from "@repo/core";
 import { Board } from "@repo/diagram";
 
 import type { BlunderDetail } from "@/lib/analysis.types";
+import { cubeDirection } from "@/lib/constants";
 import { rememberPipCounts } from "@/lib/pip-counts";
 
 import { selectedPlay } from "./blunder-plays";
@@ -16,7 +17,7 @@ import { CopyButton } from "./copy-button";
 /** Whether the board draws its pip counts. The cookie behind it is the record. */
 export const pipCountsVisible = atom(true);
 
-interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "blunder_id"> {
+interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "blunder_id" | "cube_action"> {
   /** `source_xgid`, parsed on the server so `@repo/core` stays out of the browser bundle. */
   parsed: Xgid | null;
   /** Each side's pip count in `parsed`, counted on the server for the same reason. */
@@ -28,6 +29,7 @@ interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "blunder_id
 export function BoardArea({
   source_xgid,
   blunder_id,
+  cube_action,
   parsed,
   pipCounts,
   showPipCounts,
@@ -35,6 +37,11 @@ export function BoardArea({
   // Every blunder mounts its own store, so each one is seeded with the setting
   // the server just rendered rather than starting over from the default.
   useHydrateAtoms([[pipCountsVisible, showPipCounts]]);
+
+  // Being offered the cube is the one decision the board has nothing to show
+  // for: no roll, and a cube that has not moved yet. The XGID records the face
+  // it was on before the double, so the offer lives in the action instead.
+  const doubleOffered = cubeDirection(cube_action) === "receive";
 
   const selected = useAtomValue(selectedPlay);
   const [visible, setVisible] = useAtom(pipCountsVisible);
@@ -46,6 +53,7 @@ export function BoardArea({
           position={parsed.position}
           dice={parsed.dice}
           cube={parsed.cube}
+          doubleOffered={doubleOffered}
           turn="player"
           move={selected}
           pipCounts={visible ? pipCounts : null}
