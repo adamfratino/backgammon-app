@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import {
+  ANY_CUBE_VALUE,
   type BlunderSort,
   CUBE_ACTION,
   CRAWFORD_FILTER_IDS,
@@ -214,6 +215,14 @@ export const appRouter = router({
           kinds: z.array(z.enum(KIND_FILTER_IDS)).default([]),
           severities: z.array(z.enum(SEVERITIES)).default([]),
           crawfords: z.array(z.enum(CRAWFORD_FILTER_IDS)).default([]),
+          // Either end may be absent, which is no bound rather than a bound at
+          // the edge of the cube's ladder — see `CubeValueRange`.
+          cubeValue: z
+            .object({
+              min: z.number().int().positive().nullable(),
+              max: z.number().int().positive().nullable(),
+            })
+            .default(ANY_CUBE_VALUE),
           sort: z.enum(SORT_IDS).default(DEFAULT_SORT),
         }),
       )
@@ -264,6 +273,18 @@ export const appRouter = router({
           where.push(`crawford_filter(b.source_xgid) IN (${slots})`);
         }
 
+        // Each end is its own clause, so a floor with no ceiling asks only what
+        // it means. A row whose cube value is unknown is outside any range that
+        // was asked for, and drops out of a narrowed list rather than riding along.
+        if (input.cubeValue.min !== null) {
+          where.push("b.cube_value >= ?");
+          params.push(input.cubeValue.min);
+        }
+        if (input.cubeValue.max !== null) {
+          where.push("b.cube_value <= ?");
+          params.push(input.cubeValue.max);
+        }
+
         const filter = where.join(" AND ");
 
         const rows = ctx.db
@@ -301,6 +322,26 @@ export const appRouter = router({
           total,
         };
       }),
+
+    /**
+     * The highest face any cube in the data reads, which is where the Cube value
+     * filter's track stops. Read from the data rather than fixed at the cube's
+     * own ceiling of 64, so the slider carries no stop that cannot change the
+     * list — and gains one on its own the first time a cube is turned that far.
+     *
+     * One number for the whole database, not per category: a filter that reshaped
+     * its own track as you moved between categories would be harder to read than
+     * a track that simply stops where the data does.
+     */
+    topCubeValue: publicProcedure.output(z.number()).query(({ ctx }) => {
+      const { top } = ctx.db.prepare("SELECT MAX(cube_value) AS top FROM blunders").get() as {
+        top: number | null;
+      };
+
+      // An empty database has no top face; `cubeValueLadder` floors the track at
+      // two stops regardless, so the centred cube is a safe answer.
+      return top ?? 1;
+    }),
 
     /**
      * The full analysis of one position: every play the engine weighed, the

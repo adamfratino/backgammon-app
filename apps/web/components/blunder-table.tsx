@@ -24,6 +24,7 @@ import { CubeIcon } from "./cube-icon";
 import {
   blunderHref,
   filtersFrom,
+  isFiltered,
   KIND_LABELS,
   kindCategory,
   pageFrom,
@@ -71,8 +72,8 @@ export function BlunderTable({ category }: BlunderTableProps) {
   if (isPending) return <p>Loading...</p>;
   if (error) return <p role="alert">Could not load blunders: {error.message}</p>;
   if (data.total === 0) {
-    const filtered = Object.values(filters).some(({ length }) => length > 0);
-    return <p>{filtered ? "No blunders match these filters." : "No blunders in this category."}</p>;
+    const blame = isFiltered(filters) ? "match these filters" : "in this category";
+    return <p>No blunders {blame}.</p>;
   }
 
   const first = (page - 1) * PER_PAGE + 1;
