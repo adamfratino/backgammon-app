@@ -276,17 +276,14 @@ interface DieSelectProps {
  * round, so nothing chosen here can make a face in the other list impossible —
  * which is what the Cube value ends disable each other for.
  *
- * The name rides on the trigger rather than on `Select` itself. Anything the
- * component doesn't claim is spread onto Base UI's `Select.Root`, which renders
- * no element of its own, so an `aria-label` left there reaches no DOM at all and
- * both lists go out unnamed — two comboboxes reading "Any" with nothing to tell
- * them apart, having type-checked, linted and built. `TriggerProps` lands on the
- * button a reader actually focuses. Raised upstream as UI-227.
+ * The name is what tells the two lists apart for a screen reader: both read
+ * "Any" until one is picked, so without it they go out as two unnamed
+ * comboboxes.
  */
 function DieSelect({ label, face, onPick }: DieSelectProps) {
   return (
     <Select
-      TriggerProps={{ "aria-label": label }}
+      aria-label={label}
       fullwidth
       size="small"
       value={face === undefined ? ANY_DIE : String(face)}
