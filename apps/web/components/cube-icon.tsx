@@ -16,7 +16,7 @@ interface CubeIconProps extends React.SVGProps<SVGSVGElement> {
  * next column of the blunder table read as one set rather than two unrelated
  * drawings.
  */
-export function CubeIcon({ value, ...props }: CubeIconProps) {
+export function CubeIcon({ value, style, ...props }: CubeIconProps) {
   const face = String(value);
 
   return (
@@ -31,6 +31,11 @@ export function CubeIcon({ value, ...props }: CubeIconProps) {
       strokeLinejoin="round"
       role="img"
       aria-label={`Cube at ${face}`}
+      // An inline svg sits on the text baseline, so the line box keeps the
+      // font's descender below it and the cube's row in the blunder table
+      // stands taller than the rest. A block box has no baseline to sit on.
+      // The dice next to it get this from the flex `Group` they are drawn in.
+      style={{ display: "block", ...style }}
       {...props}
     >
       {/* Lucide's own dice geometry, so the cube and the dice beside it in the
