@@ -105,3 +105,18 @@ export const stackCentre = (edge: number, direction: 1 | -1, index: number): num
 /** Top of the `index`th borne-off checker, laid in from its owner's end of the tray. */
 export const offTop = (near: boolean, index: number): number =>
   near ? BOTTOM - (index + 1) * OFF_PITCH : TOP + index * OFF_PITCH;
+
+/**
+ * The board turned around: every x mirrored about the drawing's centre line,
+ * so the near side's home board — and the tray it bears off into — move to the
+ * left, and the cube lane to the right. A real board flips the same way; the
+ * tray travels with the home board beside it.
+ */
+export const MIRROR = `translate(${WIDTH} 0) scale(-1 1)`;
+
+/**
+ * Undoes `MIRROR` for one glyph, about its own centre `x`, leaving it where
+ * the mirror put it but the right way round. Point numbers, pip counts, a cube
+ * value and the dice are read rather than placed, so they turn back.
+ */
+export const unmirror = (x: number): string => `translate(${2 * x} 0) scale(-1 1)`;

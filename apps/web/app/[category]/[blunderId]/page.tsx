@@ -6,7 +6,12 @@ import { Button, Stack, Group, Separator, Text, Textarea } from "@uiid/design-sy
 import { parseXgid, pipCount } from "@repo/core";
 
 import { openDecision, SIDEBAR_MAXWIDTH } from "@/lib/constants";
-import { PIP_COUNTS_COOKIE, pipCountsFrom } from "@/lib/pip-counts";
+import {
+  FLIP_BOARD_COOKIE,
+  flipBoardFrom,
+  PIP_COUNTS_COOKIE,
+  pipCountsFrom,
+} from "@/lib/board-settings";
 import { caller } from "@/server/caller";
 
 import { BlunderAnalysis } from "@/components/analysis";
@@ -46,8 +51,10 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
     : null;
 
   // Read here rather than in the components, so the first paint already matches
-  // the setting instead of correcting itself once the browser takes over.
-  const showPipCounts = pipCountsFrom((await cookies()).get(PIP_COUNTS_COOKIE)?.value);
+  // the settings instead of correcting itself once the browser takes over.
+  const jar = await cookies();
+  const showPipCounts = pipCountsFrom(jar.get(PIP_COUNTS_COOKIE)?.value);
+  const flipBoard = flipBoardFrom(jar.get(FLIP_BOARD_COOKIE)?.value);
 
   // The picked play is per blunder, so each blunder gets a fresh store rather than
   // inheriting the last one's pick when Next swaps the page.
@@ -59,6 +66,7 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
           parsed={parsed}
           pipCounts={pipCounts}
           showPipCounts={showPipCounts}
+          flipBoard={flipBoard}
         />
         <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
           <BlunderStepper category={category} blunderId={blunderId} />
