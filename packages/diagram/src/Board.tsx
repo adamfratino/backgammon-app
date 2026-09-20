@@ -19,6 +19,7 @@ import {
   FRAME,
   MAX_VISIBLE,
   MIDDLE,
+  MIRROR,
   NEAR_HALF_CENTRE,
   OFF_HEIGHT,
   offTop,
@@ -33,6 +34,7 @@ import {
   topPoint,
   TRAY_LEFT,
   TRAY_WIDTH,
+  unmirror,
   WIDTH,
   HEIGHT,
 } from "./geometry.ts";
@@ -157,9 +159,10 @@ interface StackProps {
   edge: number;
   direction: 1 | -1;
   side: SideName;
+  flipped: boolean;
 }
 
-function CheckerStack({ count, cx, edge, direction, side }: StackProps) {
+function CheckerStack({ count, cx, edge, direction, side, flipped }: StackProps) {
   if (count <= 0) return null;
 
   const visible = Math.min(count, MAX_VISIBLE);
@@ -184,6 +187,7 @@ function CheckerStack({ count, cx, edge, direction, side }: StackProps) {
           className={`gammon-count gammon-count--${side}`}
           x={cx}
           y={cy(visible - 1)}
+          transform={flipped ? unmirror(cx) : undefined}
           textAnchor="middle"
           dominantBaseline="central"
         >
@@ -214,8 +218,9 @@ function Tray({ count, side }: { count: number; side: SideName }) {
 }
 
 /** A side's pip count on a chip in its checker colours, in the frame at its end of the tray. */
-function PipCount({ count, side }: { count: number; side: SideName }) {
+function PipCount({ count, side, flipped }: { count: number; side: SideName; flipped: boolean }) {
   const y = (side === "player" ? BOTTOM : 0) + (FRAME - PIP_CHIP_HEIGHT) / 2;
+  const cx = TRAY_LEFT + TRAY_WIDTH / 2;
 
   return (
     <g className={`gammon-pip-count gammon-pip-count--${side}`}>
@@ -229,8 +234,9 @@ function PipCount({ count, side }: { count: number; side: SideName }) {
       />
       <text
         className={`gammon-pip-count-value gammon-pip-count-value--${side}`}
-        x={TRAY_LEFT + TRAY_WIDTH / 2}
+        x={cx}
         y={y + PIP_CHIP_HEIGHT / 2}
+        transform={flipped ? unmirror(cx) : undefined}
         textAnchor="middle"
         dominantBaseline="central"
       >
@@ -240,13 +246,22 @@ function PipCount({ count, side }: { count: number; side: SideName }) {
   );
 }
 
-function Die({ value, x, y }: { value: number; x: number; y: number }) {
+interface DieProps {
+  value: number;
+  x: number;
+  y: number;
+  flipped: boolean;
+}
+
+function Die({ value, x, y, flipped }: DieProps) {
   // Quarters of the face put the outer pips one quarter in from each edge and
   // the middle one dead centre.
   const step = DIE_SIZE / 4;
 
+  // A mirrored 2 or 3 still reads as a 2 or a 3, but it is a face this diagram
+  // never draws otherwise, so the die turns back with the numbers.
   return (
-    <>
+    <g transform={flipped ? unmirror(x + DIE_SIZE / 2) : undefined}>
       <rect className="gammon-die" x={x} y={y} width={DIE_SIZE} height={DIE_SIZE} rx={1.4} />
       {(DIE_PIPS[value] ?? []).map(([column, row], index) => (
         <circle
@@ -257,11 +272,19 @@ function Die({ value, x, y }: { value: number; x: number; y: number }) {
           r={0.9}
         />
       ))}
-    </>
+    </g>
   );
 }
 
-function Dice({ dice, turn }: { dice: [number, number]; turn: SideName }) {
+function Dice({
+  dice,
+  turn,
+  flipped,
+}: {
+  dice: [number, number];
+  turn: SideName;
+  flipped: boolean;
+}) {
   const centre = turn === "player" ? NEAR_HALF_CENTRE : FAR_HALF_CENTRE;
   const left = centre - (DIE_SIZE * 2 + DIE_GAP) / 2;
 
@@ -273,6 +296,7 @@ function Dice({ dice, turn }: { dice: [number, number]; turn: SideName }) {
           value={value}
           x={left + index * (DIE_SIZE + DIE_GAP)}
           y={MIDDLE - DIE_SIZE / 2}
+          flipped={flipped}
         />
       ))}
     </g>
@@ -285,11 +309,13 @@ function CubeFace({
   x,
   y,
   className,
+  flipped,
 }: {
   value: number;
   x: number;
   y: number;
   className: string;
+  flipped: boolean;
 }) {
   return (
     <g className={className}>
@@ -305,6 +331,7 @@ function CubeFace({
         className="gammon-cube-value"
         x={x + CUBE_SIZE / 2}
         y={y + CUBE_SIZE / 2}
+        transform={flipped ? unmirror(x + CUBE_SIZE / 2) : undefined}
         textAnchor="middle"
         dominantBaseline="central"
       >
@@ -315,7 +342,7 @@ function CubeFace({
 }
 
 /** Sits at its owner's end of the lane, or centred while nobody owns it. */
-function DoublingCube({ cube }: { cube: Cube }) {
+function DoublingCube({ cube, flipped }: { cube: Cube; flipped: boolean }) {
   const y =
     cube.owner === "player"
       ? BOTTOM - CUBE_SIZE
@@ -329,6 +356,7 @@ function DoublingCube({ cube }: { cube: Cube }) {
       value={cube.value}
       x={CUBE_LANE_LEFT + (CUBE_LANE_WIDTH - CUBE_SIZE) / 2}
       y={y}
+      flipped={flipped}
     />
   );
 }
@@ -341,7 +369,15 @@ function DoublingCube({ cube }: { cube: Cube }) {
  * the position, so it sits in the middle of the board rather than out in the
  * lane, which it only reaches once the double is taken.
  */
-function OfferedCube({ value, turn }: { value: number; turn: SideName }) {
+function OfferedCube({
+  value,
+  turn,
+  flipped,
+}: {
+  value: number;
+  turn: SideName;
+  flipped: boolean;
+}) {
   const centre = turn === "player" ? NEAR_HALF_CENTRE : FAR_HALF_CENTRE;
 
   return (
@@ -350,6 +386,7 @@ function OfferedCube({ value, turn }: { value: number; turn: SideName }) {
       value={value}
       x={centre - CUBE_SIZE / 2}
       y={MIDDLE - CUBE_SIZE / 2}
+      flipped={flipped}
     />
   );
 }
@@ -359,9 +396,9 @@ function OfferedCube({ value, turn }: { value: number; turn: SideName }) {
  *
  * The near side — `position.player`, drawn along the bottom — bears off at the
  * bottom right, so its points fall 12→1 across the bottom row and climb 13→24
- * across the top. The far side occupies the same triangles counting from the
- * other end. There is no state and no interactivity, so this renders on the
- * server and ships no JavaScript.
+ * across the top, or the other way about with `flipped`. The far side occupies
+ * the same triangles counting from the other end. There is no state and no
+ * interactivity, so this renders on the server and ships no JavaScript.
  */
 export function Board({
   position,
@@ -373,6 +410,7 @@ export function Board({
   pipCounts = null,
   className,
   showNumbers = true,
+  flipped = false,
 }: BoardProps) {
   const { player, opponent } = position;
 
@@ -429,109 +467,128 @@ export function Board({
     >
       <style>{DEFAULT_STYLES}</style>
 
-      <rect className="gammon-frame" x="0" y="0" width={WIDTH} height={HEIGHT} />
-      <rect
-        className="gammon-surface"
-        x={PLAY_LEFT}
-        y={TOP}
-        width={PLAY_WIDTH}
-        height={PLAY_HEIGHT}
-      />
-
-      <g className="gammon-points">
-        {columns.map((column) =>
-          (["top", "bottom"] as const).map((row) => {
-            const point = row === "top" ? topPoint(column) : bottomPoint(column);
-            // Adjacent points alternate, and a point is the opposite shade to
-            // the one facing it across the board.
-            const dark = (column + (row === "bottom" ? 1 : 0)) % 2 === 0;
-            return (
-              <path
-                key={`${row}-${column}`}
-                className={`gammon-point gammon-point--${dark ? "dark" : "light"} gammon-point-${point}`}
-                d={pointPath(column, row)}
-              />
-            );
-          }),
-        )}
-      </g>
-
-      <rect className="gammon-bar" x={BAR_LEFT} y={TOP} width={BAR_WIDTH} height={PLAY_HEIGHT} />
-      <rect className="gammon-tray" x={TRAY_LEFT} y={TOP} width={TRAY_WIDTH} height={PLAY_HEIGHT} />
-
-      {dice ? <Dice dice={dice} turn={turn} /> : null}
-      {offered === null ? null : <OfferedCube value={offered} turn={turn} />}
-      {showCube && cube ? <DoublingCube cube={cube} /> : null}
-
-      <g className="gammon-checkers">
-        {columns.map((column) =>
-          (["top", "bottom"] as const).map((row) => {
-            const point = row === "top" ? topPoint(column) : bottomPoint(column);
-            const held = occupant(position, point);
-            if (!held) return null;
-            return (
-              <CheckerStack
-                key={`${row}-${column}`}
-                count={held.count}
-                side={held.side}
-                cx={columnCentre(column)}
-                edge={row === "top" ? TOP : BOTTOM}
-                direction={row === "top" ? 1 : -1}
-              />
-            );
-          }),
-        )}
-
-        {/* Hit checkers wait on the bar, each side on its own half. */}
-        <CheckerStack
-          count={player.bar}
-          side="player"
-          cx={BAR_CENTRE}
-          edge={MIDDLE}
-          direction={1}
+      {/* One mirror turns the whole board around; the glyphs inside turn back. */}
+      <g transform={flipped ? MIRROR : undefined}>
+        <rect className="gammon-frame" x="0" y="0" width={WIDTH} height={HEIGHT} />
+        <rect
+          className="gammon-surface"
+          x={PLAY_LEFT}
+          y={TOP}
+          width={PLAY_WIDTH}
+          height={PLAY_HEIGHT}
         />
-        <CheckerStack
-          count={opponent.bar}
-          side="opponent"
-          cx={BAR_CENTRE}
-          edge={MIDDLE}
-          direction={-1}
+
+        <g className="gammon-points">
+          {columns.map((column) =>
+            (["top", "bottom"] as const).map((row) => {
+              const point = row === "top" ? topPoint(column) : bottomPoint(column);
+              // Adjacent points alternate, and a point is the opposite shade to
+              // the one facing it across the board.
+              const dark = (column + (row === "bottom" ? 1 : 0)) % 2 === 0;
+              return (
+                <path
+                  key={`${row}-${column}`}
+                  className={`gammon-point gammon-point--${dark ? "dark" : "light"} gammon-point-${point}`}
+                  d={pointPath(column, row)}
+                />
+              );
+            }),
+          )}
+        </g>
+
+        <rect className="gammon-bar" x={BAR_LEFT} y={TOP} width={BAR_WIDTH} height={PLAY_HEIGHT} />
+        <rect
+          className="gammon-tray"
+          x={TRAY_LEFT}
+          y={TOP}
+          width={TRAY_WIDTH}
+          height={PLAY_HEIGHT}
         />
-      </g>
 
-      <g className="gammon-trays">
-        <Tray count={player.off} side="player" />
-        <Tray count={opponent.off} side="opponent" />
-      </g>
+        {dice ? <Dice dice={dice} turn={turn} flipped={flipped} /> : null}
+        {offered === null ? null : <OfferedCube value={offered} turn={turn} flipped={flipped} />}
+        {showCube && cube ? <DoublingCube cube={cube} flipped={flipped} /> : null}
 
-      {pipCounts ? (
-        <g className="gammon-pip-counts">
-          <PipCount count={pipCounts.player} side="player" />
-          <PipCount count={pipCounts.opponent} side="opponent" />
+        <g className="gammon-checkers">
+          {columns.map((column) =>
+            (["top", "bottom"] as const).map((row) => {
+              const point = row === "top" ? topPoint(column) : bottomPoint(column);
+              const held = occupant(position, point);
+              if (!held) return null;
+              return (
+                <CheckerStack
+                  key={`${row}-${column}`}
+                  count={held.count}
+                  side={held.side}
+                  cx={columnCentre(column)}
+                  edge={row === "top" ? TOP : BOTTOM}
+                  direction={row === "top" ? 1 : -1}
+                  flipped={flipped}
+                />
+              );
+            }),
+          )}
+
+          {/* Hit checkers wait on the bar, each side on its own half. */}
+          <CheckerStack
+            count={player.bar}
+            side="player"
+            cx={BAR_CENTRE}
+            edge={MIDDLE}
+            direction={1}
+            flipped={flipped}
+          />
+          <CheckerStack
+            count={opponent.bar}
+            side="opponent"
+            cx={BAR_CENTRE}
+            edge={MIDDLE}
+            direction={-1}
+            flipped={flipped}
+          />
         </g>
-      ) : null}
 
-      {move ? <MoveArrows move={move} position={position} turn={turn} /> : null}
-
-      {showNumbers ? (
-        <g className="gammon-numbers">
-          {columns.map((column) => (
-            <text key={`top-${column}`} x={columnCentre(column)} y={TOP - 2} textAnchor="middle">
-              {topPoint(column)}
-            </text>
-          ))}
-          {columns.map((column) => (
-            <text
-              key={`bottom-${column}`}
-              x={columnCentre(column)}
-              y={BOTTOM + 5}
-              textAnchor="middle"
-            >
-              {bottomPoint(column)}
-            </text>
-          ))}
+        <g className="gammon-trays">
+          <Tray count={player.off} side="player" />
+          <Tray count={opponent.off} side="opponent" />
         </g>
-      ) : null}
+
+        {pipCounts ? (
+          <g className="gammon-pip-counts">
+            <PipCount count={pipCounts.player} side="player" flipped={flipped} />
+            <PipCount count={pipCounts.opponent} side="opponent" flipped={flipped} />
+          </g>
+        ) : null}
+
+        {move ? <MoveArrows move={move} position={position} turn={turn} /> : null}
+
+        {showNumbers ? (
+          <g className="gammon-numbers">
+            {columns.map((column) => (
+              <text
+                key={`top-${column}`}
+                x={columnCentre(column)}
+                y={TOP - 2}
+                transform={flipped ? unmirror(columnCentre(column)) : undefined}
+                textAnchor="middle"
+              >
+                {topPoint(column)}
+              </text>
+            ))}
+            {columns.map((column) => (
+              <text
+                key={`bottom-${column}`}
+                x={columnCentre(column)}
+                y={BOTTOM + 5}
+                transform={flipped ? unmirror(columnCentre(column)) : undefined}
+                textAnchor="middle"
+              >
+                {bottomPoint(column)}
+              </text>
+            ))}
+          </g>
+        ) : null}
+      </g>
     </svg>
   );
 }

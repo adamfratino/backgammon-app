@@ -69,4 +69,13 @@ export interface BoardProps {
 
   /** Point numbers in the frame, in the near side's numbering. Defaults to `true`. */
   showNumbers?: boolean;
+
+  /**
+   * Turns the board around, putting the near side's home board — and the tray
+   * it bears off into — on the left rather than the right. Some players bear in
+   * one way and some the other; it is the same position either way, so the
+   * point numbers, the counts and the accessible name are unchanged, and only
+   * where they sit moves. Defaults to `false`.
+   */
+  flipped?: boolean;
 }

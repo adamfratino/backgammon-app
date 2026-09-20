@@ -8,8 +8,8 @@ import type { Xgid } from "@repo/core";
 import { Board } from "@repo/diagram";
 
 import type { BlunderDetail, PipCounts } from "@/lib/analysis.types";
+import { rememberFlipBoard, rememberPipCounts } from "@/lib/board-settings";
 import { cubeDirection } from "@/lib/constants";
-import { rememberPipCounts } from "@/lib/pip-counts";
 
 import { selectedPlay } from "./blunder-plays";
 import { CopyButton } from "./copy-button";
@@ -17,13 +17,18 @@ import { CopyButton } from "./copy-button";
 /** Whether the board draws its pip counts. The cookie behind it is the record. */
 export const pipCountsVisible = atom(true);
 
+/** Which way round the board faces. The cookie behind it is the record. */
+export const boardFlipped = atom(false);
+
 interface BoardAreaProps extends Pick<BlunderDetail, "source_xgid" | "blunder_id" | "cube_action"> {
   /** `source_xgid`, parsed on the server so `@repo/core` stays out of the browser bundle. */
   parsed: Xgid | null;
   /** Each side's pip count in `parsed`, counted on the server for the same reason. */
   pipCounts: PipCounts | null;
-  /** The setting as the server read it, which is what this render drew. */
+  /** The pip-count setting as the server read it, which is what this render drew. */
   showPipCounts: boolean;
+  /** Which way round the server drew the board, read from its own cookie. */
+  flipBoard: boolean;
 }
 
 export function BoardArea({
@@ -33,10 +38,14 @@ export function BoardArea({
   parsed,
   pipCounts,
   showPipCounts,
+  flipBoard,
 }: BoardAreaProps) {
-  // Every blunder mounts its own store, so each one is seeded with the setting
-  // the server just rendered rather than starting over from the default.
-  useHydrateAtoms([[pipCountsVisible, showPipCounts]]);
+  // Every blunder mounts its own store, so each one is seeded with the settings
+  // the server just rendered rather than starting over from the defaults.
+  useHydrateAtoms([
+    [pipCountsVisible, showPipCounts],
+    [boardFlipped, flipBoard],
+  ]);
 
   // Being offered the cube is the one decision the board has nothing to show
   // for: no roll, and a cube that has not moved yet. The XGID records the face
@@ -45,6 +54,7 @@ export function BoardArea({
 
   const selected = useAtomValue(selectedPlay);
   const [visible, setVisible] = useAtom(pipCountsVisible);
+  const [flipped, setFlipped] = useAtom(boardFlipped);
 
   return (
     <Stack aria-label="Backgammon board area" fullwidth gap={1}>
@@ -57,6 +67,7 @@ export function BoardArea({
           turn="player"
           move={selected}
           pipCounts={visible ? pipCounts : null}
+          flipped={flipped}
         />
       )}
       <Group ay="center" gap={1} fullwidth ax="space-between">
@@ -71,6 +82,15 @@ export function BoardArea({
             onCheckedChange={(checked) => {
               setVisible(checked);
               rememberPipCounts(checked);
+            }}
+          />
+          <Switch
+            size="xsmall"
+            label="Flip board"
+            checked={flipped}
+            onCheckedChange={(checked) => {
+              setFlipped(checked);
+              rememberFlipBoard(checked);
             }}
           />
           {source_xgid && <CopyButton value={source_xgid} label="XGID" />}

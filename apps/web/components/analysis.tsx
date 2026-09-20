@@ -14,6 +14,8 @@ interface BlunderAnalysisProps {
   pipCounts: PipCounts | null;
   /** The pip-count setting as the server read it, which is what this render drew. */
   showPipCounts: boolean;
+  /** Which way round the server drew the board, read from its own cookie. */
+  flipBoard: boolean;
 }
 
 export function BlunderAnalysis({
@@ -21,6 +23,7 @@ export function BlunderAnalysis({
   parsed,
   pipCounts,
   showPipCounts,
+  flipBoard,
 }: BlunderAnalysisProps) {
   const { blunder_id, decisions, source_xgid, cube, cube_action } = detail;
 
@@ -33,6 +36,7 @@ export function BlunderAnalysis({
         parsed={parsed}
         pipCounts={pipCounts}
         showPipCounts={showPipCounts}
+        flipBoard={flipBoard}
       />
       {cube ? <CubeEquities cube={cube} decisions={decisions} /> : null}
     </Stack>
