@@ -247,7 +247,8 @@ interface DieSelectProps {
  * component doesn't claim is spread onto Base UI's `Select.Root`, which renders
  * no element of its own, so an `aria-label` left there reaches no DOM at all and
  * both lists go out unnamed — two comboboxes reading "Any" with nothing to tell
- * them apart. `TriggerProps` lands on the button a reader actually focuses.
+ * them apart, having type-checked, linted and built. `TriggerProps` lands on the
+ * button a reader actually focuses. Raised upstream as UI-227.
  */
 function DieSelect({ label, face, onPick }: DieSelectProps) {
   return (
