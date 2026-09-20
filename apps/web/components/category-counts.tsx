@@ -77,7 +77,7 @@ interface CategoryItemsProps extends CategoriesProps {
  */
 function CategoryItems({ categories, counted = false }: CategoryItemsProps) {
   return (
-    <List gap={1}>
+    <List>
       {categories.map(({ category, count, total }) => (
         <ListItem
           key={category}

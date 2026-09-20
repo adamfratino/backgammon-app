@@ -1,5 +1,7 @@
 import { Stack, type StackProps, Text } from "@uiid/design-system";
+
 import { caller } from "@/server/caller";
+import { SIDEBAR_MINWIDTH } from "@/lib/constants";
 
 import { CategoryCounts } from "./category-counts";
 
@@ -16,7 +18,14 @@ export function CategoryNav() {
 }
 
 const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
-  <Stack render={<nav />} aria-label="Blunder categories" p={OUTER_PADDING} gap={OUTER_GAP}>
+  <Stack
+    render={<nav />}
+    aria-label="Blunder categories"
+    p={OUTER_PADDING}
+    gap={OUTER_GAP}
+    minw={SIDEBAR_MINWIDTH}
+    ax="stretch"
+  >
     {children}
   </Stack>
 );
