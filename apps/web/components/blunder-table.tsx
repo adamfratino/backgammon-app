@@ -202,7 +202,7 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
             variant="subtle"
             render={<Link href={href} />}
             tooltip="Take blunder quiz"
-            aria-label="Take blunderquiz"
+            aria-label="Take blunder quiz"
           >
             <GraduationCapIcon />
           </Button>
