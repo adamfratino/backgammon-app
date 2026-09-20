@@ -53,6 +53,15 @@ const blunder = z.object({
   cube_value: z.number().nullable(),
   /** The day its match finished, UTC, as `YYYY-MM-DD`. A blunder has no time of its own. */
   finished_on: z.string().nullable(),
+  /**
+   * The position itself, carried for the row's Copy button rather than for
+   * anything the table draws — the one field here the reader never sees. It is
+   * also the widest, ~51 characters a row, but a page is `PER_PAGE` rows: it put
+   * 1,078 bytes on the category HTML and 323 of them over the wire, since XGIDs
+   * are mostly dash runs and repeated `:0:0:1:` and so compress to a fraction of
+   * what they measure.
+   */
+  source_xgid: z.string().nullable(),
 });
 
 /** Chances of each outcome from the mover's side. Gammons include backgammons. */
@@ -429,7 +438,8 @@ export const appRouter = router({
             `${WITH_DECISIONS}
              SELECT d.blunder_id, d.kind, b.kind = 'both' AS both, d.error_magnitude,
                     b.cube_action, b.die_1, b.die_2, b.match_length, b.score_black,
-                    b.score_white, b.cube_value, date(m.finished_at) AS finished_on
+                    b.score_white, b.cube_value, date(m.finished_at) AS finished_on,
+                    b.source_xgid
              FROM decisions d
              JOIN blunders b ON b.blunder_id = d.blunder_id
              JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id

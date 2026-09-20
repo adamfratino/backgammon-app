@@ -20,6 +20,7 @@ import {
 import { EyeIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
+import { CopyButton } from "./copy-button";
 import { CubeIcon } from "./cube-icon";
 import { DiceRoll } from "./dice-roll";
 import {
@@ -146,6 +147,7 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
     score_white,
     cube_value,
     finished_on,
+    source_xgid,
   } = blunder;
 
   // Blunders without a match score have none of the three, never just one.
@@ -172,16 +174,24 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
       </TableCell>
       {/* A cube decision is made before the dice are thrown, so only a checker play has a roll. */}
       <TableCell>{kind === "checker" ? <DiceRoll die_1={die_1} die_2={die_2} /> : "—"}</TableCell>
+      {/* View first, where it has always been; the XGID is the utility beside it.
+          Copying a position takes the reader to XG, not to the blunder, so it
+          stays the quieter of the two rather than competing for the same click. */}
       <TableCell collapse>
-        <Button
-          size="xsmall"
-          variant="subtle"
-          render={<Link href={href} />}
-          tooltip="View blunder"
-          aria-label="View blunder"
-        >
-          <EyeIcon />
-        </Button>
+        <Group gap={1} ay="center">
+          <Button
+            size="xsmall"
+            variant="subtle"
+            render={<Link href={href} />}
+            tooltip="View blunder"
+            aria-label="View blunder"
+          >
+            <EyeIcon />
+          </Button>
+          {source_xgid && (
+            <CopyButton value={source_xgid} label="Copy XGID" size="xsmall" variant="subtle" />
+          )}
+        </Group>
       </TableCell>
     </TableRow>
   );

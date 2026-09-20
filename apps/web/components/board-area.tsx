@@ -93,7 +93,7 @@ export function BoardArea({
               rememberFlipBoard(checked);
             }}
           />
-          {source_xgid && <CopyButton value={source_xgid} label="XGID" />}
+          {source_xgid && <CopyButton value={source_xgid} label="XGID" showLabel />}
         </Group>
       </Group>
     </Stack>
