@@ -20,6 +20,7 @@ import {
 import { CalendarIcon, GraduationCapIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
+import { BlunderQuickView } from "./blunder-quick-view";
 import { CopyButton } from "./copy-button";
 import { CubeIcon } from "./cube-icon";
 import { DiceRoll } from "./dice-roll";
@@ -42,6 +43,10 @@ import { BlunderTablePagination } from "./blunder-table-pagination";
 
 interface BlunderTableProps {
   category: string;
+  /** The pip-count setting as the server read it, for the boards a row can open. */
+  showPipCounts: boolean;
+  /** Which way round those boards face, read from its own cookie the same way. */
+  flipBoard: boolean;
 }
 
 // Fixed locale and zone, so the server and the browser print the same day.
@@ -52,7 +57,7 @@ const DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "U
  * on a blunder walk the same rows in the same order, so what is below a row here
  * is what Next opens.
  */
-export function BlunderTable({ category }: BlunderTableProps) {
+export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTableProps) {
   const trpc = useTRPC();
 
   const searchParams = useSearchParams();
@@ -103,12 +108,16 @@ export function BlunderTable({ category }: BlunderTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.blunders.map((blunder) => (
+            {data.blunders.map((blunder, index) => (
               // A `both` blunder is two rows under one id, so the id alone isn't a key.
               <BlunderTableRow
                 key={`${blunder.blunder_id}-${blunder.kind}`}
                 blunder={blunder}
                 href={blunderHref(category, blunder, query)}
+                rows={data.blunders}
+                index={index}
+                showPipCounts={showPipCounts}
+                flipBoard={flipBoard}
               />
             ))}
           </TableBody>
@@ -135,7 +144,22 @@ export function BlunderTable({ category }: BlunderTableProps) {
  * How badly, never what: the position is the quiz, so neither the play that was
  * made nor the one that should have been leaves the blunder's own page.
  */
-function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) {
+function BlunderTableRow({
+  blunder,
+  href,
+  rows,
+  index,
+  showPipCounts,
+  flipBoard,
+}: {
+  blunder: Blunder;
+  href: string;
+  /** The whole page, so the row's quick view can step through its neighbours. */
+  rows: Blunder[];
+  index: number;
+  showPipCounts: boolean;
+  flipBoard: boolean;
+}) {
   const {
     kind,
     cube_action,
@@ -190,11 +214,22 @@ function BlunderTableRow({ blunder, href }: { blunder: Blunder; href: string }) 
       <TableCell>{kind === "checker" ? <DiceRoll die_1={die_1} die_2={die_2} /> : "—"}</TableCell>
       {/* View first, where it has always been; the XGID is the utility beside it.
           Copying a position takes the reader to XG, not to the blunder, so it
-          stays the quieter of the two rather than competing for the same click. */}
+          stays the quieter of the two rather than competing for the same click.
+          The eye between them opens the same position without the quiz, so it
+          sits next to the quiz rather than next to the copy. */}
       <TableCell collapse>
         <Group gap={1} ay="center">
           {source_xgid && (
-            <CopyButton value={source_xgid} label="Copy XGID" size="small" variant="subtle" />
+            <>
+              <CopyButton value={source_xgid} label="Copy XGID" size="small" variant="subtle" />
+              <BlunderQuickView
+                blunder={blunder}
+                rows={rows}
+                startIndex={index}
+                showPipCounts={showPipCounts}
+                flipBoard={flipBoard}
+              />
+            </>
           )}
           <Button
             size="small"
