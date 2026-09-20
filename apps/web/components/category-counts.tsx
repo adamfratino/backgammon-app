@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Badge, List, ListItem, Text } from "@uiid/design-system";
 
-import { filtersFrom, isFiltered } from "@/lib/constants";
+import { categoryLabel, filtersFrom, isFiltered } from "@/lib/constants";
 import type { Category } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
 
@@ -87,7 +87,7 @@ function CategoryItems({ categories, counted = false }: CategoryItemsProps) {
           style={{ opacity: counted && count === 0 ? EMPTY_OPACITY : 1 }}
         >
           <CategoryLink category={category}>
-            <Text>{category}</Text>
+            <Text>{categoryLabel(category)}</Text>
             <Badge size="small" color="neutral">
               {counted ? (
                 <>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Group } from "@uiid/design-system";
 
-import { filtersFrom, pageFrom, sortFrom, viewParams } from "@/lib/constants";
+import { categoryHref } from "@/lib/constants";
 
 interface CategoryLinkProps {
   category: string;
@@ -49,13 +49,8 @@ interface ViewLinkProps extends CategoryLinkProps {
 function ViewLink({ category, active, children }: ViewLinkProps) {
   const searchParams = useSearchParams();
 
-  const params = viewParams(filtersFrom(searchParams), sortFrom(searchParams.get("sort")));
-  const page = pageFrom(searchParams.get("page"));
-  if (active && page > 1) params.set("page", String(page));
-
-  const query = params.size > 0 ? `?${params}` : "";
   return (
-    <CategoryRow href={`/${category}${query}`} active={active}>
+    <CategoryRow href={categoryHref(category, searchParams, { keepPage: active })} active={active}>
       {children}
     </CategoryRow>
   );

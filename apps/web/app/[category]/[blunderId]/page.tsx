@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Provider } from "jotai";
-import { Stack, Group, Separator } from "@uiid/design-system";
+import { Stack, Group, Separator, Text } from "@uiid/design-system";
 
 import { SIDEBAR_MAXWIDTH } from "@/lib/constants";
 import { caller } from "@/server/caller";
@@ -34,6 +34,9 @@ export default async function BlunderPage({ params }: BlunderPageProps) {
         <BlunderAnalysis detail={detail} />
         <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH}>
           <BlunderStepper category={category} blunderId={blunderId} />
+          <Text render={<h1 />} size={3} weight="bold">
+            Blunder #{blunderId}
+          </Text>
           <Separator />
           <BlunderIntroText
             score_black={detail.score_black}

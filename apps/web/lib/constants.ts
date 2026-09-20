@@ -10,6 +10,18 @@ export const PAGE_SPREAD = 1;
 
 export const NOTE_MAX_LENGTH = 2000;
 
+/**
+ * A category as a person reads it. The database stores them the way a column
+ * does — `middle_game`, `one_man_back` — and the sidebar, the topbar and the
+ * breadcrumb all draw the same name, so the one place it turns into prose is
+ * here. Sentence case, like every other label in this file: "Worst first", not
+ * "Worst First".
+ */
+export function categoryLabel(category: string): string {
+  const words = category.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export const KINDS = ["checker", "cube"] as const;
 export type BlunderKind = (typeof KINDS)[number];
 
@@ -293,6 +305,24 @@ export function viewParams(
   if (cubeValue.max !== null) params.set("cubeMax", String(cubeValue.max));
   if (sort !== DEFAULT_SORT) params.set("sort", sort);
   return params;
+}
+
+/**
+ * A category's list, carrying the view the URL is already showing: the filters
+ * and the sort always, and the page only when it is the category you are in —
+ * a `?page=` belongs to the list it was counted for, not to one you have yet to
+ * open. That exception is what makes this the way back out of a blunder: it
+ * lands on the rows you left rather than the top of the list.
+ */
+export function categoryHref(
+  category: string,
+  params: Pick<URLSearchParams, "getAll" | "get">,
+  { keepPage }: { keepPage: boolean },
+): string {
+  const query = viewParams(filtersFrom(params), sortFrom(params.get("sort")));
+  const page = pageFrom(params.get("page"));
+  if (keepPage && page > 1) query.set("page", String(page));
+  return `/${category}${query.size > 0 ? `?${query}` : ""}`;
 }
 
 /** The blunder the URL has open: its id segment, and `?decision=` if there is one. */

@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
 import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
-import { Stack, Text } from "@uiid/design-system";
+import { Stack } from "@uiid/design-system";
 
+import { CategoryTopbar } from "@/components/category-topbar";
 import { filtersFrom, pageFrom, sortFrom } from "@/lib/constants";
 import { getQueryClient, trpc } from "@/trpc/server";
 
@@ -11,9 +12,9 @@ interface CategoryLayoutProps {
 }
 
 /**
- * The category's title, and the page of the list the URL asks for. The table
- * draws that page, and a blunder's Previous and Next read their neighbours from
- * it, so both pages below start with it already in the cache.
+ * The topbar, and the page of the list the URL asks for. The table draws that
+ * page, and a blunder's Previous and Next read their neighbours from it, so
+ * both pages below start with it already in the cache.
  */
 export default async function CategoryLayout({ params, children }: CategoryLayoutProps) {
   const { category } = await params;
@@ -31,11 +32,7 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
 
   return (
     <Stack render={<main />} ax="stretch" minw={0} style={{ flex: 1 }}>
-      <Stack p={6} bb={1}>
-        <Text render={<h1 />} size={3} weight="bold">
-          {category}
-        </Text>
-      </Stack>
+      <CategoryTopbar category={category} />
       <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>
     </Stack>
   );
