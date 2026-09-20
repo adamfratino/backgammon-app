@@ -20,3 +20,8 @@ export function isWinningText(num: number): string {
   if (num === 0) return "You're tied";
   return "You're losing";
 }
+
+/** A pip total with its noun, so a one-pip race reads "1 pip" rather than "1 pips". */
+export function pips(count: number): string {
+  return `${count} ${count === 1 ? "pip" : "pips"}`;
+}
