@@ -39,7 +39,7 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
     <Provider>
       <Group ay="start" fullwidth p={6} gap={6}>
         <BlunderAnalysis detail={detail} />
-        <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH}>
+        <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
           <BlunderStepper category={category} blunderId={blunderId} />
           <Text render={<h1 />} size={3} weight="bold">
             Blunder #{blunderId}
@@ -64,7 +64,7 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
           ) : (
             <BlunderPlays candidates={detail.candidates} />
           )}
-          <Textarea label="Any thoughts about your decision?" fullwidth />
+          <Textarea label="Any thoughts about your decision?" />
           <Button>Submit</Button>
         </Stack>
       </Group>
