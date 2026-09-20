@@ -1,28 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { SegmentedBar } from "@microcharts/react/segmented-bar";
-import {
-  type PaletteColor,
-  Group,
-  Progress,
-  Stack,
-  Status,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableHeader,
-  TableRoot,
-  TableRow,
-  Text,
-} from "@uiid/design-system";
+// The interactive build, for the hover: the static one draws the same ring
+// but has nothing to say when you point at a wedge.
+import { MicroDonut } from "@microcharts/react/micro-donut/interactive";
+// Named for what it does here rather than what the library calls it, and so a
+// reader never has to work out which of two `Progress` exports this is.
+import { Progress as ShareBar } from "@microcharts/react/progress";
+import { type PaletteColor, Group, Stack, Status, Text } from "@uiid/design-system";
 
 import {
   CUBE_ERRORS,
   CUBE_PANELS,
-  CUBE_TENDENCIES,
   type CubeDirection,
   filtersFrom,
   MIN_CHART_DECISIONS,
@@ -32,7 +23,22 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-/** One line of a stats table: what went wrong, how often, and what it cost. */
+/**
+ * Big enough that four wedges are still four wedges, small enough that two of
+ * these fit side by side in half a column with their legends beside them.
+ */
+const DONUT_SIZE = 96;
+
+/** Three times the library's own 5, which draws a ring rather than a hairline. */
+const DONUT_WEIGHT = 15;
+
+/** Wide enough to read a share off, narrow enough to sit inside a legend row. */
+const SHARE_BAR_WIDTH = 64;
+
+/** A rule's worth of height — the bar is a length, not a shape. */
+const SHARE_BAR_HEIGHT = 8;
+
+/** One line of a panel: what went wrong, how often, and what it cost. */
 interface StatRow {
   id: string;
   label: string;
@@ -92,40 +98,33 @@ export function BlunderStats({ category }: { category: string }) {
         description="Where your equity goes by severity: a few catastrophes, or the steady drip of small mistakes?"
         denominator={data.decisions}
         rows={bands}
-        shareTitle="Share of total equity lost"
-        shareDescription="The widest segment is the level costing you the most."
       />
 
-      {/* Side by side, as the two halves of one question: whether the cube is
-          worth more or less to you than you think. Reading down one and then
-          the other is what makes the comparison. */}
-      <Group ay="start" fullwidth gap={6}>
-        {(Object.keys(CUBE_PANELS) as CubeDirection[]).map((side) => {
-          const rows = cubeRows(side);
-          const { title, description } = CUBE_PANELS[side];
+      {/* One under the other, in the order the cube reaches you: what you did
+          with it, then what you did when it came back. Each panel is as wide as
+          the one above, so a wedge in one is the same size as a wedge in
+          another and the three can be read down rather than across. */}
+      {(Object.keys(CUBE_PANELS) as CubeDirection[]).map((side) => {
+        const rows = cubeRows(side);
+        const { title, description } = CUBE_PANELS[side];
 
-          return (
-            <Stack key={side} ax="stretch" minw={0} style={{ flex: 1 }}>
-              <StatPanel
-                title={title}
-                description={description}
-                denominator={rows.reduce((sum, row) => sum + row.decisions, 0)}
-                rows={rows}
-                shareTitle={`Share of ${side === "offer" ? "doubling" : "take/pass"} equity lost`}
-                shareDescription="Mostly warm means the cube is worth less to you than you think; mostly cool, more."
-                legend="tendency"
-              />
-            </Stack>
-          );
-        })}
-      </Group>
+        return (
+          <StatPanel
+            key={side}
+            title={title}
+            description={description}
+            denominator={rows.reduce((sum, row) => sum + row.decisions, 0)}
+            rows={rows}
+          />
+        );
+      })}
     </Stack>
   );
 }
 
 /**
- * One statistic: what it is, what it is counted over, the rows themselves, and
- * the share bar that reads them as a single composition.
+ * One statistic: what it is, what it is counted over, and the circle that
+ * divides it.
  *
  * The denominator is on the panel rather than implied by it. The list above
  * shows one page of rows while these count every decision the filters leave,
@@ -137,21 +136,15 @@ function StatPanel({
   description,
   denominator,
   rows,
-  shareTitle,
-  shareDescription,
-  legend,
 }: {
   title: string;
   description: string;
   denominator: number;
   rows: StatRow[];
-  shareTitle: string;
-  shareDescription: string;
-  legend?: "tendency";
 }) {
   return (
     <Stack ax="stretch" gap={4}>
-      <Stack gap={1}>
+      <Stack gap={1} maxw={460}>
         <Text render={<h2 />} size={1} weight="bold">
           {title}
         </Text>
@@ -167,10 +160,7 @@ function StatPanel({
       {denominator < MIN_CHART_DECISIONS ? (
         <TooFew decisions={denominator} />
       ) : (
-        <>
-          <StatTable rows={rows} />
-          <ShareBar title={shareTitle} description={shareDescription} rows={rows} legend={legend} />
-        </>
+        <StatDonut rows={rows} />
       )}
     </Stack>
   );
@@ -191,126 +181,103 @@ function StatPanel({
  * and a total apiece, which is a table. All the numbers need is something to be
  * read against, and a bar per row does that without turning them into a figure.
  */
-function StatTable({ rows }: { rows: StatRow[] }) {
-  // Relative to the worst-paying row rather than to the total, so the longest is
-  // always full and the rest are read against it.
-  const worst = Math.max(...rows.map(({ equityLost }) => equityLost));
-
-  return (
-    <TableContainer>
-      <TableRoot>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Decision</TableHead>
-            <TableHead>Count</TableHead>
-            <TableHead>Equity</TableHead>
-            <TableHead>
-              <span className="sr-only">Cost against the worst row</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map(({ id, label, color, decisions, equityLost }) => (
-            <TableRow key={id}>
-              <TableCell>
-                <Status color={color}>{label}</Status>
-              </TableCell>
-              <TableCell>
-                <Text size={-1}>{decisions.toLocaleString()}</Text>
-              </TableCell>
-              {/* Signed, because it is equity given up rather than equity held:
-                  the column reads as a loss at a glance, the way it does on the
-                  analysis it came from. */}
-              <TableCell>
-                <Text size={-1} weight="bold">
-                  {equityLost === 0 ? "—" : `−${equityLost.toFixed(2)}`}
-                </Text>
-              </TableCell>
-              <TableCell>
-                <Progress
-                  value={worst === 0 ? 0 : (equityLost / worst) * 100}
-                  color={color}
-                  size="small"
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </TableRoot>
-    </TableContainer>
-  );
-}
-
 /**
- * The same rows as one bar, which answers the question the table cannot: not
- * what each row cost, but how the whole divides between them.
+ * The panel's decisions as one circle, with a legend naming each wedge and what
+ * it holds.
  *
- * This is the one thing here worth a chart. The rows above are numbers with
- * something to be read against, which a table and a bar do plainly; a
- * composition is a single shape, and reading proportion off four separate bars
- * means doing the addition yourself.
+ * Split by how many decisions rather than by what they cost, which is the share
+ * the panel has always shown: a wedge is the same proportion the bar beside its
+ * row used to be. The equity sits in the legend next to it, so the two numbers
+ * stay together and the disagreement between them is still there to be read.
  *
- * Colours are handed in rather than themed, so a segment is the same hue as the
- * dot on its row — `paletteVar` names the token the palette class resolves to.
+ * Wedge colours are handed in rather than themed, so a wedge is the same hue as
+ * the dot that names it — `paletteVar` names the token the palette class
+ * resolves to.
  */
-function ShareBar({
-  title,
-  description,
-  rows,
-  legend,
-}: {
-  title: string;
-  description: string;
-  rows: StatRow[];
-  legend?: "tendency";
-}) {
-  const segments = rows.filter(({ equityLost }) => equityLost > 0);
-  if (segments.length < 2) return null;
+function StatDonut({ rows }: { rows: StatRow[] }) {
+  const wedges = rows.filter(({ decisions }) => decisions > 0);
+  const total = wedges.reduce((sum, row) => sum + row.decisions, 0);
+
+  // Which wedge the pointer or the keyboard is on, as an index into `wedges` —
+  // the same array the ring was handed, so the two cannot fall out of step —
+  // and the share the ring itself worked out for it.
+  //
+  // The share comes from the chart rather than from a division here because the
+  // two do not agree: microcharts rounds a composition by largest remainder so
+  // its wedges sum to 100, where rounding each on its own puts Moderate at 55%
+  // against the 54% the ring announces for the same wedge.
+  const [active, setActive] = useState<{ index: number; share: string } | null>(null);
+  const hovered = active === null ? null : (wedges[active.index] ?? null);
 
   return (
-    <Stack ax="stretch" gap={2}>
-      <Stack gap={0}>
-        <Text size={-1} weight="bold">
-          {title}
-        </Text>
-        <Text size={-1} shade="muted">
-          {description}
-        </Text>
-      </Stack>
+    <Stack ax="stretch" gap={3}>
+      <Group ay="center" gap={5}>
+        <MicroDonut
+          data={wedges.map(({ label, decisions }) => ({ label, value: decisions }))}
+          colors={wedges.map(({ color }) => paletteVar(color))}
+          size={DONUT_SIZE}
+          weight={DONUT_WEIGHT}
+          label="none"
+          // The library's own chip knows the count and nothing else; equity
+          // never reaches it, so the readout below is ours.
+          readout={false}
+          onActive={(datum) =>
+            setActive(datum === null ? null : { index: datum.index, share: datum.formatted ?? "" })
+          }
+        />
 
-      <SegmentedBar
-        data={segments.map(({ label, equityLost }) => ({ label, value: equityLost }))}
-        colors={segments.map(({ color }) => paletteVar(color))}
-        order="data"
-        // No figures on the bar. The percentages it can fit depend on how the
-        // composition happens to divide — at this height most of them drop out
-        // and the one that survives reads as the only one worth having. The
-        // rows above carry the numbers; this carries the shape.
-        label="none"
-        height={16}
-        title={title}
-      />
+        {/* The numbers the circle cannot carry. A wedge says what share it is;
+            how many decisions that was, and what they gave up, belong beside
+            its own name rather than only in a readout you have to go looking
+            for. */}
+        <Stack gap={2} minw={0} style={{ flex: 1 }}>
+          {wedges.map(({ id, label, color, decisions, equityLost }) => (
+            <Group key={id} ay="center" ax="space-between" gap={3} fullwidth>
+              <Status color={color}>{label}</Status>
+              <Group ay="center" gap={3}>
+                <Text size={-1} shade="muted">
+                  {decisions.toLocaleString()}
+                </Text>
+                <Text size={-1} weight="bold">
+                  {equityLost === 0 ? "\u2014" : `\u2212${equityLost.toFixed(2)}`}
+                </Text>
+                {/* The wedge's own length, said again where the numbers are:
+                    the circle shows how the whole divides, and this shows which
+                    row of the legend each division belongs to. Counted against
+                    the panel's own total rather than handed a percentage, so
+                    the rounding is the chart's and matches the circle. */}
+                <ShareBar
+                  value={decisions}
+                  max={total || 1}
+                  color={paletteVar(color)}
+                  width={SHARE_BAR_WIDTH}
+                  height={SHARE_BAR_HEIGHT}
+                  label="none"
+                />
+              </Group>
+            </Group>
+          ))}
+        </Stack>
+      </Group>
 
-      {/* The cube's two panels are read as a temperature, so their key names the
-          lean rather than the mistake — the row above already named the
-          mistake, and in its own colour. */}
-      {legend === "tendency" && (
-        <Group gap={4} ay="center">
-          {CUBE_TENDENCIES.map(({ id, label }) => {
-            const error = CUBE_ERRORS.find(
-              (candidate) =>
-                candidate.tendency === id && segments.some((s) => s.id === candidate.id),
-            );
-            if (!error) return null;
-
-            return (
-              <Status key={id} color={error.color}>
-                {label}
-              </Status>
-            );
-          })}
-        </Group>
-      )}
+      {/* Always here, holding its own line whether or not a wedge is under the
+          pointer: a readout that appeared on hover would shift everything below
+          it the moment you went looking for one. */}
+      <Group ay="center" gap={3} style={{ minHeight: "1.5em" }} aria-live="polite">
+        {hovered && active && (
+          <>
+            {/* The chart's own chip — the wedge's name, its share and how many
+                decisions that was. Taken whole rather than rebuilt from the
+                parts, so the figure here is the figure the ring announces. */}
+            <Status color={hovered.color}>{active.share}</Status>
+            <Text size={-1} weight="bold">
+              {hovered.equityLost === 0
+                ? "\u2014"
+                : `\u2212${hovered.equityLost.toFixed(2)} equity`}
+            </Text>
+          </>
+        )}
+      </Group>
     </Stack>
   );
 }

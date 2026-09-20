@@ -26,7 +26,11 @@ export const chartTheme = defineTheme({
   accent: "var(--color-red-600)",
   neutral: "var(--color-neutral-400)",
   stroke: "var(--color-neutral-800)",
-  band: "var(--color-neutral-200)",
+  // The unfilled part of a track. Dark enough to read as the whole a fill is a
+  // share of, and deliberately well below the 400 step every fill is drawn at —
+  // the mild band is neutral, so a track anywhere near 400 would swallow that
+  // row's bar entirely.
+  band: "var(--color-neutral-600)",
   surface: "var(--shade-surface)",
   surfaceInk: "var(--palette-text)",
   surfaceEdge: "var(--color-neutral-300)",
