@@ -19,6 +19,7 @@ import {
   DAY,
   KIND_LABELS,
   kindCategory,
+  matchSeverityOf,
   RECENT_MATCHES,
   SEVERITY_COLOR,
   severityOf,
@@ -108,18 +109,19 @@ function Match({
             </Text>
           </Group>
         </Stack>
-        {/* The two figures the rest of the page is made of, for this one match. */}
-        <Group ay="baseline" gap={3}>
-          <Text size={-1}>
+        {/* The two figures the rest of the page is made of, for this one match,
+            each in the colour its own band gives it. */}
+        <Group ay="center" gap={2}>
+          <Badge color={SEVERITY_COLOR[matchSeverityOf("blunders", blunders.length)]}>
             {blunders.length} {blunders.length === 1 ? "blunder" : "blunders"}
-          </Text>
-          <Text size={-1} weight="bold">
+          </Badge>
+          <Badge color={SEVERITY_COLOR[matchSeverityOf("lost", equityLost)]}>
             <data value={equityLost}>{`−${equityLost.toFixed(3)}`}</data>
-          </Text>
+          </Badge>
         </Group>
       </Group>
 
-      <List marker="none" gap={2} fullwidth>
+      <List marker="none" fullwidth>
         {blunders.map((blunder) => (
           // A `both` blunder is two lines under one id, so the id alone isn't a key.
           <BlunderLine

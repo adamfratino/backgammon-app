@@ -78,6 +78,28 @@ export function severityOf(errorMagnitude: number): BlunderSeverity {
 }
 
 /**
+ * A whole match on the same four bands, measured two ways. Fixed floors rather
+ * than a rank against your record, as a blunder's are, so a red match means the
+ * same thing next month.
+ *
+ * The equity floors are a quarter, a half and a whole game's worth given away.
+ * The blunder floors are where those land at the 0.168 an average blunder costs.
+ * Across 673 matches the two split alike — 36/32/24/8% mild to catastrophic by
+ * equity, 33/26/33/8% by count — and agree on two in three. Where they don't,
+ * the difference is the story: one huge blunder, or a run of small ones.
+ */
+export const MATCH_SEVERITY_BANDS = [
+  { id: "catastrophic", lost: 1, blunders: 6 },
+  { id: "severe", lost: 0.5, blunders: 3 },
+  { id: "moderate", lost: 0.25, blunders: 2 },
+  { id: "mild", lost: 0, blunders: 0 },
+] as const satisfies readonly { id: BlunderSeverity; lost: number; blunders: number }[];
+
+export function matchSeverityOf(measure: "lost" | "blunders", value: number): BlunderSeverity {
+  return MATCH_SEVERITY_BANDS.find((band) => value >= band[measure])?.id ?? "mild";
+}
+
+/**
  * No green: no blunder is fine, so even the mildest band stays neutral. It sits
  * here rather than beside the table because the Severity filter draws the same
  * badges, and a band that is red in one place has to be red in the other.
