@@ -10,11 +10,14 @@ import type { Blunder } from "@/server/router";
 
 import { BoardArea } from "./board-area";
 
+/** All the quick view reads off a row: which blunder, its position, and the cube's side. */
+type QuickViewRow = Pick<Blunder, "blunder_id" | "cube_action" | "source_xgid">;
+
 interface BlunderQuickViewProps {
   /** The row this button belongs to, and where a visit starts and returns to. */
-  blunder: Blunder;
-  /** The page of rows to step through, in the order the table drew them. */
-  rows: Blunder[];
+  blunder: QuickViewRow;
+  /** The page of rows to step through, in the order they were drawn. */
+  rows: QuickViewRow[];
   /** Where `blunder` sits in `rows`. */
   startIndex: number;
   /** The pip-count setting as the server read it when the page rendered. */

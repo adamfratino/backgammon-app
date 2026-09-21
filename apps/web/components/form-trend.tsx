@@ -63,29 +63,27 @@ export async function FormTrend() {
   const { window, matches, points, now, before } = await caller.overall.form();
 
   return (
-    <Stack ax="stretch" gap={6}>
+    <>
       {now === null ? (
         <TooShort matches={matches} window={window} />
       ) : (
         <>
-          <Headline value={now.lost} previous={before?.lost ?? null} count={window} />
-          <Group evenly gap={4}>
-            {MEASURES.map(({ id, label, description, decimals }) => (
-              <FormCard
-                key={id}
-                label={label}
-                description={description}
-                decimals={decimals}
-                window={window}
-                value={now[id]}
-                previous={before?.[id] ?? null}
-                series={points.map((point) => point[id])}
-              />
-            ))}
-          </Group>
+          {/* <Headline value={now.lost} previous={before?.lost ?? null} count={window} /> */}
+          {MEASURES.map(({ id, label, description, decimals }) => (
+            <FormCard
+              key={id}
+              label={label}
+              description={description}
+              decimals={decimals}
+              window={window}
+              value={now[id]}
+              previous={before?.[id] ?? null}
+              series={points.map((point) => point[id])}
+            />
+          ))}
         </>
       )}
-    </Stack>
+    </>
   );
 }
 

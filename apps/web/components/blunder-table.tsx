@@ -27,6 +27,7 @@ import { DiceRoll } from "./dice-roll";
 import { SeverityBullet } from "./severity-bullet";
 import {
   blunderHref,
+  DAY,
   DEFAULT_TAB,
   filtersFrom,
   isFiltered,
@@ -51,9 +52,6 @@ interface BlunderTableProps {
   /** Which way round those boards face, read from its own cookie the same way. */
   flipBoard: boolean;
 }
-
-// Fixed locale and zone, so the server and the browser print the same day.
-const DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
 /**
  * One page of the category, in the order the server sorted it. Previous and Next

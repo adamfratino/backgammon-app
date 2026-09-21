@@ -129,6 +129,12 @@ export const FORM_WINDOW = 25;
  */
 export const RECENT_DECISIONS = 10;
 
+/** How many of your newest matches the homepage lists blunder by blunder. */
+export const RECENT_MATCHES = 3;
+
+/** Fixed locale and zone, so the server and the browser print the same day. */
+export const DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
+
 /**
  * Your best stretches — the floor of the scale, named rather than indexed off the
  * end of the array so `formBandsFor` has something to fall back to that is a band

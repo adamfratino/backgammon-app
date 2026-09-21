@@ -20,12 +20,13 @@ import type { Leak } from "@/server/router";
  * An aspect ratio rather than a size: the bar stretches to the card and keeps
  * its shape, a rule across the top of it at around sixty pixels tall.
  *
- * Taller in ratio than it looks, because the height follows the width: inside a
- * card the bar is the page less the card's padding, and the proportions that
- * drew sixty pixels across the whole page drew fifty-six across that.
+ * Taller in ratio than it looks, because the height follows the width: the card
+ * shares its row with the recent matches, so the bar spans half the page less
+ * the card's padding — 527 pixels across at a 1512-wide window, and sixty-three
+ * tall at this ratio.
  */
 const SHARE_WIDTH = 320;
-const SHARE_HEIGHT = 20;
+const SHARE_HEIGHT = 38;
 
 /**
  * Where your equity actually goes, by category, across every match.
@@ -56,8 +57,7 @@ export async function Leaks() {
     <Card
       title="Where the equity goes"
       // An `h2` rather than the `h3` a card titles itself with: this is a panel
-      // of the page rather than a card among cards, and the only heading under
-      // the page's own.
+      // of the page rather than a card among cards.
       TitleProps={{ render: <h2 /> }}
       description={`Ranked by what each category has cost in total, not by how often you go wrong there. The dots are each one's last ${RECENT_DECISIONS} mistakes, newest first.`}
     >
