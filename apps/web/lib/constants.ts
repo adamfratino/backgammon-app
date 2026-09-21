@@ -123,6 +123,13 @@ export const MIN_CHART_DECISIONS = 10;
 export const FORM_WINDOW = 25;
 
 /**
+ * How many of a category's latest decisions the leaks card draws, one dot each.
+ * Every category but `close_out` holds at least this many; a category that
+ * holds fewer draws what it has.
+ */
+export const RECENT_DECISIONS = 10;
+
+/**
  * Your best stretches — the floor of the scale, named rather than indexed off the
  * end of the array so `formBandsFor` has something to fall back to that is a band
  * and not `undefined`. Nothing sorts below it.

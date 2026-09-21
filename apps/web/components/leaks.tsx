@@ -2,9 +2,17 @@ import Link from "next/link";
 // Named for what it does here rather than what the library calls it, the same
 // way the statistics panel names its own.
 import { SegmentedBar as ShareBar } from "@microcharts/react/segmented-bar";
-import { Card, Group, List, ListItem, Stack, Text } from "@uiid/design-system";
+import { Card, Group, List, ListItem, Stack, Status, Text } from "@uiid/design-system";
 
-import { categoryLabel, leakRamp } from "@/lib/constants";
+import {
+  type BlunderSeverity,
+  categoryLabel,
+  leakRamp,
+  RECENT_DECISIONS,
+  SEVERITY_BANDS,
+  SEVERITY_COLOR,
+  severityOf,
+} from "@/lib/constants";
 import { caller } from "@/server/caller";
 import type { Leak } from "@/server/router";
 
@@ -51,7 +59,7 @@ export async function Leaks() {
       // of the page rather than a card among cards, and the only heading under
       // the page's own.
       TitleProps={{ render: <h2 /> }}
-      description="Ranked by what each category has cost in total, not by how often you go wrong there."
+      description={`Ranked by what each category has cost in total, not by how often you go wrong there. The dots are each one's last ${RECENT_DECISIONS} mistakes, newest first.`}
     >
       {leaks.length === 0 ? (
         <Text size={-1} shade="muted">
@@ -120,7 +128,11 @@ interface LeakLineProps {
   total: number;
 }
 
-function LeakLine({ leak: { category, equityLost, perDecision }, color, total }: LeakLineProps) {
+function LeakLine({
+  leak: { category, equityLost, perDecision, recent },
+  color,
+  total,
+}: LeakLineProps) {
   return (
     // A list item lays its children out apart, so the name takes the left and
     // the figures the right with nothing here having to place them.
@@ -139,17 +151,52 @@ function LeakLine({ leak: { category, equityLost, perDecision }, color, total }:
           <Text size={-1}>{categoryLabel(category)}</Text>
         </Link>
       </Group>
-      <Group ay="baseline" gap={3}>
-        <Text size={-1}>{share(equityLost, total)}</Text>
-        <Text size={-1} weight="bold">
-          <data value={equityLost}>{`−${equityLost.toFixed(1)}`}</data>
-        </Text>
-        <Text size={-1} shade="muted">
-          <data value={perDecision}>{perDecision.toFixed(3)}</data> each
-        </Text>
+      <Group ay="center" gap={4}>
+        <Group ay="baseline" gap={3}>
+          <Text size={-1}>{share(equityLost, total)}</Text>
+          <Text size={-1} weight="bold">
+            <data value={equityLost}>{`−${equityLost.toFixed(1)}`}</data>
+          </Text>
+          <Text size={-1} shade="muted">
+            <data value={perDecision}>{perDecision.toFixed(3)}</data> each
+          </Text>
+        </Group>
+        <RecentSeverities recent={recent} />
       </Group>
     </ListItem>
   );
+}
+
+/**
+ * The category's latest mistakes, one dot each in its severity's colour — the
+ * fill the table's severity tracks are drawn in.
+ *
+ * Newest on the left, in the order the category's Newest sort lists them, so
+ * the dots read across the way that table reads down.
+ */
+function RecentSeverities({ recent }: { recent: number[] }) {
+  const severities = recent.map(severityOf);
+  const label = recentLabel(severities);
+
+  return (
+    <Group role="img" aria-label={label} title={label} ay="center" gap={1}>
+      {severities.map((severity, index) => (
+        <Status key={index} color={SEVERITY_COLOR[severity]} />
+      ))}
+    </Group>
+  );
+}
+
+/** "Last 10: 1 severe, 4 moderate, 5 mild" — worst first, empty bands left out. */
+function recentLabel(severities: BlunderSeverity[]): string {
+  const counts = SEVERITY_BANDS.map(({ id, label }) => ({
+    label,
+    count: severities.filter((severity) => severity === id).length,
+  }))
+    .filter(({ count }) => count > 0)
+    .map(({ label, count }) => `${count} ${label.toLowerCase()}`);
+
+  return `Last ${severities.length}: ${counts.join(", ")}`;
 }
 
 /**
