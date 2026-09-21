@@ -21,9 +21,8 @@ import type { Leak } from "@/server/router";
  * its shape, a rule across the top of it at around sixty pixels tall.
  *
  * Taller in ratio than it looks, because the height follows the width: the card
- * shares its row with the recent matches, so the bar spans half the page less
- * the card's padding — 527 pixels across at a 1512-wide window, and sixty-three
- * tall at this ratio.
+ * shares its row with the recent matches, so the bar spans only half the page
+ * less the card's padding — sixty-three pixels tall at a 1512-wide window.
  */
 const SHARE_WIDTH = 320;
 const SHARE_HEIGHT = 38;
