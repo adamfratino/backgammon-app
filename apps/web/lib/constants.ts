@@ -106,6 +106,114 @@ export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
 export const MIN_CHART_DECISIONS = 10;
 
 /**
+ * How many matches one bar of the form panel covers.
+ *
+ * Matches rather than days, because a day is not a unit of play here: 64 of the
+ * 155 days in the database hold one or two matches and seven hold eleven or
+ * more. Dated points would put a Tuesday's single match beside a Saturday's
+ * nineteen and weight them the same — 9 September reads 1.09 equity given up per
+ * match and 10 September reads 0.10, and both are one match.
+ *
+ * Twenty-five because a 3-point match carries around two and a half mistakes, so
+ * a block this wide is drawn from roughly sixty decisions — enough that a bar
+ * moves when the play moves rather than when one bad game lands in it. Blocks
+ * are consecutive and share no matches, so the two the panel compares are simply
+ * the last bar and the one before it.
+ */
+export const FORM_WINDOW = 25;
+
+/**
+ * Your best stretches — the floor of the scale, named rather than indexed off the
+ * end of the array so `formBandsFor` has something to fall back to that is a band
+ * and not `undefined`. Nothing sorts below it.
+ */
+const BEST = {
+  id: "best",
+  label: "among your best stretches",
+  from: 0,
+  color: "yellow",
+  step: 400,
+} as const;
+
+/**
+ * How a block of play reads against the rest of your record, warmest first.
+ *
+ * The severity bands cannot do this job, though they are the same idea. They
+ * divide one error magnitude, and only one form measure is an error magnitude at
+ * all: the cost of a mistake sits between 0.145 and 0.197 across every block,
+ * which is `moderate` from end to end, so every bar would wear one colour.
+ * Mistakes per match runs from 1.72 to 4.48 and would read as `catastrophic`
+ * throughout while meaning nothing of the kind.
+ *
+ * `from` is a quantile of the blocks being drawn rather than a fixed quantity or
+ * a ratio to their mean. A ratio was the first attempt and it wasted half the
+ * strip: these measures trend, so the mean sits in the middle of the climb and
+ * every early block lands under it — thirteen consecutive bars in one colour,
+ * saying only "before the middle". Quantiles spend the colours on the spread
+ * whatever shape the series has, so a bar always says where that stretch ranks
+ * among the others beside it.
+ *
+ * Three bands rather than four, and no neutral among them. Neutral is what
+ * `SEVERITY_COLOR` gives the mildest blunder, and it earns that there because a
+ * single mild error nearly is nothing. A block is 25 matches and some sixty
+ * mistakes, so there is no stretch of play here that amounts to nothing — a grey
+ * bar would say one did, and half the strip was grey while saying it. Your best
+ * stretches are yellow, which is the palette's way of saying "still a cost".
+ *
+ * Red takes the whole worse half rather than a quarter of it. Evenly cut
+ * quartiles read as four ranks of equal standing, when what the panel is for is
+ * spotting the bad runs: the half of your record that is worse than the other
+ * half should look like the problem it is.
+ *
+ * Higher is worse on every form measure, since each counts something that went
+ * wrong, so the bands run one way and no measure needs to say which direction is
+ * good.
+ *
+ * The two warm bands reach to the 500 step rather than the 400 the rest of the
+ * app draws charts at. Nothing here is labelled by a Status dot, so there is no
+ * dot to match, and the 400 row's warm end is built to sit beside text: red is
+ * `#ff6358` and orange is `#ffa15e`, a salmon and a peach that at bar width read
+ * as one pale wash with no red in it. `#f9262a` against `#ff8918` is the same
+ * two hues far enough apart to be counted.
+ */
+export const FORM_BANDS = [
+  { id: "worst", label: "in your worse half", from: 0.5, color: "red", step: 500 },
+  { id: "middling", label: "middling for you", from: 0.25, color: "orange", step: 500 },
+  BEST,
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  from: number;
+  color: PaletteColor;
+  step: number;
+}[];
+
+export type FormBand = (typeof FORM_BANDS)[number];
+
+/**
+ * Each block's band, indexed alongside the series it came from.
+ *
+ * The cut points are computed once for the whole series rather than per value,
+ * because a quantile is a fact about the set and not about one member of it.
+ *
+ * A series with no spread — every block identical, which is what a brand new
+ * database looks like — has no worst quarter to find, so all of it reads as the
+ * best band rather than having three quarters of it arbitrarily reddened by ties.
+ */
+export function formBandsFor(series: readonly number[]): FormBand[] {
+  if (series.length === 0) return [];
+  if (Math.max(...series) === Math.min(...series)) return series.map(() => BEST);
+
+  const sorted = [...series].sort((a, b) => a - b);
+  const floors = FORM_BANDS.map((band) => ({
+    band,
+    floor: sorted[Math.min(sorted.length - 1, Math.floor(band.from * sorted.length))] ?? 0,
+  }));
+
+  return series.map((value) => floors.find(({ floor }) => value >= floor)?.band ?? BEST);
+}
+
+/**
  * The band thresholds as a track reads them: ascending, and without the bottom
  * band's floor of 0, which is the start of the track rather than a division in
  * it. Derived from `SEVERITY_BANDS` so a band that moves takes this with it.
@@ -135,12 +243,66 @@ export const ERROR_TRACK_MAX = 0.6;
  * `--palette-*` names a component's own CSS reads, which is no use to an SVG
  * fill handed in as a prop — so this names the token that class resolves to.
  *
- * The 400 step, because that is the one the palette classes land on: a Status
- * dot drawn `red` computes to `#ff6358`, which is `--color-red-400`. Anything
- * else would put a chart segment a shade away from the dot beside it.
+ * The 400 step by default, because that is the one the palette classes land on:
+ * a Status dot drawn `red` computes to `#ff6358`, which is `--color-red-400`.
+ * Anything else would put a chart segment a shade away from the dot beside it.
+ *
+ * `step` is for the charts that have no dot to match. The 400 row is built to
+ * sit beside text, so its warm end is pale — red is `#ff6358`, a salmon, and
+ * orange is `#ffa15e`, a peach. Side by side at bar width those two read as one
+ * colour, and neither reads as red. A chart whose hues have to be told apart
+ * from each other rather than matched to a legend is better served lower down
+ * the ramp; see `FORM_BANDS`.
  */
-export function paletteVar(color: PaletteColor): string {
-  return `var(--color-${color}-400)`;
+export function paletteVar(color: PaletteColor, step: number = 400): string {
+  return `var(--color-${color}-${step})`;
+}
+
+/**
+ * The ramp a ranked composition wears, hottest first.
+ *
+ * `--mc-cat-1` through `--mc-cat-6` is what the charts reach for unasked, and
+ * six hues cycled across seventeen categories would give the biggest leak and
+ * the seventh biggest the same colour — a legend that has to be read twice to
+ * find out which one a segment means.
+ *
+ * So the hues carry rank instead of identity: the ramp runs from the darkest red
+ * to the palest yellow, and because the segments are drawn in that order it says
+ * the same thing their lengths do. It runs across three hues rather than down one
+ * because thirteen steps of a single hue are thirteen shades of red, and the far
+ * end of the bar would be a wash of them.
+ */
+const LEAK_RAMP = [
+  ["red", 800],
+  ["red", 700],
+  ["red", 600],
+  ["red", 500],
+  ["orange", 700],
+  ["orange", 600],
+  ["orange", 500],
+  ["orange", 400],
+  ["yellow", 600],
+  ["yellow", 500],
+  ["yellow", 400],
+  ["yellow", 300],
+  ["yellow", 200],
+] as const satisfies readonly (readonly [PaletteColor, number])[];
+
+/**
+ * `count` colours spread across the whole ramp, worst first.
+ *
+ * Spread rather than sliced, so the tail is always the pale end: a five-category
+ * split taking the first five stops would be five reds and say nothing. Past
+ * thirteen categories two neighbours can land on one stop — segments are drawn
+ * with a gap between them, so the two still read as two.
+ */
+export function leakRamp(count: number): string[] {
+  if (count <= 1) return LEAK_RAMP.slice(0, count).map(([color, step]) => paletteVar(color, step));
+
+  return Array.from({ length: count }, (_, index) => {
+    const [color, step] = LEAK_RAMP[Math.round((index * (LEAK_RAMP.length - 1)) / (count - 1))]!;
+    return paletteVar(color, step);
+  });
 }
 
 export const CUBE_ACTION = [

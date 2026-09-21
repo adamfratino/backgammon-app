@@ -13,6 +13,7 @@ import {
   CUBE_ERRORS,
   cubeDirection,
   DEFAULT_SORT,
+  FORM_WINDOW,
   KIND_FILTER_IDS,
   KIND_FILTERS,
   KINDS,
@@ -393,6 +394,83 @@ const blunderStats = z.object({
 
 type BlunderStats = z.infer<typeof blunderStats>;
 
+/**
+ * One window of play, measured three ways.
+ *
+ * `lost` is the product of the other two — how often you go wrong, times what
+ * going wrong costs — and all three are here because the product on its own
+ * cannot say which half moved. Across this database they disagree completely:
+ * `cost` has sat between 0.145 and 0.197 since February while `mistakes` ran
+ * from 1.72 to 4.48, so the equity is going the same way it always did, just
+ * more often.
+ */
+const formPoint = z.object({
+  /** Decisions gone wrong per match. */
+  mistakes: z.number(),
+  /** Equity given up per mistake — what one of them costs when it happens. */
+  cost: z.number(),
+  /** Equity given up per match, which is `mistakes` × `cost`. */
+  lost: z.number(),
+});
+
+export type FormPoint = z.infer<typeof formPoint>;
+
+/**
+ * How you have been playing, block by block rather than as one total.
+ *
+ * `points` is one point per `FORM_WINDOW` matches, oldest first, and the blocks
+ * share no matches with each other. A rolling average was the other way to cut
+ * this and it is the wrong shape for bars: consecutive rolling windows differ by
+ * a single match, so drawing them as bars would put 646 of them side by side
+ * each repeating 24/25ths of its neighbour. A bar is a quantity you can point
+ * at, which means it has to stand on its own data.
+ *
+ * Blocks are counted back from the newest match, so the last one is always a
+ * full window and it is the oldest matches — however many are left over — that
+ * fall outside. That way the bar the panel reports is never a part-block, and it
+ * does not change shape as the next match lands.
+ *
+ * `now` and `before` are the last two points, so the pair the panel compares is
+ * the pair the chart ends on. Reading them off the series rather than summing
+ * them again separately is what stops the headline figure from disagreeing with
+ * the bars underneath it.
+ */
+const form = z.object({
+  /** How many matches one point covers, so the panel can name its own window. */
+  window: z.number(),
+  /** Every match with a finish time, which is what the blocks are cut from. */
+  matches: z.number(),
+  points: z.array(formPoint),
+  /** The newest full block, or null when there are not yet `window` matches. */
+  now: formPoint.nullable(),
+  /** The block before that one, or null when there is not yet a second. */
+  before: formPoint.nullable(),
+});
+
+type Form = z.infer<typeof form>;
+
+/**
+ * What one category has cost across every match, ranked against the others.
+ *
+ * `equityLost` is the ranking figure rather than `decisions`, because the two
+ * put different categories on top and only one of them is what a match is lost
+ * by. Ranking on `perDecision` was the third option and is the one to avoid:
+ * the whole spread is 0.130 to 0.233, and the top of it is `deep_anchor_game`
+ * off twenty decisions — a rank built from noise. Sorting by the total makes
+ * that problem disappear rather than needing a minimum to guard it, since a
+ * category with too few decisions to trust cannot reach the top on a sum.
+ */
+const leak = z.object({
+  category: z.string(),
+  /** Its share of every decision — `perDecision` is `equityLost` over this. */
+  decisions: z.number(),
+  equityLost: z.number(),
+  /** What one mistake here costs on average. The column the ranking is not. */
+  perDecision: z.number(),
+});
+
+export type Leak = z.infer<typeof leak>;
+
 interface FilterOption {
   group: CountedGroup;
   id: string;
@@ -556,6 +634,113 @@ export const appRouter = router({
 
         return rows as unknown as Category[];
       }),
+  }),
+
+  /**
+   * Every match at once, which is the one question a category cannot be asked.
+   * These take no filters: the sidebar narrows a category, and there is nothing
+   * on the home page for it to narrow — the answer there is the whole record.
+   */
+  overall: router({
+    /**
+     * The form bars: how you have played across the database, a block at a time.
+     *
+     * Cut in SQL rather than over rows in JS because the cut is the query — one
+     * pass over every match joined to its decisions, numbered newest first and
+     * grouped by which block of `FORM_WINDOW` it falls in. `HAVING` is what drops
+     * the leftover oldest matches, so a short block can never be drawn beside
+     * full ones as though it measured the same thing.
+     */
+    form: publicProcedure.output(form).query(({ ctx }) => {
+      const points = ctx.db
+        .prepare(
+          `${WITH_DECISIONS}
+           , per_match AS (
+             SELECT m.match_id,
+                    m.finished_at,
+                    COUNT(d.blunder_id) AS mistakes,
+                    COALESCE(SUM(d.error_magnitude), 0) AS lost
+             FROM matches m
+             LEFT JOIN blunders b ON b.match_id = m.match_id
+             LEFT JOIN decisions d ON d.blunder_id = b.blunder_id
+             WHERE m.finished_at IS NOT NULL
+             GROUP BY m.match_id
+           ),
+           numbered AS (
+             SELECT mistakes,
+                    lost,
+                    -- Newest first, so block 0 is the most recent full window and
+                    -- any remainder falls off the old end. The id breaks ties, so
+                    -- two matches finishing in the same instant still land in one
+                    -- fixed order. Cast because a bound parameter arrives as a
+                    -- float, and dividing by a float is float division rather
+                    -- than integer division — without the cast every match lands
+                    -- in a block of its own.
+                    (ROW_NUMBER() OVER (ORDER BY finished_at DESC, match_id DESC) - 1)
+                      / CAST(? AS INTEGER) AS block
+             FROM per_match
+           )
+           SELECT AVG(mistakes) AS mistakes,
+                  AVG(lost) AS lost,
+                  -- The block's equity over the block's mistakes, not the average
+                  -- of each match's own ratio: a match with no mistakes has no
+                  -- cost to average in, and one with a single catastrophe would
+                  -- otherwise weigh as much as one with six small errors.
+                  SUM(lost) / NULLIF(SUM(mistakes), 0) AS cost
+           FROM numbered
+           GROUP BY block
+           HAVING COUNT(*) = CAST(? AS INTEGER)
+           ORDER BY block DESC`,
+        )
+        .all(FORM_WINDOW, FORM_WINDOW) as unknown as (Omit<FormPoint, "cost"> & {
+        cost: number | null;
+      })[];
+
+      const { matches } = ctx.db
+        .prepare("SELECT COUNT(*) AS matches FROM matches WHERE finished_at IS NOT NULL")
+        .get() as { matches: number };
+
+      // A block with no mistakes in it divides by nothing, so `cost` comes back
+      // null. It is a real answer — nothing went wrong — and the only honest
+      // number for it is zero, which is also what `mistakes` and `lost` read.
+      const costed = points.map((point) => ({ ...point, cost: point.cost ?? 0 }));
+
+      return {
+        window: FORM_WINDOW,
+        matches,
+        points: costed,
+        now: costed.at(-1) ?? null,
+        before: costed.at(-2) ?? null,
+      } satisfies Form;
+    }),
+
+    /**
+     * What each category has cost across every match, worst total first.
+     *
+     * Unfiltered and uncapped: seventeen rows is a table, and cutting it at the
+     * top few would hide the tail the same way rolling it into an "Other"
+     * segment would. The row that makes the table worth reading is in the
+     * middle of it — `blitz` has 110 fewer decisions than `middle_game` and
+     * gives up 67.7 against its 78.0, because each one costs more.
+     */
+    leaks: publicProcedure.output(z.array(leak)).query(({ ctx }) => {
+      const rows = ctx.db
+        .prepare(
+          `${WITH_DECISIONS}
+           SELECT bc.category,
+                  COUNT(*) AS decisions,
+                  SUM(d.error_magnitude) AS equityLost,
+                  AVG(d.error_magnitude) AS perDecision
+           FROM decisions d
+           JOIN blunders b ON b.blunder_id = d.blunder_id
+           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+           GROUP BY bc.category
+           ORDER BY equityLost DESC, bc.category ASC`,
+        )
+        .all();
+
+      return rows as unknown as Leak[];
+    }),
   }),
 
   blunders: router({
