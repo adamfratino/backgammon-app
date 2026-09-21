@@ -20,6 +20,7 @@ import {
   type KindFilter,
   NOTE_MAX_LENGTH,
   PER_PAGE,
+  RECENT_DECISIONS,
   SEVERITIES,
   SEVERITY_BANDS,
   SORT_IDS,
@@ -467,6 +468,8 @@ const leak = z.object({
   equityLost: z.number(),
   /** What one mistake here costs on average. The column the ranking is not. */
   perDecision: z.number(),
+  /** The first `RECENT_DECISIONS` error magnitudes the Newest sort lists. */
+  recent: z.array(z.number()),
 });
 
 export type Leak = z.infer<typeof leak>;
@@ -727,19 +730,33 @@ export const appRouter = router({
       const rows = ctx.db
         .prepare(
           `${WITH_DECISIONS}
-           SELECT bc.category,
+           , aged AS (
+             SELECT bc.category,
+                    d.error_magnitude,
+                    -- The list's own Newest order, so the strip is that sort's
+                    -- first rows in the order it shows them.
+                    ROW_NUMBER() OVER (
+                      PARTITION BY bc.category
+                      ORDER BY ${SORT_ORDER_BY.newest}, ${TIE_BREAKER}
+                    ) AS age
+             FROM decisions d
+             JOIN blunders b ON b.blunder_id = d.blunder_id
+             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+             LEFT JOIN matches m ON m.match_id = b.match_id
+           )
+           SELECT category,
                   COUNT(*) AS decisions,
-                  SUM(d.error_magnitude) AS equityLost,
-                  AVG(d.error_magnitude) AS perDecision
-           FROM decisions d
-           JOIN blunders b ON b.blunder_id = d.blunder_id
-           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-           GROUP BY bc.category
-           ORDER BY equityLost DESC, bc.category ASC`,
+                  SUM(error_magnitude) AS equityLost,
+                  AVG(error_magnitude) AS perDecision,
+                  json_group_array(error_magnitude ORDER BY age)
+                    FILTER (WHERE age <= ?) AS recent
+           FROM aged
+           GROUP BY category
+           ORDER BY equityLost DESC, category ASC`,
         )
-        .all();
+        .all(RECENT_DECISIONS) as unknown as (Omit<Leak, "recent"> & { recent: string })[];
 
-      return rows as unknown as Leak[];
+      return rows.map((row) => ({ ...row, recent: JSON.parse(row.recent) as number[] }));
     }),
   }),
 
