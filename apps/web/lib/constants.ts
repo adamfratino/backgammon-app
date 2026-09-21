@@ -552,9 +552,9 @@ export const KIND_LABELS: Record<KindFilter, string> = {
 };
 
 export const SORTS = [
+  { id: "newest", label: "Newest" },
   { id: "worst", label: "Worst" },
   { id: "mildest", label: "Mildest" },
-  { id: "newest", label: "Newest" },
   { id: "oldest", label: "Oldest" },
 ] as const;
 
@@ -585,7 +585,7 @@ export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 export const CRAWFORD_FILTER_IDS = CRAWFORD_FILTERS.map(({ id }) => id);
 export const STANDING_FILTER_IDS = STANDING_FILTERS.map(({ id }) => id);
 
-export const DEFAULT_SORT: BlunderSort = "worst";
+export const DEFAULT_SORT: BlunderSort = "newest";
 export const DEFAULT_TAB: CategoryTab = "blunders";
 export interface BlunderFilters {
   kinds: KindFilter[];
