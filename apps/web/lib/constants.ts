@@ -258,6 +258,53 @@ export function paletteVar(color: PaletteColor, step: number = 400): string {
   return `var(--color-${color}-${step})`;
 }
 
+/**
+ * The ramp a ranked composition wears, hottest first.
+ *
+ * `--mc-cat-1` through `--mc-cat-6` is what the charts reach for unasked, and
+ * six hues cycled across seventeen categories would give the biggest leak and
+ * the seventh biggest the same colour — a legend that has to be read twice to
+ * find out which one a segment means.
+ *
+ * So the hues carry rank instead of identity: the ramp runs from the darkest red
+ * to the palest yellow, and because the segments are drawn in that order it says
+ * the same thing their lengths do. It runs across three hues rather than down one
+ * because thirteen steps of a single hue are thirteen shades of red, and the far
+ * end of the bar would be a wash of them.
+ */
+const LEAK_RAMP = [
+  ["red", 800],
+  ["red", 700],
+  ["red", 600],
+  ["red", 500],
+  ["orange", 700],
+  ["orange", 600],
+  ["orange", 500],
+  ["orange", 400],
+  ["yellow", 600],
+  ["yellow", 500],
+  ["yellow", 400],
+  ["yellow", 300],
+  ["yellow", 200],
+] as const satisfies readonly (readonly [PaletteColor, number])[];
+
+/**
+ * `count` colours spread across the whole ramp, worst first.
+ *
+ * Spread rather than sliced, so the tail is always the pale end: a five-category
+ * split taking the first five stops would be five reds and say nothing. Past
+ * thirteen categories two neighbours can land on one stop — segments are drawn
+ * with a gap between them, so the two still read as two.
+ */
+export function leakRamp(count: number): string[] {
+  if (count <= 1) return LEAK_RAMP.slice(0, count).map(([color, step]) => paletteVar(color, step));
+
+  return Array.from({ length: count }, (_, index) => {
+    const [color, step] = LEAK_RAMP[Math.round((index * (LEAK_RAMP.length - 1)) / (count - 1))]!;
+    return paletteVar(color, step);
+  });
+}
+
 export const CUBE_ACTION = [
   "double_accepted",
   "double_requested",

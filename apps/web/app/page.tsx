@@ -1,7 +1,7 @@
 import { Stack, Text } from "@uiid/design-system";
 
 import { FormTrend } from "@/components/form-trend";
-import { LeaksTable } from "@/components/leaks-table";
+import { Leaks } from "@/components/leaks";
 
 /**
  * Every match at once — the view with no category, which is why its heading sits
@@ -18,12 +18,12 @@ import { LeaksTable } from "@/components/leaks-table";
 export default function Home() {
   return (
     <Stack render={<main />} ax="stretch" minw={0} fullscreen style={{ overflowY: "auto" }}>
-      <Stack ax="stretch" minw={0} p={6} gap={6}>
+      <Stack ax="stretch" minw={0} p={6} gap={6} maxw={1080}>
         <Text render={<h1 />} size={3} weight="bold">
           Overall
         </Text>
         <FormTrend />
-        <LeaksTable />
+        <Leaks />
       </Stack>
     </Stack>
   );
