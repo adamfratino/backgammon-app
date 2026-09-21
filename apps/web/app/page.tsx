@@ -1,15 +1,8 @@
-import { cookies } from "next/headers";
 import { Group, Stack, Text } from "@uiid/design-system";
 
 import { FormTrend } from "@/components/form-trend";
 import { Leaks } from "@/components/leaks";
 import { RecentMatches } from "@/components/recent-matches";
-import {
-  FLIP_BOARD_COOKIE,
-  flipBoardFrom,
-  PIP_COUNTS_COOKIE,
-  pipCountsFrom,
-} from "@/lib/board-settings";
 
 /**
  * Every match at once — the view with no category, which is why its heading sits
@@ -22,15 +15,9 @@ import {
  * place it went.
  *
  * No filters here. The sidebar narrows a category and there is none to narrow,
- * so every panel reads the record as it stands.
- *
- * Rendered per visit rather than once at build, because the recent matches open
- * a quick view whose board is drawn the way you last set it, and those settings
- * are cookies. It also keeps the newest matches the newest after a scrape.
+ * so every panel reads the record as it stands and the page prerenders with it.
  */
-export default async function Home() {
-  const jar = await cookies();
-
+export default function Home() {
   return (
     <Stack render={<main />} ax="stretch" minw={0} fullscreen style={{ overflowY: "auto" }}>
       <Stack ax="stretch" minw={0} p={6} gap={6} maxw={1260}>
@@ -38,10 +25,7 @@ export default async function Home() {
           Overview
         </Text>
         <Group evenly gap={4} ay="start">
-          <RecentMatches
-            showPipCounts={pipCountsFrom(jar.get(PIP_COUNTS_COOKIE)?.value)}
-            flipBoard={flipBoardFrom(jar.get(FLIP_BOARD_COOKIE)?.value)}
-          />
+          <RecentMatches />
           <Stack gap={6} ax="stretch">
             <FormTrend />
             <Leaks />

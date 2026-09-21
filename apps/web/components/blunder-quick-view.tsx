@@ -6,6 +6,7 @@ import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, XIcon } from "@uiid/design-
 
 import { parseXgid, pipCount } from "@repo/core";
 
+import { recallFlipBoard, recallPipCounts } from "@/lib/board-settings";
 import type { Blunder } from "@/server/router";
 
 import { BoardArea } from "./board-area";
@@ -20,10 +21,14 @@ interface BlunderQuickViewProps {
   rows: QuickViewRow[];
   /** Where `blunder` sits in `rows`. */
   startIndex: number;
-  /** The pip-count setting as the server read it when the page rendered. */
-  showPipCounts: boolean;
+  /**
+   * The pip-count setting as the server read it when the page rendered. A page
+   * built once rather than per visit has no cookie to read, so it leaves this
+   * out and the board reads the cookie itself when the dialog opens.
+   */
+  showPipCounts?: boolean;
   /** Which way round the board faces, read from its own cookie the same way. */
-  flipBoard: boolean;
+  flipBoard?: boolean;
 }
 
 /**
@@ -160,8 +165,8 @@ function QuickViewBoard({
       cube_action={cube_action}
       parsed={parsed}
       pipCounts={pipCounts}
-      showPipCounts={showPipCounts}
-      flipBoard={flipBoard}
+      showPipCounts={showPipCounts ?? recallPipCounts()}
+      flipBoard={flipBoard ?? recallFlipBoard()}
     />
   );
 }

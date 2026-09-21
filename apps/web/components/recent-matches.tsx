@@ -30,12 +30,6 @@ import type { RecentBlunder, RecentMatch } from "@/server/router";
 
 import { BlunderQuickView } from "./blunder-quick-view";
 
-/** The board settings as the page read them, for the boards a line can open. */
-interface BoardSettings {
-  showPipCounts: boolean;
-  flipBoard: boolean;
-}
-
 /**
  * Your newest matches, one at a time, each with every blunder you made in it.
  *
@@ -43,7 +37,7 @@ interface BoardSettings {
  * anything about form or leaks — and it is also why nothing else on it can say
  * what happened in the match you just finished.
  */
-export async function RecentMatches(settings: BoardSettings) {
+export async function RecentMatches() {
   const matches = await caller.overall.recentMatches();
 
   // One run of every line on the card, so a quick view steps from the end of one
@@ -66,7 +60,7 @@ export async function RecentMatches(settings: BoardSettings) {
           {matches.map((match, index) => (
             <Fragment key={match.match_id}>
               {index > 0 && <Separator />}
-              <Match match={match} rows={rows} {...settings} />
+              <Match match={match} rows={rows} />
             </Fragment>
           ))}
         </Stack>
@@ -75,17 +69,13 @@ export async function RecentMatches(settings: BoardSettings) {
   );
 }
 
-interface MatchProps extends BoardSettings {
+interface MatchProps {
   match: RecentMatch;
   /** Every line on the card, for the quick view to step through. */
   rows: RecentBlunder[];
 }
 
-function Match({
-  match: { finished_on, opponent, yours, theirs, blunders },
-  rows,
-  ...settings
-}: MatchProps) {
+function Match({ match: { finished_on, opponent, yours, theirs, blunders }, rows }: MatchProps) {
   const equityLost = blunders.reduce((sum, blunder) => sum + blunder.error_magnitude, 0);
 
   return (
@@ -128,7 +118,6 @@ function Match({
             key={`${blunder.blunder_id}-${blunder.kind}`}
             blunder={blunder}
             rows={rows}
-            {...settings}
           />
         ))}
       </List>
@@ -141,11 +130,7 @@ function Match({
  * line names where you went wrong and leaves what you played to the blunder's
  * own page.
  */
-function BlunderLine({
-  blunder,
-  rows,
-  ...settings
-}: Omit<MatchProps, "match"> & { blunder: RecentBlunder }) {
+function BlunderLine({ blunder, rows }: Pick<MatchProps, "rows"> & { blunder: RecentBlunder }) {
   const { kind, cube_action, error_magnitude, score_black, score_white, source_xgid, category } =
     blunder;
 
@@ -166,12 +151,7 @@ function BlunderLine({
         {/* Beside the quiz, as in the table: the same position, without the quiz. */}
         <Group ay="center" gap={1}>
           {source_xgid && (
-            <BlunderQuickView
-              blunder={blunder}
-              rows={rows}
-              startIndex={rows.indexOf(blunder)}
-              {...settings}
-            />
+            <BlunderQuickView blunder={blunder} rows={rows} startIndex={rows.indexOf(blunder)} />
           )}
           <Button
             size="small"
