@@ -136,7 +136,9 @@ function BlunderLine({ blunder, rows }: Pick<MatchProps, "rows"> & { blunder: Re
     <ListItem data-slot="blunder-line" ay="center">
       <Group ay="center" gap={2}>
         <Badge color={SEVERITY_COLOR[severity]}>{error_magnitude.toFixed(3)}</Badge>
-        <Text size={-1}>{categoryLabel(category)}</Text>
+        <Link href={`/${category}`}>
+          <Text size={-1}>{categoryLabel(category)}</Text>
+        </Link>
       </Group>
       <Group ay="center" gap={3}>
         <Text size={-1} shade="muted">
