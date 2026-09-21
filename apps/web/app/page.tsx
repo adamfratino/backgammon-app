@@ -33,9 +33,9 @@ export default async function Home() {
 
   return (
     <Stack render={<main />} ax="stretch" minw={0} fullscreen style={{ overflowY: "auto" }}>
-      <Stack ax="stretch" minw={0} p={6} gap={6}>
+      <Stack ax="stretch" minw={0} p={6} gap={6} maxw={1260}>
         <Text render={<h1 />} size={3} weight="bold">
-          Overall
+          Overview
         </Text>
         <Group evenly gap={4} ay="start">
           <RecentMatches

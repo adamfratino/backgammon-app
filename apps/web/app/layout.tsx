@@ -11,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <Group render={<body />} m={0} fullscreen style={{ ...chartTheme.style, overflow: "hidden" }}>
         <TRPCReactProvider>
-          <Stack gap={6} p={6} br={1} ay="stretch">
+          <Stack gap={6} p={6} pr={3} br={1} ay="stretch">
             <CategoryNav />
           </Stack>
           {children}

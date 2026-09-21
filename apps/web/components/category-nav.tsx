@@ -1,17 +1,18 @@
-import { Stack, type StackProps, Text } from "@uiid/design-system";
+import { Stack, Group, Separator, type StackProps, Text } from "@uiid/design-system";
+import { TentTreeIcon } from "@uiid/design-system/icons";
 
 import { caller } from "@/server/caller";
 import { SIDEBAR_MINWIDTH } from "@/lib/constants";
 
 import { CategoryCounts } from "./category-counts";
 
-const OUTER_PADDING: StackProps["p"] = 0;
 const OUTER_GAP: StackProps["gap"] = 6;
 
 export function CategoryNav() {
   return (
     <CategoryContainer>
       <CategoryTitle />
+      <Separator />
       <CategoryList />
     </CategoryContainer>
   );
@@ -21,7 +22,6 @@ const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
   <Stack
     render={<nav />}
     aria-label="Blunder categories"
-    p={OUTER_PADDING}
     gap={OUTER_GAP}
     minw={SIDEBAR_MINWIDTH}
     ax="stretch"
@@ -31,8 +31,9 @@ const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
 );
 
 const CategoryTitle = () => (
-  <Text render={<h2 />} size={1} weight="bold">
-    Select a category
+  <Text render={<Group gap={3} ay="start" render={<h2 />} />} size={3} weight="bold">
+    <TentTreeIcon aria-label="A tent with a tree" size={30} /> &middot; Gammon &middot; Camp
+    &middot;
   </Text>
 );
 
