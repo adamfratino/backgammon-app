@@ -21,6 +21,7 @@ import {
   NOTE_MAX_LENGTH,
   PER_PAGE,
   RECENT_DECISIONS,
+  RECENT_MATCHES,
   SEVERITIES,
   SEVERITY_BANDS,
   SORT_IDS,
@@ -474,6 +475,39 @@ const leak = z.object({
 
 export type Leak = z.infer<typeof leak>;
 
+/**
+ * A list row cut down to what the recent matches card draws, links with and
+ * opens a quick view on, plus the category the link needs — a list row never
+ * carries one, because its table is already inside the category.
+ */
+const recentBlunder = blunder
+  .pick({
+    blunder_id: true,
+    kind: true,
+    both: true,
+    cube_action: true,
+    error_magnitude: true,
+    score_black: true,
+    score_white: true,
+    source_xgid: true,
+  })
+  .extend({ category: z.string() });
+
+/** One of your newest matches and every decision you got wrong in it, in the order you made them. */
+const recentMatch = z.object({
+  match_id: z.number(),
+  /** The day it finished, UTC, as `YYYY-MM-DD` — the same day the table prints. */
+  finished_on: z.string(),
+  opponent: z.string().nullable(),
+  /** The final score, your points first, as `MatchScore` reads a running one. */
+  yours: z.number().nullable(),
+  theirs: z.number().nullable(),
+  blunders: z.array(recentBlunder),
+});
+
+export type RecentBlunder = z.infer<typeof recentBlunder>;
+export type RecentMatch = z.infer<typeof recentMatch>;
+
 interface FilterOption {
   group: CountedGroup;
   id: string;
@@ -757,6 +791,56 @@ export const appRouter = router({
         .all(RECENT_DECISIONS) as unknown as (Omit<Leak, "recent"> & { recent: string })[];
 
       return rows.map((row) => ({ ...row, recent: JSON.parse(row.recent) as number[] }));
+    }),
+
+    /**
+     * Your newest matches, newest first, each with its blunders.
+     *
+     * Newest as far as the database knows: the scraper builds a match's row out
+     * of its blunders, so a match played without one never gets a row and cannot
+     * be among these.
+     */
+    recentMatches: publicProcedure.output(z.array(recentMatch)).query(({ ctx }) => {
+      const matches = ctx.db
+        .prepare(
+          `SELECT match_id, date(finished_at) AS finished_on, opponent_name AS opponent,
+                  self_score AS yours, opponent_score AS theirs
+           FROM matches
+           WHERE finished_at IS NOT NULL
+           ORDER BY finished_at DESC, match_id DESC
+           LIMIT ?`,
+        )
+        .all(RECENT_MATCHES) as unknown as Omit<RecentMatch, "blunders">[];
+
+      // In the order you made them, which splitting by match below keeps. Ids
+      // run through a match in play order: taken that way, the points scored
+      // never fall between one blunder and the next across 992 pairs, and within
+      // a game the pips left on the board fall in 447 of 492 — the rest are
+      // hits. `cube` sorts after `checker`, so descending puts a `both`
+      // blunder's cube first, which is where it came: before the dice were thrown.
+      const rows = ctx.db
+        .prepare(
+          `${WITH_DECISIONS}
+           SELECT b.match_id, d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action,
+                  d.error_magnitude, b.score_black, b.score_white, b.source_xgid, bc.category
+           FROM decisions d
+           JOIN blunders b ON b.blunder_id = d.blunder_id
+           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+           WHERE b.match_id IN (SELECT value FROM json_each(?))
+           ORDER BY d.blunder_id ASC, d.kind DESC`,
+        )
+        .all(JSON.stringify(matches.map(({ match_id }) => match_id))) as unknown as (Omit<
+        RecentBlunder,
+        "both"
+      > & { match_id: number; both: number })[];
+
+      // `.output()` strips `match_id` off each blunder once it has done its job here.
+      return matches.map((match) => ({
+        ...match,
+        blunders: rows
+          .filter((row) => row.match_id === match.match_id)
+          .map((row) => ({ ...row, both: row.both === 1 })),
+      }));
     }),
   }),
 
