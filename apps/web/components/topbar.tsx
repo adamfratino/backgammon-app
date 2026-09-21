@@ -7,6 +7,8 @@ import { Breadcrumbs, Stack } from "@uiid/design-system";
 
 import { categoryHref, categoryLabel } from "@/lib/constants";
 
+const HOME = { label: "Home", value: "/" };
+
 interface TrailProps {
   category: string;
   /** The open blunder's id, or nothing when the category's list is what's open. */
@@ -21,24 +23,23 @@ interface TrailProps {
  * top of it. The sidebar's category link already did that; this puts it where
  * you are looking when you want out, and names the blunder you're in on the way.
  *
- * Which of the two pages is open is read off the route rather than passed in,
- * because a layout cannot see the child route it wraps.
+ * Which page is open is read off the route rather than passed in, because the
+ * root layout is given no params and cannot see the child route it wraps.
  */
-export function CategoryTopbar({ category }: { category: string }) {
-  const { blunderId } = useParams<{ blunderId?: string }>();
+export function Topbar() {
+  const { category, blunderId } = useParams<{ category?: string; blunderId?: string }>();
 
   return (
-    <Stack
-      px={6}
-      py={4}
-      bb={1}
-      style={{ position: "sticky", top: 0, zIndex: 1, backgroundColor: "var(--shade-background)" }}
-    >
-      <Suspense
-        fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}
-      >
-        <ViewTrail category={category} blunderId={blunderId} />
-      </Suspense>
+    <Stack px={6} py={4} bb={1}>
+      {category === undefined ? (
+        <Breadcrumbs items={[HOME]} linkAs={Link} />
+      ) : (
+        <Suspense
+          fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}
+        >
+          <ViewTrail category={category} blunderId={blunderId} />
+        </Suspense>
+      )}
     </Stack>
   );
 }
@@ -60,10 +61,7 @@ function ViewTrail({ category, blunderId }: TrailProps) {
  * plain text rather than a link back to itself.
  */
 function Trail({ category, blunderId, href }: TrailProps & { href: string }) {
-  const items = [
-    { label: "Blunders", value: "/" },
-    { label: categoryLabel(category), value: href },
-  ];
+  const items = [HOME, { label: categoryLabel(category), value: href }];
 
   if (blunderId !== undefined) {
     items.push({ label: `#${blunderId}`, value: `/${category}/${blunderId}` });

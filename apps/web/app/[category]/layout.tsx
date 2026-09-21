@@ -1,8 +1,6 @@
 import { headers } from "next/headers";
 import { dehydrate, HydrationBoundary, noop } from "@tanstack/react-query";
-import { Stack } from "@uiid/design-system";
 
-import { CategoryTopbar } from "@/components/category-topbar";
 import { filtersFrom, pageFrom, sortFrom, tabFrom } from "@/lib/constants";
 import { getQueryClient, trpc } from "@/trpc/server";
 
@@ -30,17 +28,5 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
       .catch(noop);
   }
 
-  return (
-    <Stack
-      data-slot="category-layout"
-      render={<main />}
-      ax="stretch"
-      minw={0}
-      fullscreen
-      style={{ overflowY: "auto" }}
-    >
-      <CategoryTopbar category={category} />
-      <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>
-    </Stack>
-  );
+  return <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>;
 }

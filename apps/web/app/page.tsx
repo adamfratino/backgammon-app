@@ -10,24 +10,22 @@ export default function Home() {
   return (
     <Stack
       data-slot="root-page"
-      render={<main />}
       ax="stretch"
       minw={0}
-      fullscreen
-      style={{ overflowY: "auto" }}
+      p={SPACING_LG}
+      gap={SPACING_LG}
+      maxw={MAIN_MAXWIDTH}
     >
-      <Stack ax="stretch" minw={0} p={SPACING_LG} gap={SPACING_LG} maxw={MAIN_MAXWIDTH}>
-        <Text render={<h1 />} size={3} weight="bold">
-          Overview
-        </Text>
-        <Group evenly gap={SPACING_SM} ay="start">
-          <RecentMatches />
-          <Stack gap={SPACING_LG} ax="stretch">
-            <FormTrend />
-            <Leaks />
-          </Stack>
-        </Group>
-      </Stack>
+      <Text render={<h1 />} size={3} weight="bold">
+        Overview
+      </Text>
+      <Group evenly gap={SPACING_SM} ay="start">
+        <RecentMatches />
+        <Stack gap={SPACING_LG} ax="stretch">
+          <FormTrend />
+          <Leaks />
+        </Stack>
+      </Group>
     </Stack>
   );
 }
