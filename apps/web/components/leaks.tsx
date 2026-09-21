@@ -1,7 +1,5 @@
 import Link from "next/link";
-// Named for what it does here rather than what the library calls it, the same
-// way the statistics panel names its own.
-import { SegmentedBar as ShareBar } from "@microcharts/react/segmented-bar";
+
 import { Card, Group, List, ListItem, Stack, Status, Text } from "@uiid/design-system";
 
 import {
@@ -16,16 +14,8 @@ import {
 import { caller } from "@/server/caller";
 import type { Leak } from "@/server/router";
 
-/**
- * An aspect ratio rather than a size: the bar stretches to the card and keeps
- * its shape, a rule across the top of it at around sixty pixels tall.
- *
- * Taller in ratio than it looks, because the height follows the width: the card
- * shares its row with the recent matches, so the bar spans only half the page
- * less the card's padding — sixty-three pixels tall at a 1512-wide window.
- */
-const SHARE_WIDTH = 320;
-const SHARE_HEIGHT = 38;
+import { ShareBar } from "./leaks-sharebar";
+import { HydrationBoundary } from "@tanstack/react-query";
 
 /**
  * Where your equity actually goes, by category, across every match.
@@ -55,8 +45,6 @@ export async function Leaks() {
   return (
     <Card
       title="Where the equity goes"
-      // An `h2` rather than the `h3` a card titles itself with: this is a panel
-      // of the page rather than a card among cards.
       TitleProps={{ render: <h2 /> }}
       description={`Ranked by what each category has cost in total, not by how often you go wrong there. The dots are each one's last ${RECENT_DECISIONS} mistakes, newest first.`}
     >
@@ -65,30 +53,8 @@ export async function Leaks() {
           No blunders yet.
         </Text>
       ) : (
-        // `fullwidth` because a card's inner container does not stretch what it
-        // holds: without it this stack is as wide as its widest line, and the
-        // bar — which takes its width from its parent and its height from its
-        // width — comes out both narrow and short.
         <Stack ax="stretch" gap={4} mt={2} fullwidth>
-          {/* Every category, however many there are: the rollup this chart does
-              unasked keeps five and calls the rest "Other", and "Other" here
-              would be a third of your equity with no name on it. */}
-          <ShareBar
-            data={data}
-            maxSegments={leaks.length}
-            // The query ranked them, so ordering again would only risk
-            // disagreeing with the list.
-            order="data"
-            colors={colors}
-            // No percentages inside the segments: only the widest two or three
-            // can seat one, so the label says nothing about the tail it drops
-            // out of — and the list below carries every figure anyway.
-            label="none"
-            width={SHARE_WIDTH}
-            height={SHARE_HEIGHT}
-            style={{ width: "100%" }}
-          />
-
+          <ShareBar data={data} maxSegments={leaks.length} colors={colors} />
           <Legend leaks={leaks} colors={colors} total={equityLost} />
         </Stack>
       )}

@@ -9,7 +9,13 @@ import "@microcharts/react/styles.css";
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <Group render={<body />} m={0} fullscreen style={{ ...chartTheme.style, overflow: "hidden" }}>
+      <Group
+        data-slot="root-layout"
+        render={<body />}
+        m={0}
+        fullscreen
+        style={{ ...chartTheme.style, overflow: "hidden" }}
+      >
         <TRPCReactProvider>
           <Stack gap={6} p={6} pr={3} br={1} ay="stretch">
             <CategoryNav />

@@ -12,13 +12,15 @@ import {
   PIP_COUNTS_COOKIE,
   pipCountsFrom,
 } from "@/lib/board-settings";
-import { tabFrom, categoryLabel } from "@/lib/constants";
+import { tabFrom, categoryLabel, SPACING_LG, SPACING_SM } from "@/lib/constants";
 import { caller } from "@/server/caller";
 
 interface CategoryPageProps {
   params: Promise<{ category: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
+
+const topbarStyles: React.CSSProperties = { position: "sticky", top: "calc(3rem + 1px)" };
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
   const [{ category }, query, topCubeValue, longestMatch, jar] = await Promise.all([
@@ -35,9 +37,9 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
   const tab = tabFrom(typeof query.tab === "string" ? query.tab : null);
 
   return (
-    <Group ay="start" fullwidth>
-      <Stack ax="stretch" minw={0} p={6} gap={6} style={{ flex: 1 }}>
-        <Group ay="center" gap={3}>
+    <Group data-slot="category-page" ay="start" fullwidth>
+      <Stack ax="stretch" minw={0} p={SPACING_LG} gap={SPACING_LG} style={{ flex: 1 }}>
+        <Group ay="center" gap={SPACING_SM}>
           <Text render={<h1 />} size={3} weight="bold">
             {categoryLabel(category)}
           </Text>
@@ -49,7 +51,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
           <BlunderTable category={category} showPipCounts={showPipCounts} flipBoard={flipBoard} />
         )}
       </Stack>
-      <Stack gap={6} bl={1} bb={1} p={6} style={{ position: "sticky", top: "calc(3rem + 1px)" }}>
+      <Stack gap={SPACING_LG} bl={1} bb={1} p={SPACING_LG} style={topbarStyles}>
         <BlunderFilterPanel
           category={category}
           topCubeValue={topCubeValue}

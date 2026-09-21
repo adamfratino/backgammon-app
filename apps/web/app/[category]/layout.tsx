@@ -11,13 +11,6 @@ interface CategoryLayoutProps {
   children: React.ReactNode;
 }
 
-/**
- * The topbar, and the page of the list the URL asks for — when the URL is asking
- * for the list at all. The table draws that page, and a blunder's Previous and
- * Next read their neighbours from it, so both pages below start with it already
- * in the cache; a category opened on its statistics has no rows to draw and
- * skips it.
- */
 export default async function CategoryLayout({ params, children }: CategoryLayoutProps) {
   const { category } = await params;
 
@@ -38,7 +31,14 @@ export default async function CategoryLayout({ params, children }: CategoryLayou
   }
 
   return (
-    <Stack render={<main />} ax="stretch" minw={0} fullscreen style={{ overflowY: "auto" }}>
+    <Stack
+      data-slot="category-layout"
+      render={<main />}
+      ax="stretch"
+      minw={0}
+      fullscreen
+      style={{ overflowY: "auto" }}
+    >
       <CategoryTopbar category={category} />
       <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>
     </Stack>

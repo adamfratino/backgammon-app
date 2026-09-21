@@ -40,14 +40,12 @@ import { BlunderQuickView } from "./blunder-quick-view";
 export async function RecentMatches() {
   const matches = await caller.overall.recentMatches();
 
-  // One run of every line on the card, so a quick view steps from the end of one
-  // match straight into the next the way the eye does.
   const rows = matches.flatMap(({ blunders }) => blunders);
 
   return (
     <Card
+      data-slot="recent-matches"
       title={`Last ${RECENT_MATCHES} matches`}
-      // An `h2` for the same reason as the card beside it: a panel of the page.
       TitleProps={{ render: <h2 /> }}
       description="Every blunder in each of your newest matches, in the order you made them."
     >
@@ -71,7 +69,6 @@ export async function RecentMatches() {
 
 interface MatchProps {
   match: RecentMatch;
-  /** Every line on the card, for the quick view to step through. */
   rows: RecentBlunder[];
 }
 
@@ -79,10 +76,10 @@ function Match({ match: { finished_on, opponent, yours, theirs, blunders }, rows
   const equityLost = blunders.reduce((sum, blunder) => sum + blunder.error_magnitude, 0);
 
   return (
-    <Stack ax="stretch" gap={2} fullwidth>
+    <Stack data-slot="match" ax="stretch" gap={2} fullwidth>
       <Group ax="space-between" ay="start" gap={4} fullwidth>
         <Stack gap={1}>
-          <Group ay="baseline" gap={2}>
+          <Group ay="center" gap={2}>
             {yours !== null && theirs !== null && (
               <Text weight="bold">{`${yours > theirs ? "Won" : "Lost"} ${yours}–${theirs}`}</Text>
             )}
@@ -91,16 +88,14 @@ function Match({ match: { finished_on, opponent, yours, theirs, blunders }, rows
                 vs {opponent}
               </Text>
             )}
-          </Group>
-          <Group ay="center" gap={2}>
-            <CalendarIcon size={12} />
-            <Text size={-1} shade="muted">
-              {DAY.format(new Date(finished_on))}
-            </Text>
+            <Group ay="center" gap={2}>
+              <CalendarIcon size={12} />
+              <Text size={-1} shade="muted">
+                {DAY.format(new Date(finished_on))}
+              </Text>
+            </Group>
           </Group>
         </Stack>
-        {/* The two figures the rest of the page is made of, for this one match,
-            each in the colour its own band gives it. */}
         <Group ay="center" gap={2}>
           <Badge color={SEVERITY_COLOR[matchSeverityOf("blunders", blunders.length)]}>
             {blunders.length} {blunders.length === 1 ? "blunder" : "blunders"}
@@ -113,8 +108,8 @@ function Match({ match: { finished_on, opponent, yours, theirs, blunders }, rows
 
       <List marker="none" fullwidth>
         {blunders.map((blunder) => (
-          // A `both` blunder is two lines under one id, so the id alone isn't a key.
           <BlunderLine
+            // A `both` blunder is two lines under one id, so the id alone isn't a key.
             key={`${blunder.blunder_id}-${blunder.kind}`}
             blunder={blunder}
             rows={rows}
@@ -138,7 +133,7 @@ function BlunderLine({ blunder, rows }: Pick<MatchProps, "rows"> & { blunder: Re
   const standing = matchScoreOf(score_black, score_white);
 
   return (
-    <ListItem ay="center">
+    <ListItem data-slot="blunder-line" ay="center">
       <Group ay="center" gap={2}>
         <Badge color={SEVERITY_COLOR[severity]}>{error_magnitude.toFixed(3)}</Badge>
         <Text size={-1}>{categoryLabel(category)}</Text>
@@ -148,7 +143,6 @@ function BlunderLine({ blunder, rows }: Pick<MatchProps, "rows"> & { blunder: Re
           {KIND_LABELS[kindCategory(kind, cube_action)]}
           {standing !== null && ` at ${standing.yours}–${standing.theirs}`}
         </Text>
-        {/* Beside the quiz, as in the table: the same position, without the quiz. */}
         <Group ay="center" gap={1}>
           {source_xgid && (
             <BlunderQuickView blunder={blunder} rows={rows} startIndex={rows.indexOf(blunder)} />
@@ -159,7 +153,6 @@ function BlunderLine({ blunder, rows }: Pick<MatchProps, "rows"> & { blunder: Re
             variant="subtle"
             render={<Link href={blunderHref(category, blunder, "")} />}
             tooltip="Take blunder quiz"
-            aria-label="Take blunder quiz"
           >
             <GraduationCapIcon />
           </Button>

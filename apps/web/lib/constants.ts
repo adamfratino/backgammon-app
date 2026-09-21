@@ -2,6 +2,9 @@ import type { PaletteColor } from "@uiid/design-system";
 
 export const SIDEBAR_MINWIDTH = 260;
 export const SIDEBAR_MAXWIDTH = 480;
+export const MAIN_MAXWIDTH = 1260;
+export const SPACING_LG = 6;
+export const SPACING_SM = SPACING_LG / 2;
 
 export const PER_PAGE = 15;
 export const PAGE_SPREAD = 1;

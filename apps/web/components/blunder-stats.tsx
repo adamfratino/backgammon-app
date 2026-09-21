@@ -3,12 +3,9 @@
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-// The interactive build, for the hover: the static one draws the same ring
-// but has nothing to say when you point at a wedge.
 import { MicroDonut } from "@microcharts/react/micro-donut/interactive";
-// Named for what it does here rather than what the library calls it, and so a
-// reader never has to work out which of two `Progress` exports this is.
 import { Progress as ShareBar } from "@microcharts/react/progress";
+
 import { type PaletteColor, Group, Stack, Status, Text } from "@uiid/design-system";
 
 import {
@@ -23,22 +20,14 @@ import {
 } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
-/**
- * Big enough that four wedges are still four wedges, small enough that two of
- * these fit side by side in half a column with their legends beside them.
- */
+// why can't this just be at root?
+import "@microcharts/react/motion";
+
 const DONUT_SIZE = 96;
-
-/** Three times the library's own 5, which draws a ring rather than a hairline. */
 const DONUT_WEIGHT = 15;
-
-/** Wide enough to read a share off, narrow enough to sit inside a legend row. */
 const SHARE_BAR_WIDTH = 64;
-
-/** A rule's worth of height — the bar is a length, not a shape. */
 const SHARE_BAR_HEIGHT = 8;
 
-/** One line of a panel: what went wrong, how often, and what it cost. */
 interface StatRow {
   id: string;
   label: string;
@@ -87,9 +76,6 @@ export function BlunderStats({ category }: { category: string }) {
     }));
 
   return (
-    // No rule above: the border and the padding under it were what separated
-    // these from the table they used to sit beneath, and on their own tab they
-    // start at the top of the column like the table does.
     <Stack
       aria-busy={isPlaceholderData}
       style={{ opacity: isPlaceholderData ? 0.5 : 1 }}
@@ -103,10 +89,6 @@ export function BlunderStats({ category }: { category: string }) {
         rows={bands}
       />
 
-      {/* One under the other, in the order the cube reaches you: what you did
-          with it, then what you did when it came back. Each panel is as wide as
-          the one above, so a wedge in one is the same size as a wedge in
-          another and the three can be read down rather than across. */}
       {(Object.keys(CUBE_PANELS) as CubeDirection[]).map((side) => {
         const rows = cubeRows(side);
         const { title, description } = CUBE_PANELS[side];
@@ -217,6 +199,7 @@ function StatDonut({ rows }: { rows: StatRow[] }) {
     <Stack ax="stretch" gap={3}>
       <Group ay="center" gap={5}>
         <MicroDonut
+          animate
           data={wedges.map(({ label, decisions }) => ({ label, value: decisions }))}
           colors={wedges.map(({ color }) => paletteVar(color))}
           size={DONUT_SIZE}

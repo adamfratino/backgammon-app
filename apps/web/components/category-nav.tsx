@@ -1,5 +1,5 @@
 import { Stack, Group, Separator, type StackProps, Text } from "@uiid/design-system";
-import { TentTreeIcon } from "@uiid/design-system/icons";
+import { TentIcon } from "@uiid/design-system/icons";
 
 import { caller } from "@/server/caller";
 import { SIDEBAR_MINWIDTH } from "@/lib/constants";
@@ -31,9 +31,9 @@ const CategoryContainer = ({ children }: { children: React.ReactNode }) => (
 );
 
 const CategoryTitle = () => (
-  <Text render={<Group gap={3} ay="start" render={<h2 />} />} size={3} weight="bold">
-    <TentTreeIcon aria-label="A tent with a tree" size={30} /> &middot; Gammon &middot; Camp
-    &middot;
+  <Text render={<Group gap={2} ay="start" render={<h2 />} />} size={3} weight="bold">
+    <TentIcon aria-label="A tent with a tree" size={30} />
+    &middot; Gammon &middot; Camp &middot;
   </Text>
 );
 

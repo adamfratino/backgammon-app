@@ -5,7 +5,7 @@ import { Button, Stack, Group, Separator, Text, Textarea } from "@uiid/design-sy
 
 import { parseXgid, pipCount } from "@repo/core";
 
-import { openDecision, SIDEBAR_MAXWIDTH } from "@/lib/constants";
+import { openDecision, SIDEBAR_MAXWIDTH, SPACING_LG, SPACING_SM } from "@/lib/constants";
 import {
   FLIP_BOARD_COOKIE,
   flipBoardFrom,
@@ -60,14 +60,14 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
   // inheriting the last one's pick when Next swaps the page.
   return (
     <Provider>
-      <Stack gap={6} p={6}>
-        <Group gap={3} ay="center">
+      <Stack data-slot="blunderid-page" gap={SPACING_LG} p={SPACING_LG}>
+        <Group gap={SPACING_SM} ay="center">
           <BlunderStepper category={category} blunderId={blunderId} />
           <Text render={<h1 />} size={3} weight="bold">
             Blunder #{blunderId}
           </Text>
         </Group>
-        <Group ay="start" fullwidth gap={6}>
+        <Group ay="start" fullwidth gap={SPACING_LG}>
           <BlunderAnalysis
             detail={detail}
             parsed={parsed}
@@ -75,7 +75,7 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
             showPipCounts={showPipCounts}
             flipBoard={flipBoard}
           />
-          <Stack gap={6} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
+          <Stack gap={SPACING_LG} fullwidth maxw={SIDEBAR_MAXWIDTH} ax="stretch">
             <Separator />
             <BlunderIntroText
               score_black={detail.score_black}
@@ -91,13 +91,13 @@ export default async function BlunderPage({ params, searchParams }: BlunderPageP
             />
             <PreviousDecisions decisions={detail.decisions} />
             <Separator />
-            {/* A cube blunder has no candidate plays, so it is asked about the
-              cube instead. The note below is about whichever was asked. */}
+
             {decision === "cube" ? (
               <BlunderCubeChoices cube_action={detail.cube_action} />
             ) : (
               <BlunderPlays candidates={detail.candidates} />
             )}
+
             <Textarea label="Any thoughts about your decision?" />
             <Button>Submit</Button>
           </Stack>
