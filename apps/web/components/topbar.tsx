@@ -2,12 +2,13 @@
 
 import { Suspense } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { Breadcrumbs, Stack } from "@uiid/design-system";
 
 import { categoryHref, categoryLabel } from "@/lib/constants";
 
 const HOME = { label: "Home", value: "/" };
+const MATCHES = { label: "Matches", value: "/matches" };
 
 interface TrailProps {
   category: string;
@@ -28,11 +29,12 @@ interface TrailProps {
  */
 export function Topbar() {
   const { category, blunderId } = useParams<{ category?: string; blunderId?: string }>();
+  const pathname = usePathname();
 
   return (
     <Stack px={6} py={4} bb={1}>
       {category === undefined ? (
-        <Breadcrumbs items={[HOME]} linkAs={Link} />
+        <Breadcrumbs items={pathname === MATCHES.value ? [HOME, MATCHES] : [HOME]} linkAs={Link} />
       ) : (
         <Suspense
           fallback={<Trail category={category} blunderId={blunderId} href={`/${category}`} />}

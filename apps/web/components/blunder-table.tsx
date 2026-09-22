@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData, noop } from "@tanstack/react-query";
 import {
   Badge,
   Button,
@@ -43,7 +43,7 @@ import {
 import { matchScoreOf } from "@/lib/score";
 import { useTRPC } from "@/trpc/client";
 
-import { BlunderTablePagination } from "./blunder-table-pagination";
+import { ViewPagination } from "./view-pagination";
 
 interface BlunderTableProps {
   category: string;
@@ -60,6 +60,7 @@ interface BlunderTableProps {
  */
 export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTableProps) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
 
   const searchParams = useSearchParams();
   const page = pageFrom(searchParams.get("page"));
@@ -129,12 +130,17 @@ export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTabl
       </TableContainer>
 
       <Group gap={2} fullwidth ax="space-between">
-        <BlunderTablePagination
+        {/* Paging is a move within the blunders half — the statistics have no
+            pages — so every link lands back on the half it was drawn under. */}
+        <ViewPagination
           page={page}
           total={data.total}
-          category={category}
-          filters={filters}
-          sort={sort}
+          view={viewParams(filters, sort, DEFAULT_TAB).toString()}
+          prefetch={(n) =>
+            queryClient
+              .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters, sort }))
+              .catch(noop)
+          }
         />
         <Text shade="muted">
           Showing {first}–{last} of <data value={data.total}>{data.total}</data>

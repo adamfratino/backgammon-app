@@ -15,6 +15,8 @@ export interface NormalizedMatch {
   opponent_id: string | null;
   opponent_name: string | null;
   opponent_score: number | null;
+  self_error_rate: number | null;
+  opponent_error_rate: number | null;
 }
 
 export interface NormalizedBlunder {
@@ -118,6 +120,8 @@ function normalizeMatch(
   const opponent = selfIsPlayer1 ? a.player2 : a.player1;
   const selfScore = selfIsPlayer1 ? a.player1_score : a.player2_score;
   const opponentScore = selfIsPlayer1 ? a.player2_score : a.player1_score;
+  const selfStats = selfIsPlayer1 ? a.player1_stats : a.player2_stats;
+  const opponentStats = selfIsPlayer1 ? a.player2_stats : a.player1_stats;
   return {
     match_id,
     finished_at: a.finished_at ?? null,
@@ -132,6 +136,8 @@ function normalizeMatch(
     opponent_id: opponent?.id ?? null,
     opponent_name: opponent?.name ?? null,
     opponent_score: opponentScore ?? null,
+    self_error_rate: selfStats?.error_rate ?? null,
+    opponent_error_rate: opponentStats?.error_rate ?? null,
   };
 }
 
