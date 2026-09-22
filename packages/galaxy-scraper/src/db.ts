@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS matches (
   self_score         INTEGER,
   opponent_id        TEXT,
   opponent_name      TEXT,
-  opponent_score     INTEGER
+  opponent_score     INTEGER,
+  self_error_rate    REAL,
+  opponent_error_rate REAL
 );
 
 CREATE TABLE IF NOT EXISTS blunders (
@@ -139,12 +141,27 @@ function bindable(row: object): Record<string, null | number | string> {
   return out;
 }
 
+/**
+ * `SCHEMA` only creates tables that are missing, so a `matches` built before the
+ * error rates were kept never gets their columns from it. This adds them, empty,
+ * and the next `load` fills them in.
+ */
+function addErrorRateColumns(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(matches)").all() as { name: string }[];
+  const existing = new Set(columns.map(({ name }) => name));
+
+  for (const column of ["self_error_rate", "opponent_error_rate"]) {
+    if (!existing.has(column)) db.exec(`ALTER TABLE matches ADD COLUMN ${column} REAL`);
+  }
+}
+
 export function openDatabase(path: string): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  addErrorRateColumns(db);
   return db;
 }
 

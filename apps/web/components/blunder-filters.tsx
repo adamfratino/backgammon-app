@@ -38,8 +38,10 @@ import {
   sortFrom,
   STANDING_FILTERS,
   type BlunderSort,
+  type CategoryTab,
   type CubeValueRange,
   type DiceFilter,
+  type MatchSort,
   tabFrom,
   viewParams,
   SIDEBAR_MAXWIDTH,
@@ -47,12 +49,28 @@ import {
 import type { FilterCounts } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
 
-interface BlunderFilterPanelProps {
-  category: string;
+/** What the panel reads off the whole database rather than off the URL. */
+export interface FilterBounds {
   /** The highest face in the data, which is where the Cube value track stops. */
   topCubeValue: number;
   /** The longest match in the data, which is what caps the Min. score field. */
   longestMatch: number;
+}
+
+interface BlunderFilterPanelProps extends FilterBounds {
+  category: string;
+}
+
+interface FilterPanelProps<Sort extends BlunderSort | MatchSort> extends FilterBounds {
+  /** The page every change is written back onto. */
+  path: string;
+  /** Carried out on every URL the panel writes; `DEFAULT_TAB` where a page has no halves. */
+  tab: CategoryTab;
+  sorts: readonly { id: Sort; label: string }[];
+  sortIcons: Record<Sort, typeof BombIcon>;
+  sort: Sort;
+  /** Every option's count, undefined until it lands or if the query for it failed. */
+  counts: FilterCounts | undefined;
 }
 
 /** One row of a dropdown: Select keys it by `value`, the constants by `id`. */
@@ -576,27 +594,11 @@ const SORT_ICONS: Record<BlunderSort, typeof BombIcon> = {
   oldest: CalendarArrowUpIcon,
 };
 
-/**
- * A sidebar of fixed width, so ticking never changes the table's width; a long
- * list of picks truncates instead. Nothing ticked in a dropdown means nothing
- * is filtered out, so the empty state says "All" rather than looking unset.
- * Every change goes through `viewParams`, which writes no `?page=`, so the list
- * starts again at page 1.
- */
-export function BlunderFilterPanel({
-  category,
-  topCubeValue,
-  longestMatch,
-}: BlunderFilterPanelProps) {
+/** A category's panel: its own counts, its own sorts, and the tab it is on. */
+export function BlunderFilterPanel({ category, ...bounds }: BlunderFilterPanelProps) {
   const trpc = useTRPC();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const filters = filtersFrom(searchParams);
-  const sort = sortFrom(searchParams.get("sort"));
-
-  // The sidebar narrows whichever half is showing and never moves between them,
-  // so every URL it writes carries the tab back out again.
-  const tab = tabFrom(searchParams.get("tab"));
 
   // Every option's count, in one query for the whole panel. Asked for from the
   // browser rather than prefetched with the page: the dropdowns are shut when a
@@ -608,6 +610,42 @@ export function BlunderFilterPanel({
     ...trpc.blunders.filterCounts.queryOptions({ category, ...filters }),
     placeholderData: keepPreviousData,
   });
+
+  return (
+    <FilterPanel
+      {...bounds}
+      path={`/${category}`}
+      // The sidebar narrows whichever half is showing and never moves between
+      // them, so every URL it writes carries the tab back out again.
+      tab={tabFrom(searchParams.get("tab"))}
+      sorts={SORTS}
+      sortIcons={SORT_ICONS}
+      sort={sortFrom(searchParams.get("sort"))}
+      counts={counts}
+    />
+  );
+}
+
+/**
+ * A sidebar of fixed width, so ticking never changes the list's width; a long
+ * list of picks truncates instead. Nothing ticked in a dropdown means nothing
+ * is filtered out, so the empty state says "All" rather than looking unset.
+ * Every change goes through `viewParams`, which writes no `?page=`, so the list
+ * starts again at page 1.
+ */
+export function FilterPanel<Sort extends BlunderSort | MatchSort>({
+  path,
+  tab,
+  sorts,
+  sortIcons,
+  sort,
+  counts,
+  topCubeValue,
+  longestMatch,
+}: FilterPanelProps<Sort>) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filters = filtersFrom(searchParams);
 
   // The track covers the data, and also whatever a hand-written URL asks about,
   // so a face nobody has reached yet still parks its end where it says it is
@@ -624,7 +662,7 @@ export function BlunderFilterPanel({
 
   function show(params: URLSearchParams) {
     const query = params.toString();
-    router.push(query ? `/${category}?${query}` : `/${category}`);
+    router.push(query ? `${path}?${query}` : path);
   }
 
   // Select hands back the values in the order they were ticked, so they go
@@ -662,7 +700,10 @@ export function BlunderFilterPanel({
         aria-label="Sort"
         fullwidth
         value={[sort]}
-        onValueChange={([next]) => next && show(viewParams(filters, sortFrom(next), tab))}
+        onValueChange={([next]) => {
+          const picked = sorts.find(({ id }) => id === next);
+          if (picked) show(viewParams(filters, picked.id, tab));
+        }}
         size="small"
       >
         {/* Grouped and wrapped the way the view toggle's icons are: a `Toggle`
@@ -670,8 +711,8 @@ export function BlunderFilterPanel({
             square on `:has(svg:only-child)` — which a bare text node does not
             break — and it sizes an icon's height without the `width: auto`
             that would keep the glyph square. */}
-        {SORTS.map(({ id, label }) => {
-          const Icon = SORT_ICONS[id];
+        {sorts.map(({ id, label }) => {
+          const Icon = sortIcons[id];
 
           return (
             <Toggle key={id} value={id}>

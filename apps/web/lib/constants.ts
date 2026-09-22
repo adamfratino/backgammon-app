@@ -592,6 +592,20 @@ export const SORTS = [
 export type BlunderSort = (typeof SORTS)[number]["id"];
 
 /**
+ * The matches page's orderings. Worst and Best rank by your ER rather than by
+ * the equity the match cost: ER is per decision, so a 5-point match doesn't
+ * outrank a 3-pointer just for holding more of them.
+ */
+export const MATCH_SORTS = [
+  { id: "newest", label: "Newest" },
+  { id: "worst", label: "Worst" },
+  { id: "best", label: "Best" },
+  { id: "oldest", label: "Oldest" },
+] as const;
+
+export type MatchSort = (typeof MATCH_SORTS)[number]["id"];
+
+/**
  * The two halves of a category: the mistakes themselves, and what they add up
  * to. Both are narrowed by the same filters, so this picks which answer the
  * sidebar is narrowing rather than what is being asked of it.
@@ -611,12 +625,14 @@ export type CategoryTab = (typeof CATEGORY_TABS)[number]["id"];
 export const KIND_FILTER_IDS = KIND_FILTERS.map(({ id }) => id);
 export const SEVERITIES = SEVERITY_BANDS.map(({ id }) => id);
 export const SORT_IDS = SORTS.map(({ id }) => id);
+export const MATCH_SORT_IDS = MATCH_SORTS.map(({ id }) => id);
 export const CATEGORY_TAB_IDS = CATEGORY_TABS.map(({ id }) => id);
 export const CRAWFORD_IDS = CRAWFORD_STATE.map(({ id }) => id);
 export const CRAWFORD_FILTER_IDS = CRAWFORD_FILTERS.map(({ id }) => id);
 export const STANDING_FILTER_IDS = STANDING_FILTERS.map(({ id }) => id);
 
-export const DEFAULT_SORT: BlunderSort = "newest";
+/** Both lists open on their newest, so one default serves both sorts. */
+export const DEFAULT_SORT = "newest" satisfies BlunderSort & MatchSort;
 export const DEFAULT_TAB: CategoryTab = "blunders";
 export interface BlunderFilters {
   kinds: KindFilter[];
@@ -642,6 +658,11 @@ export function pageFrom(value: string | null): number {
  */
 export function sortFrom(value: string | null): BlunderSort {
   return SORT_IDS.find((id) => id === value) ?? DEFAULT_SORT;
+}
+
+/** The matches page's `?sort=`, read the same way from its own whitelist. */
+export function matchSortFrom(value: string | null): MatchSort {
+  return MATCH_SORT_IDS.find((id) => id === value) ?? DEFAULT_SORT;
 }
 
 /**
@@ -780,11 +801,12 @@ export function isFiltered({
  * each one has been told what to do about it — an optional parameter would
  * instead let every existing caller keep compiling while quietly clearing the
  * sort, or, for `tab`, putting a reader back on the blunders every time they
- * touched a filter.
+ * touched a filter. The matches page has no halves, so it passes `DEFAULT_TAB`,
+ * which writes nothing.
  */
 export function viewParams(
   { kinds, severities, crawfords, standings, minLead, dice, cubeValue }: BlunderFilters,
-  sort: BlunderSort,
+  sort: BlunderSort | MatchSort,
   tab: CategoryTab,
 ): URLSearchParams {
   const params = new URLSearchParams();

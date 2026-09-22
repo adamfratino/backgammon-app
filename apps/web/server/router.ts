@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -18,6 +19,8 @@ import {
   KIND_FILTERS,
   KINDS,
   type KindFilter,
+  MATCH_SORT_IDS,
+  type MatchSort,
   NOTE_MAX_LENGTH,
   PER_PAGE,
   RECENT_DECISIONS,
@@ -476,11 +479,11 @@ const leak = z.object({
 export type Leak = z.infer<typeof leak>;
 
 /**
- * A list row cut down to what the recent matches card draws, links with and
+ * A list row cut down to what a match's blunder line draws, links with and
  * opens a quick view on, plus the category the link needs — a list row never
  * carries one, because its table is already inside the category.
  */
-const recentBlunder = blunder
+const matchBlunder = blunder
   .pick({
     blunder_id: true,
     kind: true,
@@ -493,8 +496,8 @@ const recentBlunder = blunder
   })
   .extend({ category: z.string() });
 
-/** One of your newest matches and every decision you got wrong in it, in the order you made them. */
-const recentMatch = z.object({
+/** One match and every decision you got wrong in it, in the order you made them. */
+const match = z.object({
   match_id: z.number(),
   /** The day it finished, UTC, as `YYYY-MM-DD` — the same day the table prints. */
   finished_on: z.string(),
@@ -502,11 +505,18 @@ const recentMatch = z.object({
   /** The final score, your points first, as `MatchScore` reads a running one. */
   yours: z.number().nullable(),
   theirs: z.number().nullable(),
-  blunders: z.array(recentBlunder),
+  /**
+   * Galaxy's ER for each side, over every decision in the match rather than only
+   * the ones listed here. Null on a match whose page had already left the
+   * scraper's `raw/` when ER started being kept, so `load` could not reach it.
+   */
+  your_er: z.number().nullable(),
+  their_er: z.number().nullable(),
+  blunders: z.array(matchBlunder),
 });
 
-export type RecentBlunder = z.infer<typeof recentBlunder>;
-export type RecentMatch = z.infer<typeof recentMatch>;
+export type MatchBlunder = z.infer<typeof matchBlunder>;
+export type Match = z.infer<typeof match>;
 
 interface FilterOption {
   group: CountedGroup;
@@ -637,6 +647,169 @@ function filterClauses(filters: BlunderFilters, without?: CountedGroup): Clause[
     diceClause(filters.dice),
     cubeValueClause(filters.cubeValue),
   ].filter((clause) => clause !== null);
+}
+
+/**
+ * What each match sort means in SQL, picked by key the way `SORT_ORDER_BY` is.
+ * A match loaded without an ER has nothing to rank by, so it waits at the end of
+ * Worst and Best alike rather than passing for either. Every order ends on the
+ * id, so two matches finishing in the same instant still land one fixed way.
+ */
+const MATCH_ORDER_BY: Record<MatchSort, string> = {
+  newest: "m.finished_at DESC, m.match_id DESC",
+  oldest: "m.finished_at ASC, m.match_id ASC",
+  worst: "m.self_error_rate DESC NULLS LAST, m.finished_at DESC, m.match_id DESC",
+  best: "m.self_error_rate ASC NULLS LAST, m.finished_at DESC, m.match_id DESC",
+};
+
+/**
+ * The matches a list holds: every finished one with at least one decision the
+ * filters keep. With nothing asked for that is every match, since the scraper
+ * only builds a match's row out of its blunders.
+ */
+function listedMatches(filter: Clause): Clause {
+  return {
+    sql: `m.finished_at IS NOT NULL AND m.match_id IN (
+            SELECT b.match_id
+            FROM decisions d
+            JOIN blunders b ON b.blunder_id = d.blunder_id
+            WHERE ${filter.sql}
+          )`,
+    params: filter.params,
+  };
+}
+
+/**
+ * One page of matches, each carrying only the decisions the filters keep — so a
+ * match listed under Catastrophic shows its catastrophic lines and no others.
+ * Its ER stays the whole match's: that is Galaxy's figure, not a sum of these.
+ */
+function matchesOf(
+  db: DatabaseSync,
+  filter: Clause,
+  { sort, limit, offset }: { sort: MatchSort; limit: number; offset: number },
+): Match[] {
+  const listed = listedMatches(filter);
+
+  const matches = db
+    .prepare(
+      `${WITH_DECISIONS}
+       SELECT m.match_id, date(m.finished_at) AS finished_on, m.opponent_name AS opponent,
+              m.self_score AS yours, m.opponent_score AS theirs,
+              m.self_error_rate AS your_er, m.opponent_error_rate AS their_er
+       FROM matches m
+       WHERE ${listed.sql}
+       ORDER BY ${MATCH_ORDER_BY[sort]}
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...listed.params, limit, offset) as unknown as Omit<Match, "blunders">[];
+
+  // In the order you made them, which splitting by match below keeps. Ids
+  // run through a match in play order: taken that way, the points scored
+  // never fall between one blunder and the next across 992 pairs, and within
+  // a game the pips left on the board fall in 447 of 492 — the rest are
+  // hits. `cube` sorts after `checker`, so descending puts a `both`
+  // blunder's cube first, which is where it came: before the dice were thrown.
+  const rows = db
+    .prepare(
+      `${WITH_DECISIONS}
+       SELECT b.match_id, d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action,
+              d.error_magnitude, b.score_black, b.score_white, b.source_xgid, bc.category
+       FROM decisions d
+       JOIN blunders b ON b.blunder_id = d.blunder_id
+       JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+       WHERE b.match_id IN (SELECT value FROM json_each(?)) AND ${filter.sql}
+       ORDER BY d.blunder_id ASC, d.kind DESC`,
+    )
+    .all(
+      JSON.stringify(matches.map(({ match_id }) => match_id)),
+      ...filter.params,
+    ) as unknown as (Omit<MatchBlunder, "both"> & { match_id: number; both: number })[];
+
+  // `.output()` strips `match_id` off each blunder once it has done its job here.
+  return matches.map((match) => ({
+    ...match,
+    blunders: rows
+      .filter((row) => row.match_id === match.match_id)
+      .map((row) => ({ ...row, both: row.both === 1 })),
+  }));
+}
+
+/**
+ * What each option of each counted group would leave, as badges on the panel:
+ * one number per option, all of them out of one pass over the rows in `scope`.
+ * `tally` says what a number counts — decisions for a category's list, matches
+ * for the matches page — given the condition a row has to meet to be counted.
+ *
+ * Every group is counted with its own ticks left out and every other group's
+ * kept, so an option reads as what picking it gives rather than what it adds
+ * to what is already picked beside it. In `blitz` under Severity =
+ * Catastrophic the three Kind options divide that band between them — 13, 0
+ * and 10 — where counted the other way, ticking Checker plays would leave
+ * the other two reading 13 and 23 and none of the three meaning anything.
+ */
+function optionCounts(
+  db: DatabaseSync,
+  filters: BlunderFilters,
+  scope: Clause,
+  tally: (condition: string) => string,
+): FilterCounts {
+  // What the rest of the panel narrows to — once per group, rather than
+  // once per option, since every option in a group is counted under it.
+  //
+  // Typed by `CountedGroup` rather than left to infer, so a group added to
+  // `COUNTED_GROUPS` fails to compile here until it has been told what the
+  // rest of the panel means for it — the way `viewParams` breaks every
+  // caller that writes the URL rather than quietly dropping one.
+  const rest: Record<CountedGroup, Clause> = {
+    kinds: allOf(filterClauses(filters, "kinds")),
+    severities: allOf(filterClauses(filters, "severities")),
+    crawfords: allOf(filterClauses(filters, "crawfords")),
+    standings: allOf(filterClauses(filters, "standings")),
+  };
+
+  // One column per option. `group` and `id` are this file's own constants
+  // rather than anything a request sent, which is what makes them safe to
+  // name a column with; every value is still bound.
+  const columns = FILTER_OPTIONS.map(({ group, id, clause }) => ({
+    sql: `${tally(`${rest[group].sql} AND ${clause.sql}`)} AS ${group}_${id}`,
+    params: [...rest[group].params, ...clause.params],
+  }));
+
+  // The columns bind before the scope does: a SELECT list is read before the
+  // WHERE that follows it.
+  const bound = [...columns.flatMap((column) => column.params), ...scope.params];
+
+  const row = db
+    .prepare(
+      `${WITH_DECISIONS}
+       SELECT ${columns.map(({ sql }) => sql).join(", ")}
+       FROM decisions d
+       JOIN blunders b ON b.blunder_id = d.blunder_id
+       JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
+       LEFT JOIN matches m ON m.match_id = b.match_id
+       WHERE ${scope.sql}`,
+    )
+    .get(...bound) as Record<string, number | null>;
+
+  // A scope holding no rows at all sums to null rather than to zero,
+  // which is every count on a category that doesn't exist.
+  const counts = (group: CountedGroup) =>
+    Object.fromEntries(
+      FILTER_OPTIONS.filter((option) => option.group === group).map(({ id }) => [
+        id,
+        row[`${group}_${id}`] ?? 0,
+      ]),
+    );
+
+  // Safe only because `.output()` re-checks the real shape at runtime, and
+  // its records name every option: a group that lost one fails there.
+  return {
+    kinds: counts("kinds"),
+    severities: counts("severities"),
+    crawfords: counts("crawfords"),
+    standings: counts("standings"),
+  } as FilterCounts;
 }
 
 export const appRouter = router({
@@ -800,48 +973,61 @@ export const appRouter = router({
      * of its blunders, so a match played without one never gets a row and cannot
      * be among these.
      */
-    recentMatches: publicProcedure.output(z.array(recentMatch)).query(({ ctx }) => {
-      const matches = ctx.db
-        .prepare(
-          `SELECT match_id, date(finished_at) AS finished_on, opponent_name AS opponent,
-                  self_score AS yours, opponent_score AS theirs
-           FROM matches
-           WHERE finished_at IS NOT NULL
-           ORDER BY finished_at DESC, match_id DESC
-           LIMIT ?`,
-        )
-        .all(RECENT_MATCHES) as unknown as Omit<RecentMatch, "blunders">[];
+    recentMatches: publicProcedure
+      .output(z.array(match))
+      .query(({ ctx }) =>
+        matchesOf(ctx.db, allOf([]), { sort: DEFAULT_SORT, limit: RECENT_MATCHES, offset: 0 }),
+      ),
+  }),
 
-      // In the order you made them, which splitting by match below keeps. Ids
-      // run through a match in play order: taken that way, the points scored
-      // never fall between one blunder and the next across 992 pairs, and within
-      // a game the pips left on the board fall in 447 of 492 — the rest are
-      // hits. `cube` sorts after `checker`, so descending puts a `both`
-      // blunder's cube first, which is where it came: before the dice were thrown.
-      const rows = ctx.db
-        .prepare(
-          `${WITH_DECISIONS}
-           SELECT b.match_id, d.blunder_id, d.kind, b.kind = 'both' AS both, b.cube_action,
-                  d.error_magnitude, b.score_black, b.score_white, b.source_xgid, bc.category
-           FROM decisions d
-           JOIN blunders b ON b.blunder_id = d.blunder_id
-           JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-           WHERE b.match_id IN (SELECT value FROM json_each(?))
-           ORDER BY d.blunder_id ASC, d.kind DESC`,
-        )
-        .all(JSON.stringify(matches.map(({ match_id }) => match_id))) as unknown as (Omit<
-        RecentBlunder,
-        "both"
-      > & { match_id: number; both: number })[];
+  matches: router({
+    /**
+     * One page of the matches page, and how many matches the filters leave in
+     * all. The filters are the list's own, read through `filterClauses`, so a
+     * match is listed for the same decisions a category would list.
+     */
+    list: publicProcedure
+      .input(
+        blunderFilters.extend({
+          page: z.number().int().min(1).default(1),
+          sort: z.enum(MATCH_SORT_IDS).default(DEFAULT_SORT),
+        }),
+      )
+      .output(z.object({ matches: z.array(match), total: z.number() }))
+      .query(({ ctx, input }) => {
+        const filter = allOf(filterClauses(input));
+        const listed = listedMatches(filter);
 
-      // `.output()` strips `match_id` off each blunder once it has done its job here.
-      return matches.map((match) => ({
-        ...match,
-        blunders: rows
-          .filter((row) => row.match_id === match.match_id)
-          .map((row) => ({ ...row, both: row.both === 1 })),
-      }));
-    }),
+        const { total } = ctx.db
+          .prepare(`${WITH_DECISIONS} SELECT COUNT(*) AS total FROM matches m WHERE ${listed.sql}`)
+          .get(...listed.params) as { total: number };
+
+        return {
+          matches: matchesOf(ctx.db, filter, {
+            sort: input.sort,
+            limit: PER_PAGE,
+            offset: (input.page - 1) * PER_PAGE,
+          }),
+          total,
+        };
+      }),
+
+    /**
+     * The panel's badges on the matches page. Each counts matches rather than
+     * decisions, because matches are what the page lists: a badge reads how
+     * many would be left if you ticked it.
+     */
+    filterCounts: publicProcedure
+      .input(blunderFilters)
+      .output(filterCounts)
+      .query(({ ctx, input }) =>
+        optionCounts(
+          ctx.db,
+          input,
+          { sql: "m.finished_at IS NOT NULL", params: [] },
+          (condition) => `COUNT(DISTINCT CASE WHEN ${condition} THEN m.match_id END)`,
+        ),
+      ),
   }),
 
   blunders: router({
@@ -905,77 +1091,20 @@ export const appRouter = router({
       }),
 
     /**
-     * What each option in Kind, Severity and Crawford would leave in this
-     * category, so the panel can badge them: one number per option, all of them
-     * out of one pass over the category's rows.
-     *
-     * Every group is counted with its own ticks left out and every other group's
-     * kept, so an option reads as what picking it gives rather than what it adds
-     * to what is already picked beside it. In `blitz` under Severity =
-     * Catastrophic the three Kind options divide that band between them — 13, 0
-     * and 10 — where counted the other way, ticking Checker plays would leave
-     * the other two reading 13 and 23 and none of the three meaning anything.
+     * What each option in the panel would leave in this category, counted in
+     * decisions — the rows the category lists. See `optionCounts`.
      */
     filterCounts: publicProcedure
       .input(blunderFilters.extend({ category: z.string() }))
       .output(filterCounts)
-      .query(({ ctx, input }) => {
-        // What the rest of the panel narrows to — once per group, rather than
-        // once per option, since every option in a group is counted under it.
-        //
-        // Typed by `CountedGroup` rather than left to infer, so a group added to
-        // `COUNTED_GROUPS` fails to compile here until it has been told what the
-        // rest of the panel means for it — the way `viewParams` breaks every
-        // caller that writes the URL rather than quietly dropping one.
-        const rest: Record<CountedGroup, Clause> = {
-          kinds: allOf(filterClauses(input, "kinds")),
-          severities: allOf(filterClauses(input, "severities")),
-          crawfords: allOf(filterClauses(input, "crawfords")),
-          standings: allOf(filterClauses(input, "standings")),
-        };
-
-        // One column per option. `group` and `id` are this file's own constants
-        // rather than anything a request sent, which is what makes them safe to
-        // name a column with; every value is still bound.
-        const columns = FILTER_OPTIONS.map(({ group, id, clause }) => ({
-          sql: `SUM(CASE WHEN ${rest[group].sql} AND ${clause.sql} THEN 1 ELSE 0 END) AS ${group}_${id}`,
-          params: [...rest[group].params, ...clause.params],
-        }));
-
-        // The columns bind before the category does: a SELECT list is read
-        // before the WHERE that follows it.
-        const bound = [...columns.flatMap((column) => column.params), input.category];
-
-        const row = ctx.db
-          .prepare(
-            `${WITH_DECISIONS}
-             SELECT ${columns.map(({ sql }) => sql).join(", ")}
-             FROM decisions d
-             JOIN blunders b ON b.blunder_id = d.blunder_id
-             JOIN blunder_categories bc ON bc.blunder_id = d.blunder_id
-             WHERE bc.category = ?`,
-          )
-          .get(...bound) as Record<string, number | null>;
-
-        // A category holding no rows at all sums to null rather than to zero,
-        // which is every count on a category that doesn't exist.
-        const counts = (group: CountedGroup) =>
-          Object.fromEntries(
-            FILTER_OPTIONS.filter((option) => option.group === group).map(({ id }) => [
-              id,
-              row[`${group}_${id}`] ?? 0,
-            ]),
-          );
-
-        // Safe only because `.output()` re-checks the real shape at runtime, and
-        // its records name every option: a group that lost one fails there.
-        return {
-          kinds: counts("kinds"),
-          severities: counts("severities"),
-          crawfords: counts("crawfords"),
-          standings: counts("standings"),
-        } as FilterCounts;
-      }),
+      .query(({ ctx, input }) =>
+        optionCounts(
+          ctx.db,
+          input,
+          { sql: "bc.category = ?", params: [input.category] },
+          (condition) => `SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END)`,
+        ),
+      ),
 
     /**
      * What this category's decisions cost, banded by severity — the numbers

@@ -107,6 +107,16 @@ export interface PlayerRef {
   type: string;
 }
 
+/**
+ * One player's analysis of the whole match. Galaxy sends error and luck totals as
+ * well; only the error rate is kept, because it is the one the blunders can't be
+ * summed into — they leave out every decision that went right.
+ */
+export interface PlayerStats {
+  /** Galaxy's ER: equity given up per decision, in thousandths. Lower is better. */
+  error_rate: number;
+}
+
 export interface MatchAttributes {
   analysis_level?: number;
   clock?: unknown;
@@ -116,8 +126,8 @@ export interface MatchAttributes {
   player2: PlayerRef;
   player1_score: number;
   player2_score: number;
-  player1_stats?: unknown;
-  player2_stats?: unknown;
+  player1_stats?: PlayerStats | null;
+  player2_stats?: PlayerStats | null;
   private?: boolean;
   rake?: unknown;
   rating?: {
