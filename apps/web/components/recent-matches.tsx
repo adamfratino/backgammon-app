@@ -24,9 +24,9 @@ export async function RecentMatches() {
       description="A brief timeline of the blunders you've recently made"
       TitleProps={{ render: <h2 />, style: { alignContent: "center" } }}
       action={
-        <Button size="xsmall" variant="subtle" render={<Link href="/matches" />}>
+        <Button size="xsmall" render={<Link href="/matches" />}>
           <TableIcon />
-          View all
+          View latest matches
         </Button>
       }
     >
