@@ -80,9 +80,6 @@ function MatchItem({ match, rows, CardProps }: MatchItemProps) {
       <Group ax="space-between" ay="start" gap={4} fullwidth>
         <Stack gap={1}>
           <Group ay="center" gap={2}>
-            <Badge size="small" color={your_er === null ? undefined : erBandOf(your_er).color}>
-              {your_er === null ? "ER —" : `ER ${your_er.toFixed(1)}`}
-            </Badge>
             {yours !== null && theirs !== null && (
               <Text weight="bold">{`${yours > theirs ? "Won" : "Lost"} ${yours}–${theirs}`}</Text>
             )}
@@ -94,12 +91,15 @@ function MatchItem({ match, rows, CardProps }: MatchItemProps) {
             </Group>
           </Group>
         </Stack>
-        <Group ay="center" gap={2}>
+        <Group ay="center" gap={0.5}>
           <Badge color={SEVERITY_COLOR[matchSeverityOf("blunders", blunders.length)]}>
             {blunders.length} {blunders.length === 1 ? "blunder" : "blunders"}
           </Badge>
           <Badge color={SEVERITY_COLOR[matchSeverityOf("lost", equityLost)]}>
             <data value={equityLost}>{`−${equityLost.toFixed(3)}`}</data>
+          </Badge>
+          <Badge size="small" color={your_er === null ? undefined : erBandOf(your_er).color}>
+            {your_er === null ? "ER —" : `${your_er.toFixed(1)} ER`}
           </Badge>
         </Group>
       </Group>

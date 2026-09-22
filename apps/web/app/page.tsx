@@ -21,11 +21,13 @@ export default function Home() {
         Overview
       </Text>
       <Group evenly gap={SPACING_LG} ay="start">
-        <RecentMatches />
+        <Stack gap={SPACING_LG} ax="stretch">
+          <RecentMatches />
+          <Leaks />
+        </Stack>
         <Stack gap={SPACING_LG} ax="stretch">
           <ErTrend />
           <FormTrend />
-          <Leaks />
         </Stack>
       </Group>
     </Stack>

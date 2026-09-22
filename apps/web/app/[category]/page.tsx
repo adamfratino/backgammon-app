@@ -20,7 +20,11 @@ interface CategoryPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-const topbarStyles: React.CSSProperties = { position: "sticky", top: 0 };
+const topbarStyles: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  borderBottomLeftRadius: "var(--globals-border-radius)",
+};
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
   const [{ category }, query, topCubeValue, longestMatch, jar] = await Promise.all([
