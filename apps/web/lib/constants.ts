@@ -117,27 +117,42 @@ export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
 /** The ER you're aiming for. Move it as your play improves and every ER band follows. */
 export const TARGET_ER = 7;
 
-/** Clear of the target — the floor, named so `erBandOf` falls back to a band rather than `undefined`. */
-const UNDER_TARGET = { id: "under", from: 0, color: "green", step: 400 } as const;
+/** The mistakes per match you're aiming for. Move it as your play improves and the mistakes card's line and bands follow. */
+export const TARGET_MISTAKES = 3;
+
+/** Clear of the target — the floor, named so `targetBandOf` falls back to a band rather than `undefined`. */
+const UNDER_TARGET = {
+  id: "under",
+  label: "under your target",
+  from: 0,
+  color: "green",
+  step: 400,
+} as const;
 
 /**
- * Your ER against the target, worst first. `from` is a multiple of `TARGET_ER`, so at 7 the bands start at 5, 8 and 12. Matching the target is yellow; green takes beating it clearly, which a blunder never can, so `SEVERITY_COLOR` has no green and this does.
+ * A figure against its target, worst first. `from` is a multiple of the target, so an ER target of 7 starts the bands at 5, 8 and 12, and 3 mistakes per match starts them at 2.13, 3.42 and 5.13. Matching the target is yellow; green takes beating it clearly, which a blunder never can, so `SEVERITY_COLOR` has no green and this does.
  *
- * `step` is the shade the ER bars draw at, the badge being text-sized and fine at 400. Red and orange go to 500 for the reason `FORM_BANDS` gives: at 400 they read as one pale wash at bar width.
+ * `step` is the shade the bars draw at, the badge being text-sized and fine at 400. Red and orange go to 500 for the reason `FORM_BANDS` gives: at 400 they read as one pale wash at bar width.
  */
-const ER_BANDS = [
-  { id: "far_over", from: 1.71, color: "red", step: 500 },
-  { id: "over", from: 1.14, color: "orange", step: 500 },
-  { id: "near", from: 0.71, color: "yellow", step: 400 },
+const TARGET_BANDS = [
+  { id: "far_over", label: "far over your target", from: 1.71, color: "red", step: 500 },
+  { id: "over", label: "over your target", from: 1.14, color: "orange", step: 500 },
+  { id: "near", label: "near your target", from: 0.71, color: "yellow", step: 400 },
   UNDER_TARGET,
-] as const satisfies readonly { id: string; from: number; color: PaletteColor; step: number }[];
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  from: number;
+  color: PaletteColor;
+  step: number;
+}[];
 
-export type ErBand = (typeof ER_BANDS)[number];
+type TargetBand = (typeof TARGET_BANDS)[number];
 
-/** Judged on the ER as the badge prints it, to one decimal, so a badge reading 5.0 is never green. */
-export function erBandOf(er: number): ErBand {
-  const shown = Number(er.toFixed(1));
-  return ER_BANDS.find(({ from }) => shown >= from * TARGET_ER) ?? UNDER_TARGET;
+/** Judged on the figure as it prints, to `decimals`, so an ER badge reading 5.0 is never green. */
+export function targetBandOf(value: number, target: number, decimals: number): TargetBand {
+  const shown = Number(value.toFixed(decimals));
+  return TARGET_BANDS.find(({ from }) => shown >= from * target) ?? UNDER_TARGET;
 }
 
 /**
