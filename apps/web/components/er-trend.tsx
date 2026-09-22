@@ -1,6 +1,6 @@
 import { Text } from "@uiid/design-system";
 
-import { erBandOf, TARGET_ER } from "@/lib/constants";
+import { TARGET_ER, targetBandOf } from "@/lib/constants";
 import { caller } from "@/server/caller";
 
 import { FormCard } from "./form-card";
@@ -35,7 +35,7 @@ export async function ErTrend() {
       <TrendBars
         title={`Error rate, ${series.length} matches${latest != null ? `, latest ${latest.toFixed(1)}` : ""}`}
         series={series}
-        bands={series.map((er) => (er === null ? null : erBandOf(er)))}
+        bands={series.map((er) => (er === null ? null : targetBandOf(er, TARGET_ER, 1)))}
         decimals={1}
         target={TARGET_ER}
       />

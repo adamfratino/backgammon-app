@@ -18,7 +18,6 @@ import {
   blunderHref,
   categoryLabel,
   DAY,
-  erBandOf,
   KIND_LABELS,
   kindCategory,
   matchSeverityOf,
@@ -26,6 +25,8 @@ import {
   severityOf,
   SPACING_LG,
   SPACING_SM,
+  TARGET_ER,
+  targetBandOf,
 } from "@/lib/constants";
 import { matchScoreOf } from "@/lib/score";
 import type { Match, MatchBlunder } from "@/server/router";
@@ -98,7 +99,10 @@ function MatchItem({ match, rows, CardProps }: MatchItemProps) {
           <Badge color={SEVERITY_COLOR[matchSeverityOf("lost", equityLost)]}>
             <data value={equityLost}>{`−${equityLost.toFixed(3)}`}</data>
           </Badge>
-          <Badge size="small" color={your_er === null ? undefined : erBandOf(your_er).color}>
+          <Badge
+            size="small"
+            color={your_er === null ? undefined : targetBandOf(your_er, TARGET_ER, 1).color}
+          >
             {your_er === null ? "ER —" : `${your_er.toFixed(1)} ER`}
           </Badge>
         </Group>

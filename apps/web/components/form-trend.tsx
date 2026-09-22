@@ -1,19 +1,26 @@
 import { Delta } from "@microcharts/react/delta";
 import { Group, Text } from "@uiid/design-system";
 
-import { formBandsFor } from "@/lib/constants";
+import { formBandsFor, TARGET_MISTAKES, targetBandOf } from "@/lib/constants";
 import { caller } from "@/server/caller";
 import type { FormPoint } from "@/server/router";
 
 import { FormCard } from "./form-card";
 import { TrendBars } from "./trend-bars";
 
-const MEASURES = [
+const MEASURES: readonly {
+  id: keyof FormPoint;
+  label: string;
+  description: string;
+  decimals: number;
+  target?: number;
+}[] = [
   {
     id: "mistakes",
     label: "Mistakes per match",
-    description: "The average quantity of blunders per match.",
+    description: `The average quantity of blunders per match. The line is your target of ${TARGET_MISTAKES}.`,
     decimals: 2,
+    target: TARGET_MISTAKES,
   },
   {
     id: "cost",
@@ -21,12 +28,7 @@ const MEASURES = [
     description: "The average equity lost per blunder.",
     decimals: 3,
   },
-] as const satisfies readonly {
-  id: keyof FormPoint;
-  label: string;
-  description: string;
-  decimals: number;
-}[];
+];
 
 /**
  * How you have been playing lately, against how you were playing before.
@@ -44,12 +46,16 @@ export async function FormTrend() {
       ) : (
         <>
           {/* <Headline value={now.lost} previous={before?.lost ?? null} count={window} /> */}
-          {MEASURES.map(({ id, label, description, decimals }) => {
+          {MEASURES.map(({ id, label, description, decimals, target }) => {
             const series = points.map((point) => point[id]);
-            // Ranked against the blocks actually drawn beside it rather than
-            // against every match ever played, so a reader can check a bar's
-            // colour against the bars it sits among.
-            const bands = formBandsFor(series);
+            // Against the target where the measure has one, as the ER bars are.
+            // Otherwise ranked against the blocks actually drawn beside it
+            // rather than against every match ever played, so a reader can
+            // check a bar's colour against the bars it sits among.
+            const bands =
+              target === undefined
+                ? formBandsFor(series)
+                : series.map((value) => targetBandOf(value, target, decimals));
             const latest = bands.at(-1);
 
             return (
@@ -67,6 +73,7 @@ export async function FormTrend() {
                   series={series}
                   bands={bands}
                   decimals={decimals}
+                  target={target}
                 />
               </FormCard>
             );
