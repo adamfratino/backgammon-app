@@ -42,20 +42,28 @@ export function LeaksCard({ leaks }: { leaks: Leak[] }) {
   // The bar keeps every segment; only the legend is paged.
   const pageCount = Math.ceil(leaks.length / PER_PAGE);
   const start = (page - 1) * PER_PAGE;
+  const lines = leaks.slice(start, start + PER_PAGE);
 
   return (
     <Card
       title="Where the equity goes"
       TitleProps={{ render: <h2 /> }}
       description={`Ranked by what each category has cost in total, not by how often you go wrong there. The dots are each one's last ${RECENT_DECISIONS} mistakes, newest first.`}
+      FooterProps={{ ax: "space-between" }}
       footer={
         pageCount > 1 && (
-          <Pagination
-            totalPages={pageCount}
-            page={page}
-            onPageChange={setPage}
-            spread={PAGE_SPREAD}
-          />
+          <>
+            <Pagination
+              totalPages={pageCount}
+              page={page}
+              onPageChange={setPage}
+              spread={PAGE_SPREAD}
+            />
+            <Text shade="muted">
+              Showing {start + 1}–{start + lines.length} of{" "}
+              <data value={leaks.length}>{leaks.length}</data>
+            </Text>
+          </>
         )
       }
     >
@@ -67,7 +75,7 @@ export function LeaksCard({ leaks }: { leaks: Leak[] }) {
         <Stack ax="stretch" gap={4} mt={2} fullwidth>
           <ShareBar data={data} maxSegments={leaks.length} colors={colors} />
           <Legend
-            leaks={leaks.slice(start, start + PER_PAGE)}
+            leaks={lines}
             colors={colors.slice(start, start + PER_PAGE)}
             total={equityLost}
             rows={pageCount > 1 ? PER_PAGE : 0}
