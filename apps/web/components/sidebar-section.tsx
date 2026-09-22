@@ -3,6 +3,8 @@
 import { Collapsible, Group, List, Text } from "@uiid/design-system";
 import { ChevronRightIcon } from "@uiid/design-system/icons";
 
+import { SPACING_SM } from "@/lib/constants";
+
 /**
  * A titled group of sidebar links that folds away under its title. Its rows are
  * links rather than list items, so the list is laid out as a plain container: a
@@ -12,10 +14,11 @@ export function SidebarSection({ title, children }: { title: string; children: R
   return (
     <Collapsible
       trigger={({ open }) => <Trigger active={open}>{title}</Trigger>}
-      RootProps={{ defaultOpen: true }}
+      RootProps={{ defaultOpen: true, ax: "stretch" }}
+      PanelProps={{ ax: "stretch" }}
       instant
     >
-      <List render={<div />} gap={2} ml={6}>
+      <List render={<div />} gap={2} ml={SPACING_SM}>
         {children}
       </List>
     </Collapsible>
