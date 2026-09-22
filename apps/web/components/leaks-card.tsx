@@ -61,7 +61,7 @@ export function LeaksCard({ leaks }: { leaks: Leak[] }) {
             />
             <Text shade="muted">
               Showing {start + 1}–{start + lines.length} of{" "}
-              <data value={leaks.length}>{leaks.length}</data>
+              <data value={leaks.length}>{leaks.length}</data> categories
             </Text>
           </>
         )
