@@ -114,6 +114,30 @@ export const SEVERITY_COLOR: Record<BlunderSeverity, PaletteColor> = {
   mild: "neutral",
 };
 
+/** The ER you're aiming for. Move it as your play improves and every ER band follows. */
+export const TARGET_ER = 7;
+
+/** Clear of the target — the floor, named so `erBandOf` falls back to a band rather than `undefined`. */
+const UNDER_TARGET = { id: "under", from: 0, color: "green" } as const;
+
+/**
+ * Your ER against the target, worst first. `from` is a multiple of `TARGET_ER`, so at 7 the bands start at 5, 8 and 12. Matching the target is yellow; green takes beating it clearly, which a blunder never can, so `SEVERITY_COLOR` has no green and this does.
+ */
+const ER_BANDS = [
+  { id: "far_over", from: 1.71, color: "red" },
+  { id: "over", from: 1.14, color: "orange" },
+  { id: "near", from: 0.71, color: "yellow" },
+  UNDER_TARGET,
+] as const satisfies readonly { id: string; from: number; color: PaletteColor }[];
+
+export type ErBand = (typeof ER_BANDS)[number];
+
+/** Judged on the ER as the badge prints it, to one decimal, so a badge reading 5.0 is never green. */
+export function erBandOf(er: number): ErBand {
+  const shown = Number(er.toFixed(1));
+  return ER_BANDS.find(({ from }) => shown >= from * TARGET_ER) ?? UNDER_TARGET;
+}
+
 /**
  * How few decisions a chart will draw from before it says so instead.
  *
