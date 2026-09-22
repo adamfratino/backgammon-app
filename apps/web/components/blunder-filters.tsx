@@ -45,6 +45,7 @@ import {
   tabFrom,
   viewParams,
   SIDEBAR_MAXWIDTH,
+  SPACING_SM,
 } from "@/lib/constants";
 import type { FilterCounts } from "@/server/router";
 import { useTRPC } from "@/trpc/client";
@@ -690,12 +691,11 @@ export function FilterPanel<Sort extends BlunderSort | MatchSort>({
   }
 
   return (
-    <Stack w={SIDEBAR_MAXWIDTH} gap={6} ax="stretch">
+    <Stack w={SIDEBAR_MAXWIDTH} gap={SPACING_SM} ax="stretch">
       <Text render={<h2 />} size={2} weight="bold">
         Filters
       </Text>
       <Separator />
-      {/* A sort is always set, so pressing the pressed one again changes nothing. */}
       <ToggleGroup
         aria-label="Sort"
         fullwidth
@@ -706,24 +706,11 @@ export function FilterPanel<Sort extends BlunderSort | MatchSort>({
         }}
         size="small"
       >
-        {/* Grouped and wrapped the way the view toggle's icons are: a `Toggle`
-            holds no gap of its own where `Button` does, it collapses to a
-            square on `:has(svg:only-child)` — which a bare text node does not
-            break — and it sizes an icon's height without the `width: auto`
-            that would keep the glyph square. */}
         {sorts.map(({ id, label }) => {
           const Icon = sortIcons[id];
-
           return (
             <Toggle key={id} value={id}>
               <Group ay="center" gap={2}>
-                {/* Drawn at the size the view toggle draws its own pair at,
-                    rather than the larger one this group's `small` would hand
-                    it: that is the size the sidebar's own reset already uses,
-                    so these join what is around them instead of setting a
-                    third size. Pointed at the token that toggle resolves
-                    through rather than the 12px it currently comes out as, so
-                    the two keep matching if the design system retunes it. */}
                 <Icon style={{ width: "auto", height: "var(--forms-size-xs-icon-size)" }} />
                 <span>{label}</span>
               </Group>

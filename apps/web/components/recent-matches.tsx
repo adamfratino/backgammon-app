@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button, Card, Text } from "@uiid/design-system";
+import { TableIcon } from "@uiid/design-system/icons";
 
 import { RECENT_MATCHES } from "@/lib/constants";
 import { caller } from "@/server/caller";
@@ -20,10 +21,11 @@ export async function RecentMatches() {
     <Card
       data-slot="recent-matches"
       title={`Last ${RECENT_MATCHES} matches`}
-      TitleProps={{ render: <h2 /> }}
-      description="Every blunder in each of your newest matches, in the order you made them."
+      description="A brief timeline of the blunders you've recently made"
+      TitleProps={{ render: <h2 />, style: { alignContent: "center" } }}
       action={
-        <Button size="small" variant="subtle" render={<Link href="/matches" />}>
+        <Button size="xsmall" variant="subtle" render={<Link href="/matches" />}>
+          <TableIcon />
           View all
         </Button>
       }
@@ -33,7 +35,7 @@ export async function RecentMatches() {
           No matches yet.
         </Text>
       ) : (
-        <MatchList matches={matches} mt={2} />
+        <MatchList CardProps={{ variant: "ghost", p: 0 }} matches={matches} mt={2} />
       )}
     </Card>
   );

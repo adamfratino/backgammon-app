@@ -501,17 +501,15 @@ const match = z.object({
   match_id: z.number(),
   /** The day it finished, UTC, as `YYYY-MM-DD` — the same day the table prints. */
   finished_on: z.string(),
-  opponent: z.string().nullable(),
   /** The final score, your points first, as `MatchScore` reads a running one. */
   yours: z.number().nullable(),
   theirs: z.number().nullable(),
   /**
-   * Galaxy's ER for each side, over every decision in the match rather than only
-   * the ones listed here. Null on a match whose page had already left the
+   * Your ER as Galaxy measures it, over every decision in the match rather than
+   * only the ones listed here. Null on a match whose page had already left the
    * scraper's `raw/` when ER started being kept, so `load` could not reach it.
    */
   your_er: z.number().nullable(),
-  their_er: z.number().nullable(),
   blunders: z.array(matchBlunder),
 });
 
@@ -694,9 +692,8 @@ function matchesOf(
   const matches = db
     .prepare(
       `${WITH_DECISIONS}
-       SELECT m.match_id, date(m.finished_at) AS finished_on, m.opponent_name AS opponent,
-              m.self_score AS yours, m.opponent_score AS theirs,
-              m.self_error_rate AS your_er, m.opponent_error_rate AS their_er
+       SELECT m.match_id, date(m.finished_at) AS finished_on, m.self_score AS yours,
+              m.opponent_score AS theirs, m.self_error_rate AS your_er
        FROM matches m
        WHERE ${listed.sql}
        ORDER BY ${MATCH_ORDER_BY[sort]}
