@@ -2,6 +2,7 @@ import { Group, Stack, Text } from "@uiid/design-system";
 
 import { MAIN_MAXWIDTH, SPACING_LG, SPACING_SM } from "@/lib/constants";
 
+import { ErTrend } from "@/components/er-trend";
 import { FormTrend } from "@/components/form-trend";
 import { Leaks } from "@/components/leaks";
 import { RecentMatches } from "@/components/recent-matches";
@@ -22,6 +23,7 @@ export default function Home() {
       <Group evenly gap={SPACING_LG} ay="start">
         <RecentMatches />
         <Stack gap={SPACING_LG} ax="stretch">
+          <ErTrend />
           <FormTrend />
           <Leaks />
         </Stack>

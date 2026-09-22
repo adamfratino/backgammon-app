@@ -1,6 +1,6 @@
+import type { ReactNode } from "react";
 import { Card, Text } from "@uiid/design-system";
 import { Delta } from "@microcharts/react/delta";
-import { TrendBars } from "./trend-bars";
 
 interface FormCardProps {
   label: string;
@@ -10,7 +10,8 @@ interface FormCardProps {
   value: number;
   /** The window before this one, or null when there has not been a second yet. */
   previous: number | null;
-  series: number[];
+  /** The chart the footer sums up. */
+  children: ReactNode;
 }
 
 export function FormCard({
@@ -20,7 +21,7 @@ export function FormCard({
   window,
   value,
   previous,
-  series,
+  children,
 }: FormCardProps) {
   return (
     <Card
@@ -39,7 +40,7 @@ export function FormCard({
             <>
               ,{" "}
               {/* Every measure here counts something that went wrong, so down is
-                  the good direction on both — which is the one thing `Delta`
+                  the good direction on each — which is the one thing `Delta`
                   needs told, since it colours by valence and not by sign. */}
               <Delta value={value} from={previous} positive="down" /> against the previous {window}
             </>
@@ -47,7 +48,7 @@ export function FormCard({
         </Text>
       }
     >
-      <TrendBars label={label} series={series} decimals={decimals} />
+      {children}
     </Card>
   );
 }
