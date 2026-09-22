@@ -1,15 +1,14 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Group } from "@uiid/design-system";
 
 import { categoryHref } from "@/lib/constants";
 
-interface CategoryLinkProps {
+import { SidebarLink, type SidebarLinkProps } from "./sidebar-link";
+
+interface CategoryLinkProps extends Omit<SidebarLinkProps, "href" | "active"> {
   category: string;
-  children: React.ReactNode;
 }
 
 /**
@@ -23,21 +22,13 @@ interface CategoryLinkProps {
  * than the query: the one you're on is marked in the first paint instead of
  * arriving a beat later with the filters.
  */
-export function CategoryLink({ category, children }: CategoryLinkProps) {
+export function CategoryLink({ category, ...props }: CategoryLinkProps) {
   const { category: current } = useParams<{ category?: string }>();
   const active = category === current;
 
   return (
-    <Suspense
-      fallback={
-        <CategoryRow href={`/${category}`} active={active}>
-          {children}
-        </CategoryRow>
-      }
-    >
-      <ViewLink category={category} active={active}>
-        {children}
-      </ViewLink>
+    <Suspense fallback={<SidebarLink href={`/${category}`} active={active} {...props} />}>
+      <ViewLink category={category} active={active} {...props} />
     </Suspense>
   );
 }
@@ -46,50 +37,14 @@ interface ViewLinkProps extends CategoryLinkProps {
   active: boolean;
 }
 
-function ViewLink({ category, active, children }: ViewLinkProps) {
+function ViewLink({ category, active, ...props }: ViewLinkProps) {
   const searchParams = useSearchParams();
 
   return (
-    <CategoryRow href={categoryHref(category, searchParams, { keepPage: active })} active={active}>
-      {children}
-    </CategoryRow>
-  );
-}
-
-interface CategoryRowProps {
-  href: string;
-  active: boolean;
-  children: React.ReactNode;
-}
-
-/**
- * The row is the link, rather than a link sitting inside it. Laying the name and
- * the badge out itself is what puts the space between them inside the anchor, so
- * the whole row answers to a click — a link that only wrapped them left that gap
- * dead, and the padding around them with it.
- *
- * The padding, radius and tint are the same ones the design system paints an
- * option row with, so the category you're in is highlighted the way a chosen row
- * is highlighted everywhere else. There is no token for a selected list row yet,
- * so the tint is named here.
- */
-function CategoryRow({ href, active, children }: CategoryRowProps) {
-  return (
-    <Group
-      render={<Link href={href} />}
-      aria-current={active ? "page" : undefined}
-      ax="space-between"
-      ay="center"
-      gap={4}
-      fullwidth
-      style={{
-        padding: "var(--list-item-padding-y) var(--list-item-padding-x)",
-        borderRadius: "var(--globals-border-radius)",
-        backgroundColor: active ? "var(--shade-accent)" : undefined,
-        textDecoration: "none",
-      }}
-    >
-      {children}
-    </Group>
+    <SidebarLink
+      href={categoryHref(category, searchParams, { keepPage: active })}
+      active={active}
+      {...props}
+    />
   );
 }

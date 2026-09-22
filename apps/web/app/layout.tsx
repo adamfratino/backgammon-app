@@ -1,7 +1,7 @@
 import { Group, Stack } from "@uiid/design-system";
 import { chartTheme } from "@/lib/chart-theme";
 import { TRPCReactProvider } from "@/trpc/client";
-import { CategoryNav } from "@/components/category-nav";
+import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 
 import "@uiid/design-system/globals.css";
@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       >
         <TRPCReactProvider>
           <Stack gap={6} p={6} pr={3} br={1} ay="stretch">
-            <CategoryNav />
+            <Sidebar />
           </Stack>
           <Stack ax="stretch" minw={0} fullscreen>
             <Topbar />

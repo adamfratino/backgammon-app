@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Badge, List, ListItem, Text } from "@uiid/design-system";
+import { Badge } from "@uiid/design-system";
 
 import { categoryLabel, filtersFrom, isFiltered } from "@/lib/constants";
 import type { Category } from "@/server/router";
@@ -77,29 +77,28 @@ interface CategoryItemsProps extends CategoriesProps {
  */
 function CategoryItems({ categories, counted = false }: CategoryItemsProps) {
   return (
-    <List>
+    <>
       {categories.map(({ category, count, total }) => (
-        <ListItem
+        <CategoryLink
           key={category}
+          category={category}
           // A category with nothing left in it fades back, so the eye lands on
           // the ones that still have something. It stays a link: it leads to the
           // page that says the filters, not the category, emptied it.
           style={{ opacity: counted && count === 0 ? EMPTY_OPACITY : 1 }}
         >
-          <CategoryLink category={category}>
-            <Text>{categoryLabel(category)}</Text>
-            <Badge size="small" color="neutral">
-              {counted ? (
-                <>
-                  <data value={count}>{count}</data> of {total}
-                </>
-              ) : (
-                <data value={total}>{total}</data>
-              )}
-            </Badge>
-          </CategoryLink>
-        </ListItem>
+          {categoryLabel(category)}
+          <Badge size="small" color="neutral">
+            {counted ? (
+              <>
+                <data value={count}>{count}</data> of {total}
+              </>
+            ) : (
+              <data value={total}>{total}</data>
+            )}
+          </Badge>
+        </CategoryLink>
       ))}
-    </List>
+    </>
   );
 }
