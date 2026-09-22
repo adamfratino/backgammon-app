@@ -1,6 +1,5 @@
 import { Card, Text } from "@uiid/design-system";
 import { Delta } from "@microcharts/react/delta";
-import { formBandsFor } from "@/lib/constants";
 import { TrendBars } from "./trend-bars";
 
 interface FormCardProps {
@@ -23,12 +22,6 @@ export function FormCard({
   previous,
   series,
 }: FormCardProps) {
-  // Ranked against the blocks actually drawn beside it rather than against every
-  // match ever played, so a reader can check a bar's colour against the bars it
-  // sits among.
-  const bands = formBandsFor(series);
-  const latest = bands[bands.length - 1];
-
   return (
     <Card
       title={label}
@@ -54,7 +47,7 @@ export function FormCard({
         </Text>
       }
     >
-      <TrendBars label={label} series={series} bands={bands} latest={latest} />
+      <TrendBars label={label} series={series} decimals={decimals} />
     </Card>
   );
 }
