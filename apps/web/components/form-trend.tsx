@@ -1,10 +1,12 @@
 import { Delta } from "@microcharts/react/delta";
 import { Group, Text } from "@uiid/design-system";
 
+import { formBandsFor } from "@/lib/constants";
 import { caller } from "@/server/caller";
 import type { FormPoint } from "@/server/router";
 
 import { FormCard } from "./form-card";
+import { TrendBars } from "./trend-bars";
 
 const MEASURES = [
   {
@@ -42,18 +44,33 @@ export async function FormTrend() {
       ) : (
         <>
           {/* <Headline value={now.lost} previous={before?.lost ?? null} count={window} /> */}
-          {MEASURES.map(({ id, label, description, decimals }) => (
-            <FormCard
-              key={id}
-              label={label}
-              description={description}
-              decimals={decimals}
-              window={window}
-              value={now[id]}
-              previous={before?.[id] ?? null}
-              series={points.map((point) => point[id])}
-            />
-          ))}
+          {MEASURES.map(({ id, label, description, decimals }) => {
+            const series = points.map((point) => point[id]);
+            // Ranked against the blocks actually drawn beside it rather than
+            // against every match ever played, so a reader can check a bar's
+            // colour against the bars it sits among.
+            const bands = formBandsFor(series);
+            const latest = bands.at(-1);
+
+            return (
+              <FormCard
+                key={id}
+                label={label}
+                description={description}
+                decimals={decimals}
+                window={window}
+                value={now[id]}
+                previous={before?.[id] ?? null}
+              >
+                <TrendBars
+                  title={`${label}, ${series.length} blocks${latest ? `, latest ${latest.label}` : ""}`}
+                  series={series}
+                  bands={bands}
+                  decimals={decimals}
+                />
+              </FormCard>
+            );
+          })}
         </>
       )}
     </>

@@ -455,6 +455,31 @@ const form = z.object({
 type Form = z.infer<typeof form>;
 
 /**
+ * Your ER match by match across the form panel's latest block, so the bars are
+ * the same matches its `now` figure averages.
+ *
+ * `now` and `before` are plain means of each match's ER, not Galaxy's
+ * decision-weighted figure: only the rate is kept, not the decisions behind it.
+ */
+const erTrend = z.object({
+  /** How many matches the bars cover, and how many `before` averages. */
+  window: z.number(),
+  /** Your ER in each of the last `window` matches, oldest first. Null where it wasn't kept. */
+  series: z.array(z.number().nullable()),
+  /** The mean of `series`, or null when none of it has an ER. */
+  now: z.number().nullable(),
+  /** The mean over the `window` matches before those, or null until there are that many. */
+  before: z.number().nullable(),
+});
+
+type ErTrend = z.infer<typeof erTrend>;
+
+function meanOf(values: (number | null)[]): number | null {
+  const known = values.filter((value) => value !== null);
+  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0) / known.length;
+}
+
+/**
  * What one category has cost across every match, ranked against the others.
  *
  * `equityLost` is the ranking figure rather than `decisions`, because the two
@@ -919,6 +944,31 @@ export const appRouter = router({
         now: costed.at(-1) ?? null,
         before: costed.at(-2) ?? null,
       } satisfies Form;
+    }),
+
+    /** The ER bars: the latest window of matches, oldest first, and the window before it for the footer. */
+    er: publicProcedure.output(erTrend).query(({ ctx }) => {
+      const ers = (
+        ctx.db
+          .prepare(
+            `SELECT self_error_rate AS er
+             FROM matches
+             WHERE finished_at IS NOT NULL
+             ORDER BY finished_at DESC, match_id DESC
+             LIMIT ?`,
+          )
+          .all(FORM_WINDOW * 2) as { er: number | null }[]
+      ).map(({ er }) => er);
+
+      const latest = ers.slice(0, FORM_WINDOW);
+      const previous = ers.slice(FORM_WINDOW);
+
+      return {
+        window: FORM_WINDOW,
+        series: latest.toReversed(),
+        now: meanOf(latest),
+        before: previous.length === FORM_WINDOW ? meanOf(previous) : null,
+      } satisfies ErTrend;
     }),
 
     /**
