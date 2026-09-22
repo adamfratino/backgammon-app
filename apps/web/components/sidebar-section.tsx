@@ -13,6 +13,7 @@ export function SidebarSection({ title, children }: { title: string; children: R
     <Collapsible
       trigger={({ open }) => <Trigger active={open}>{title}</Trigger>}
       RootProps={{ defaultOpen: true }}
+      instant
     >
       <List render={<div />} gap={2} ml={6}>
         {children}

@@ -82,12 +82,12 @@ function CategoryItems({ categories, counted = false }: CategoryItemsProps) {
         <CategoryLink
           key={category}
           category={category}
+          label={categoryLabel(category)}
           // A category with nothing left in it fades back, so the eye lands on
           // the ones that still have something. It stays a link: it leads to the
           // page that says the filters, not the category, emptied it.
           style={{ opacity: counted && count === 0 ? EMPTY_OPACITY : 1 }}
         >
-          {categoryLabel(category)}
           <Badge size="small" color="neutral">
             {counted ? (
               <>
