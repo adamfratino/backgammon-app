@@ -49,7 +49,7 @@ export function LeaksCard({ leaks }: { leaks: Leak[] }) {
       title="Where the equity goes"
       TitleProps={{ render: <h2 /> }}
       description={`Ranked by what each category has cost in total, not by how often you go wrong there. The dots are each one's last ${RECENT_DECISIONS} mistakes, newest first.`}
-      FooterProps={{ ax: "space-between" }}
+      FooterProps={{ ax: "space-between", ay: "center" }}
       footer={
         pageCount > 1 && (
           <>
@@ -59,7 +59,7 @@ export function LeaksCard({ leaks }: { leaks: Leak[] }) {
               onPageChange={setPage}
               spread={PAGE_SPREAD}
             />
-            <Text shade="muted">
+            <Text size={-1} shade="muted">
               Showing {start + 1}–{start + lines.length} of{" "}
               <data value={leaks.length}>{leaks.length}</data> categories
             </Text>

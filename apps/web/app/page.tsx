@@ -17,9 +17,6 @@ export default function Home() {
       gap={SPACING_LG}
       maxw={MAIN_MAXWIDTH}
     >
-      <Text render={<h1 />} size={3} weight="bold">
-        Overview
-      </Text>
       <Group evenly gap={SPACING_LG} ay="start">
         <Stack gap={SPACING_LG} ax="stretch">
           <RecentMatches />
