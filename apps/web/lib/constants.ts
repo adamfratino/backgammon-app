@@ -226,7 +226,7 @@ export const FORM_BANDS = [
   step: number;
 }[];
 
-export type FormBand = (typeof FORM_BANDS)[number];
+type FormBand = (typeof FORM_BANDS)[number];
 
 /**
  * Each block's band, indexed alongside the series it came from.

@@ -30,8 +30,7 @@ const MEASURES = [
  * How you have been playing lately, against how you were playing before.
  *
  * A server component with no filters to read: the sidebar narrows a category,
- * and this is the page with no category to narrow. That also keeps every block
- * out of the payload — the numbers become bars here and never travel as data.
+ * and this is the page with no category to narrow.
  */
 export async function FormTrend() {
   const { window, matches, points, now, before } = await caller.overall.form();
