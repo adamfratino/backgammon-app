@@ -31,7 +31,7 @@ import {
 import { matchScoreOf } from "@/lib/score";
 import type { Match, MatchBlunder } from "@/server/router";
 
-import { BlunderQuickView } from "./blunder-quick-view";
+import { QuickViewProvider, QuickViewTrigger } from "./blunder-quick-view";
 
 interface MatchListProps extends StackProps {
   matches: Match[];
@@ -48,11 +48,13 @@ export function MatchList({ matches, CardProps, ...props }: MatchListProps) {
   const rows = matches.flatMap(({ blunders }) => blunders);
 
   return (
-    <Stack ax="stretch" gap={SPACING_LG} fullwidth {...props}>
-      {matches.map((match) => (
-        <MatchItem key={match.match_id} CardProps={CardProps} match={match} rows={rows} />
-      ))}
-    </Stack>
+    <QuickViewProvider rows={rows}>
+      <Stack ax="stretch" gap={SPACING_LG} fullwidth {...props}>
+        {matches.map((match) => (
+          <MatchItem key={match.match_id} CardProps={CardProps} match={match} rows={rows} />
+        ))}
+      </Stack>
+    </QuickViewProvider>
   );
 }
 
@@ -150,9 +152,7 @@ function BlunderLine({ blunder, rows }: Pick<MatchItemProps, "rows"> & { blunder
           {standing !== null && ` at ${standing.yours}–${standing.theirs}`}
         </Text>
         <Group ay="center" gap={1}>
-          {source_xgid && (
-            <BlunderQuickView blunder={blunder} rows={rows} startIndex={rows.indexOf(blunder)} />
-          )}
+          {source_xgid && <QuickViewTrigger index={rows.indexOf(blunder)} />}
           <Button
             size="small"
             shape="square"
