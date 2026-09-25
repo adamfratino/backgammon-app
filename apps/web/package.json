@@ -19,7 +19,7 @@
     "@trpc/client": "11.18.0",
     "@trpc/server": "11.18.0",
     "@trpc/tanstack-react-query": "^11.18.0",
-    "@uiid/design-system": "^0.6.2",
+    "@uiid/design-system": "^0.6.3",
     "jotai": "^3.0.0",
     "next": "16.3.4",
     "react": "19.2.8",

@@ -20,7 +20,7 @@ import {
 import { CalendarIcon, GraduationCapIcon } from "@uiid/design-system/icons";
 
 import type { Blunder } from "@/server/router";
-import { BlunderQuickView } from "./blunder-quick-view";
+import { QuickViewProvider, QuickViewTrigger } from "./blunder-quick-view";
 import { CopyButton } from "./copy-button";
 import { CubeIcon } from "./cube-icon";
 import { DiceRoll } from "./dice-roll";
@@ -91,62 +91,63 @@ export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTabl
   const last = first + data.blunders.length - 1;
 
   return (
-    <Stack
-      aria-busy={isPlaceholderData}
-      style={{ opacity: isPlaceholderData ? 0.5 : 1 }}
-      ax="stretch"
-      gap={3}
-    >
-      <TableContainer>
-        <TableRoot striped highlightOnHover>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Error</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Type of play</TableHead>
-              <TableHead>Score</TableHead>
-              <TableHead>Cube</TableHead>
-              <TableHead>Roll</TableHead>
-              <TableHead>
-                <span className="sr-only">Row actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.blunders.map((blunder, index) => (
-              // A `both` blunder is two rows under one id, so the id alone isn't a key.
-              <BlunderTableRow
-                key={`${blunder.blunder_id}-${blunder.kind}`}
-                blunder={blunder}
-                href={blunderHref(category, blunder, query)}
-                rows={data.blunders}
-                index={index}
-                showPipCounts={showPipCounts}
-                flipBoard={flipBoard}
-              />
-            ))}
-          </TableBody>
-        </TableRoot>
-      </TableContainer>
+    <QuickViewProvider rows={data.blunders} showPipCounts={showPipCounts} flipBoard={flipBoard}>
+      <Stack
+        aria-busy={isPlaceholderData}
+        style={{ opacity: isPlaceholderData ? 0.5 : 1 }}
+        ax="stretch"
+        gap={3}
+      >
+        <TableContainer>
+          <TableRoot striped highlightOnHover>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Error</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Type of play</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Cube</TableHead>
+                <TableHead>Roll</TableHead>
+                <TableHead>
+                  <span className="sr-only">Row actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.blunders.map((blunder, index) => (
+                // A `both` blunder is two rows under one id, so the id alone isn't a key.
+                <BlunderTableRow
+                  key={`${blunder.blunder_id}-${blunder.kind}`}
+                  blunder={blunder}
+                  href={blunderHref(category, blunder, query)}
+                  index={index}
+                />
+              ))}
+            </TableBody>
+          </TableRoot>
+        </TableContainer>
 
-      <Group gap={2} fullwidth ax="space-between">
-        {/* Paging is a move within the blunders half — the statistics have no
+        <Group gap={2} fullwidth ax="space-between">
+          {/* Paging is a move within the blunders half — the statistics have no
             pages — so every link lands back on the half it was drawn under. */}
-        <ViewPagination
-          page={page}
-          total={data.total}
-          view={viewParams(filters, sort, DEFAULT_TAB).toString()}
-          prefetch={(n) =>
-            queryClient
-              .query(trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters, sort }))
-              .catch(noop)
-          }
-        />
-        <Text shade="muted">
-          Showing {first}–{last} of <data value={data.total}>{data.total}</data>
-        </Text>
-      </Group>
-    </Stack>
+          <ViewPagination
+            page={page}
+            total={data.total}
+            view={viewParams(filters, sort, DEFAULT_TAB).toString()}
+            prefetch={(n) =>
+              queryClient
+                .query(
+                  trpc.blunders.byCategory.queryOptions({ category, page: n, ...filters, sort }),
+                )
+                .catch(noop)
+            }
+          />
+          <Text shade="muted">
+            Showing {first}–{last} of <data value={data.total}>{data.total}</data>
+          </Text>
+        </Group>
+      </Stack>
+    </QuickViewProvider>
   );
 }
 
@@ -157,18 +158,12 @@ export function BlunderTable({ category, showPipCounts, flipBoard }: BlunderTabl
 function BlunderTableRow({
   blunder,
   href,
-  rows,
   index,
-  showPipCounts,
-  flipBoard,
 }: {
   blunder: Blunder;
   href: string;
-  /** The whole page, so the row's quick view can step through its neighbours. */
-  rows: Blunder[];
+  /** Where this row sits on the page, so its quick view opens on it. */
   index: number;
-  showPipCounts: boolean;
-  flipBoard: boolean;
 }) {
   const {
     kind,
@@ -237,13 +232,7 @@ function BlunderTableRow({
           {source_xgid && (
             <>
               <CopyButton value={source_xgid} label="Copy XGID" size="small" variant="subtle" />
-              <BlunderQuickView
-                blunder={blunder}
-                rows={rows}
-                startIndex={index}
-                showPipCounts={showPipCounts}
-                flipBoard={flipBoard}
-              />
+              <QuickViewTrigger index={index} />
             </>
           )}
           <Button

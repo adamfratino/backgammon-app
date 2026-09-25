@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { Button, Dialog, Group, Text } from "@uiid/design-system";
 import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, XIcon } from "@uiid/design-system/icons";
 
@@ -14,13 +14,14 @@ import { BoardArea } from "./board-area";
 /** All the quick view reads off a row: which blunder, its position, and the cube's side. */
 type QuickViewRow = Pick<Blunder, "blunder_id" | "cube_action" | "source_xgid">;
 
-interface BlunderQuickViewProps {
-  /** The row this button belongs to, and where a visit starts and returns to. */
-  blunder: QuickViewRow;
+/** Opens the list's one dialog at a row, and takes the button to hand focus back to. */
+type OpenQuickView = (index: number, trigger: HTMLElement | null) => void;
+
+const QuickViewContext = createContext<OpenQuickView | null>(null);
+
+interface QuickViewProviderProps {
   /** The page of rows to step through, in the order they were drawn. */
   rows: QuickViewRow[];
-  /** Where `blunder` sits in `rows`. */
-  startIndex: number;
   /**
    * The pip-count setting as the server read it when the page rendered. A page
    * built once rather than per visit has no cookie to read, so it leaves this
@@ -29,6 +30,115 @@ interface BlunderQuickViewProps {
   showPipCounts?: boolean;
   /** Which way round the board faces, read from its own cookie the same way. */
   flipBoard?: boolean;
+  /** The list itself, whose rows draw the triggers. */
+  children: ReactNode;
+}
+
+/**
+ * One dialog for a whole page of rows, opened by whichever row was clicked.
+ *
+ * A dialog per row cost the list a `Dialog.Root` store, a trigger and a portal
+ * each — around nine components a row, for a page that can only ever have one
+ * of them open. They are identical apart from which row they start on, so the
+ * row travels to the dialog instead: the eye buttons are plain buttons that say
+ * where to open, and everything else is mounted once here.
+ */
+export function QuickViewProvider({
+  rows,
+  showPipCounts,
+  flipBoard,
+  children,
+}: QuickViewProviderProps) {
+  // Open is its own state rather than `index === null`, so the row survives the
+  // close. Base UI keeps the popup mounted through its exit transition, and
+  // forgetting the row on the way out blanked the board under a dialog still on
+  // screen. Every visit names its row on the way in, which is the moment nobody
+  // is looking.
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(0);
+
+  // Closing used to return focus to the eye button because the eye button was
+  // the dialog's trigger. Now that the triggers live out in the rows, the one
+  // that opened this has to be remembered.
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+
+  const openAt = useCallback<OpenQuickView>((row, trigger) => {
+    returnFocusTo.current = trigger;
+    setIndex(row);
+    setOpen(true);
+  }, []);
+
+  // The table hands down a fresh `rows` whenever it refetches, so the index may
+  // briefly point past the end.
+  const current = rows[index];
+
+  return (
+    <QuickViewContext value={openAt}>
+      {children}
+      <Dialog
+        size="large"
+        title={current ? `Blunder #${current.blunder_id}` : ""}
+        open={open}
+        onOpenChange={setOpen}
+        // This dialog is opened from the rows, so it has no trigger of its own.
+        // Left undefined, `resolveTrigger` plants a focusable empty
+        // `<span role="button">` in the list for a screen reader to find.
+        TriggerProps={{ render: <span hidden /> }}
+        PopupProps={{ finalFocus: returnFocusTo }}
+        action={
+          <Button
+            size="small"
+            variant="subtle"
+            shape="square"
+            onClick={() => setOpen(false)}
+            tooltip="Close"
+            aria-label="Close quick view"
+          >
+            <XIcon />
+          </Button>
+        }
+        footer={
+          <Group
+            render={<nav />}
+            aria-label="Step through blunders"
+            fullwidth
+            ax="space-between"
+            ay="center"
+          >
+            <Button
+              size="xsmall"
+              variant="subtle"
+              disabled={index <= 0}
+              onClick={() => setIndex(index - 1)}
+              tooltip="Previous blunder"
+              aria-label="Previous blunder"
+            >
+              <ChevronLeftIcon />
+              Previous
+            </Button>
+            <Text size={-1} shade="muted">
+              {index + 1} of {rows.length} on this page
+            </Text>
+            <Button
+              size="xsmall"
+              variant="subtle"
+              disabled={index >= rows.length - 1}
+              onClick={() => setIndex(index + 1)}
+              tooltip="Next blunder"
+              aria-label="Next blunder"
+            >
+              Next
+              <ChevronRightIcon />
+            </Button>
+          </Group>
+        }
+      >
+        {current && (
+          <QuickViewBoard blunder={current} showPipCounts={showPipCounts} flipBoard={flipBoard} />
+        )}
+      </Dialog>
+    </QuickViewContext>
+  );
 }
 
 /**
@@ -37,101 +147,20 @@ interface BlunderQuickViewProps {
  * table has not already fetched — and stepping between rows costs no request at
  * all, since the neighbours are the same rows the table has in hand.
  */
-export function BlunderQuickView({
-  blunder,
-  rows,
-  startIndex,
-  showPipCounts,
-  flipBoard,
-}: BlunderQuickViewProps) {
-  // Held here rather than left to the dialog, so the close button in the header
-  // has something to close: the dialog ships no Close of its own.
-  const [open, setOpen] = useState(false);
-  const [index, setIndex] = useState(startIndex);
-
-  // The table hands down a fresh `rows` whenever it refetches, so the index may
-  // briefly point past the end. The row this button belongs to is always a row.
-  const current = rows[index] ?? blunder;
-
-  // Every way in and out runs through here — the button below, Escape, the
-  // backdrop — so each visit starts at the row that was clicked rather than
-  // wherever the last one wandered off to. The rewind happens on the way in:
-  // Base UI holds the popup mounted through its exit transition, so putting the
-  // index back while closing redrew the starting board under a dialog still on
-  // screen. Going in is the moment nobody is looking, and it reads `startIndex`
-  // as the table last handed it down.
-  function openChange(next: boolean) {
-    if (next) setIndex(startIndex);
-    setOpen(next);
-  }
+export function QuickViewTrigger({ index }: { index: number }) {
+  const openAt = useContext(QuickViewContext);
 
   return (
-    <Dialog
-      size="large"
-      title={`Blunder #${current.blunder_id}`}
-      open={open}
-      onOpenChange={openChange}
-      action={
-        <Button
-          size="small"
-          variant="subtle"
-          shape="square"
-          onClick={() => openChange(false)}
-          tooltip="Close"
-          aria-label="Close quick view"
-        >
-          <XIcon />
-        </Button>
-      }
-      trigger={
-        <Button
-          size="small"
-          shape="square"
-          variant="subtle"
-          tooltip="Quick view"
-          aria-label="Quick view"
-        >
-          <EyeIcon />
-        </Button>
-      }
-      footer={
-        <Group
-          render={<nav />}
-          aria-label="Step through blunders"
-          fullwidth
-          ax="space-between"
-          ay="center"
-        >
-          <Button
-            size="xsmall"
-            variant="subtle"
-            disabled={index <= 0}
-            onClick={() => setIndex(index - 1)}
-            tooltip="Previous blunder"
-            aria-label="Previous blunder"
-          >
-            <ChevronLeftIcon />
-            Previous
-          </Button>
-          <Text size={-1} shade="muted">
-            {index + 1} of {rows.length} on this page
-          </Text>
-          <Button
-            size="xsmall"
-            variant="subtle"
-            disabled={index >= rows.length - 1}
-            onClick={() => setIndex(index + 1)}
-            tooltip="Next blunder"
-            aria-label="Next blunder"
-          >
-            Next
-            <ChevronRightIcon />
-          </Button>
-        </Group>
-      }
+    <Button
+      size="small"
+      shape="square"
+      variant="subtle"
+      tooltip="Quick view"
+      aria-label="Quick view"
+      onClick={(event) => openAt?.(index, event.currentTarget)}
     >
-      <QuickViewBoard blunder={current} showPipCounts={showPipCounts} flipBoard={flipBoard} />
-    </Dialog>
+      <EyeIcon />
+    </Button>
   );
 }
 
@@ -145,7 +174,7 @@ function QuickViewBoard({
   blunder,
   showPipCounts,
   flipBoard,
-}: Pick<BlunderQuickViewProps, "blunder" | "showPipCounts" | "flipBoard">) {
+}: Pick<QuickViewProviderProps, "showPipCounts" | "flipBoard"> & { blunder: QuickViewRow }) {
   const { blunder_id, cube_action, source_xgid } = blunder;
 
   const parsed = source_xgid ? parseXgid(source_xgid) : null;
