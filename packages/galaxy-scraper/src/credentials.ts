@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DATA_DIR, PACKAGE_ROOT } from "./config.ts";
 
@@ -99,8 +99,11 @@ export function parsePastedCredentials(
 
 export function saveCredentials(token: string, refreshToken: string | null): void {
   mkdirSync(DATA_DIR, { recursive: true });
+  // Every sync renews the login, so a restart can land mid-write. Writing beside
+  // the file and renaming over it means a crash leaves the old login, not half of one.
+  const pending = `${AUTH_FILE}.pending`;
   writeFileSync(
-    AUTH_FILE,
+    pending,
     JSON.stringify(
       { accessToken: token, refreshToken, savedAt: new Date().toISOString() },
       null,
@@ -108,7 +111,8 @@ export function saveCredentials(token: string, refreshToken: string | null): voi
     ) + "\n",
     { mode: 0o600 },
   );
-  chmodSync(AUTH_FILE, 0o600);
+  chmodSync(pending, 0o600);
+  renameSync(pending, AUTH_FILE);
 }
 
 /**

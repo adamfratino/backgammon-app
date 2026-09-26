@@ -28,21 +28,29 @@ export async function refreshCredentials(
 ): Promise<Credentials | null> {
   if (!credentials.refreshToken) return null;
 
-  const response = await fetch(KEYCLOAK_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-      origin: "https://www.backgammongalaxy.com",
-      referer: "https://www.backgammongalaxy.com/play",
-      "user-agent": BROWSER_USER_AGENT,
-    },
-    body: new URLSearchParams({
-      client_id: KEYCLOAK_CLIENT_ID,
-      grant_type: "refresh_token",
-      refresh_token: credentials.refreshToken,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(KEYCLOAK_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "https://www.backgammongalaxy.com",
+        referer: "https://www.backgammongalaxy.com/play",
+        "user-agent": BROWSER_USER_AGENT,
+      },
+      body: new URLSearchParams({
+        client_id: KEYCLOAK_CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token: credentials.refreshToken,
+      }),
+    });
+  } catch (error) {
+    // Offline, or Galaxy is down. The stored token may well still be good, so carry on with it.
+    const reason = error instanceof Error ? error.message : String(error);
+    log(`Could not reach Galaxy to refresh the token (${reason}).`);
+    return null;
+  }
 
   if (!response.ok) {
     let reason = `HTTP ${response.status}`;
@@ -180,7 +188,7 @@ export class LoginRequiredError extends Error {
   }
 }
 
-export interface EnsureCredentialsOptions {
+interface EnsureCredentialsOptions {
   /** Fall back to the paste-a-token login. The server has no terminal, so it passes false. */
   interactive?: boolean;
   log?: (message: string) => void;

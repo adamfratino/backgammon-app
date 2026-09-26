@@ -9,7 +9,7 @@ import { DATA_DIR } from "./config.ts";
  */
 export const LOCK_FILE = join(DATA_DIR, "sync.lock");
 
-/** Longer than any sync takes, so a lock this old was left by a run that died. */
+/** A lock nobody can read, left this long, was abandoned mid-write. */
 const STALE_AFTER_MS = 10 * 60_000;
 
 const isAlive = (pid: number): boolean => {
@@ -32,10 +32,15 @@ const holderPid = (): number | null => {
 };
 
 function isStale(): boolean {
-  // A lock that can't be read yet is mid-write, so only its age can condemn it.
+  // A readable holder decides it: a live one keeps the lock however long it runs.
   const pid = holderPid();
-  if (pid !== null && !isAlive(pid)) return true;
-  return Date.now() - statSync(LOCK_FILE).mtimeMs > STALE_AFTER_MS;
+  if (pid !== null) return !isAlive(pid);
+  // One that can't be read yet is mid-write, so only its age can condemn it.
+  try {
+    return Date.now() - statSync(LOCK_FILE).mtimeMs > STALE_AFTER_MS;
+  } catch {
+    return true; // Released since `create` failed, so it's free.
+  }
 }
 
 function create(holder: string): boolean {
