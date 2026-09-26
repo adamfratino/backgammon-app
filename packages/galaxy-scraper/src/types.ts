@@ -1,6 +1,4 @@
-/** Shapes returned by the Backgammon Galaxy blunder service. */
-
-export type CategoryCounts = Record<string, number>;
+/** Shapes returned by Backgammon Galaxy's match history, match and game review endpoints. */
 
 export interface ErrorAnalysis {
   equity_error: number;
@@ -78,32 +76,28 @@ export interface Review {
   double: boolean;
   id: number;
   level: number;
-  resigned_points: number;
-  result: ReviewResult;
-  second: number;
+  /** The analysis sits one level down, beside what kind of decision it analysed. */
+  result: { analysed_event: string; version: string; result: ReviewResult };
   source_match: PositionRef | null;
   source_position: PositionRef | null;
-  take: boolean;
-  threshold: number;
 }
 
 export interface MatchEvent {
   color: string | null;
-  cube_limit: number;
-  /** "dice_rolled" | "move_commited" */
+  /** "game_started" | "dice_rolled" | "move_commited" | "double_requested" | "game_over" | … */
   event_type: string | null;
   id: number | null;
   moves: number[] | null;
   reviews: Review[];
   rolled_dice: number[] | null;
-  type: string;
+  /** Whose decision it was; empty on `game_over`. */
   user_id: string;
 }
 
+/** `/api/matches` names neither player; the names come from the history list or the `.mat`. */
 export interface PlayerRef {
   attributes: { rating?: string };
   id: string;
-  name: string;
   type: string;
 }
 
@@ -141,16 +135,27 @@ export interface MatchAttributes {
   tournament_id?: number | string | null;
 }
 
-export interface BlunderEvent {
-  blunder_id: number;
-  event: MatchEvent;
-  match: { data: { attributes: MatchAttributes; id: number; type: string }; meta?: unknown };
-  match_game_points_summary?: unknown;
-  match_id: number;
-  type: string;
+/** `GET /api/matches/{id}`. */
+export interface MatchResponse {
+  data: { attributes: MatchAttributes; id: number; type: "match" };
+  /** `analytics: "ok"` once Galaxy has analysed the match. */
+  meta?: { analytics?: string };
 }
 
-export interface CategoryPage {
-  data: { events: BlunderEvent[] };
-  type: string;
+/** `GET /match-analytics/api/v1/game_reviews/{id}/{game}`: a game past the last one has no events. */
+export interface GameReviewPage {
+  data: { events: MatchEvent[]; game_index: number; match_id: number };
+}
+
+/** `GET /stats/api/v3/users/analytics/results/{bg_id}`: the 50 newest matches, newest first. */
+export interface ResultsResponse {
+  results: { finished_at: string; match_id: number; result: "W" | "L" }[];
+}
+
+/** `GET /stats/api/v2/analyses/list/{page}`: the web client's history page, 30 matches a page. */
+export interface HistoryPage {
+  analyses: { matchId: number; opponentName: string | null }[];
+  page: number;
+  totalPages: number;
+  userName: string;
 }

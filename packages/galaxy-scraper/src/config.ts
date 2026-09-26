@@ -14,7 +14,7 @@ export const DB_PATH = process.env.BLUNDERS_DB_PATH ?? join(PACKAGE_ROOT, "data"
 export const DATA_DIR = dirname(DB_PATH);
 export const RAW_DIR = join(DATA_DIR, "raw");
 
-export const API_BASE = "https://api.backgammongalaxy.com/blunder-service/api/v1";
+export const API_BASE = "https://api.backgammongalaxy.com";
 
 /** Galaxy's Keycloak realm; `account` is the public client the web app itself uses. */
 export const KEYCLOAK_TOKEN_URL =
@@ -27,30 +27,3 @@ export const BROWSER_USER_AGENT =
 
 /** Version the web client reports; see https://www.backgammongalaxy.com/play/version.json */
 export const APP_VERSION = "6.0.216+666";
-
-/**
- * Categories as of the last observed `categories` response. Used only as a
- * fallback when the live categories endpoint cannot be reached. `recent` is
- * excluded by default because it re-lists blunders already filed elsewhere.
- */
-export const KNOWN_CATEGORIES = [
-  "attacking_game",
-  "blitz",
-  "close_out",
-  "crunching_game",
-  "deep_anchor_game",
-  "early_backgame",
-  "early_blitz",
-  "end_game_contact",
-  "holding_game",
-  "late_backgame",
-  "late_game_hit",
-  "middle_game",
-  "mutual_holding_game",
-  "one_man_back",
-  "opening_game",
-  "race",
-  "six_prime",
-];
-
-export const CROSS_CUTTING_CATEGORIES = new Set(["recent"]);

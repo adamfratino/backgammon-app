@@ -1,8 +1,8 @@
 # @repo/galaxy-scraper
 
-Pulls your Backgammon Galaxy blunder analysis into a local SQLite database.
+Pulls your Backgammon Galaxy matches, and the blunders in them, into a local SQLite database.
 
-Galaxy has no export feature at any membership tier, but the web client reads its blunder log from a JSON API. This package replays those requests with your own bearer token, caches the raw responses, and normalises them into queryable tables.
+Galaxy has no export feature at any membership tier, but the web client reads your match history, each match, and a review of every decision in it from a JSON API. This package replays those requests with your own bearer token, caches the raw responses, and normalises them into queryable tables.
 
 Zero runtime dependencies — it uses Node 24's built-in `fetch`, `node:sqlite`, and native TypeScript type stripping.
 
@@ -14,7 +14,7 @@ From the repo root:
 pnpm blunders
 ```
 
-That logs in if it has to, then fetches only what Galaxy has added since the last sync: one request says whether there is anything new, and each category stops at the first page holding a blunder the database already has. `pnpm blunders --full` walks every page instead. The first run walks you through the login:
+That logs in if it has to, then fetches only the matches Galaxy has finished since the last sync: one request for the 50 newest match ids says whether there is anything new, and each new match costs one request for the match and one per game for its reviews, plus one more to find the end. The first run, and `pnpm blunders --full`, walk the whole match history instead (every match back to November 2025, about 1,400 of them, so allow well over an hour). A run that finds all 50 newest ids unknown does the same, since the gap may reach further back than those 50. The first run also walks you through the login:
 
 1. Open <https://www.backgammongalaxy.com/play> logged in and open the DevTools console (⌥⌘J in Chrome, ⌥⌘C in Safari). If Chrome asks, type `allow pasting` once.
 2. Paste. The CLI has already put the snippet from `src/console-snippet.js` on your clipboard; it reads your session tokens out of the page and copies them back to the clipboard. Nothing leaves the browser.
@@ -28,46 +28,55 @@ Other commands:
 
 ```bash
 pnpm --filter @repo/galaxy-scraper login        # re-capture tokens, e.g. after switching accounts
-pnpm --filter @repo/galaxy-scraper categories   # list categories and counts
+pnpm --filter @repo/galaxy-scraper load         # rebuild the database from the matches cached in raw/
 pnpm --filter @repo/galaxy-scraper stats        # summarise the database
 pnpm --filter @repo/galaxy-scraper verify       # check the XGID converter
 ```
 
-| Option                  | Effect                                                   |
-| ----------------------- | -------------------------------------------------------- |
-| `--category=blitz,race` | Limit to specific categories                             |
-| `--full`                | Fetch every page, not just what's new (`sync` only)      |
-| `--delay=1000`          | Milliseconds between requests (default 1000)             |
-| `--resume`              | Reuse pages already in `data/raw/` instead of refetching |
-| `--include-recent`      | Include the cross-cutting `recent` category              |
-| `--max-pages=100`       | Safety cap per category                                  |
-| `--db=<path>`           | Database location                                        |
+| Option         | Effect                                               |
+| -------------- | ---------------------------------------------------- |
+| `--full`       | Walk the whole match history, not just the newest 50 |
+| `--delay=1000` | Milliseconds between requests (default 1000)         |
+| `--db=<path>`  | Database location                                    |
 
-`scrape` writes raw pages to `data/raw/<category>/page-NNN.json`; `load` builds the database from whatever is cached. Because the two are separate, a token expiry mid-scrape never costs you the pages already downloaded, and `load` re-runs offline as often as you like.
+Every match is cached, with its reviews, as `data/raw/matches/<match_id>.json`, and a cached match is never fetched again. So a backfill stopped halfway, by a token expiry or anything else, picks up where it left off, and `load` rebuilds the database offline as often as you like. A match Galaxy hasn't analysed yet is neither cached nor stored, so the next run asks for it again.
+
+## Where everything comes from
+
+Every route lives on `https://api.backgammongalaxy.com` and takes the web client's headers:
+
+| Route                                                        | Gives                                                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /stats/api/v3/users/analytics/results/{bg_id}?limit=50` | The 50 newest match ids, strictly newest first. `limit` goes no higher.                                                                                                   |
+| `GET /stats/api/v2/analyses/list/{page}`                     | The history page, 30 matches a page, with opponents' names. Loose order within a page, and it leaves out a few matches, so it's an index rather than the source of truth. |
+| `GET /api/matches/{id}`                                      | The match: length, score, date, each player's error rate. No names. With `accept: application/vnd.galaxy+mat`, the match as a `.mat` file, names included.                |
+| `GET /match-analytics/api/v1/game_reviews/{id}/{game}`       | One game's events, each with the engine's review. 1-based; a game past the last has no events.                                                                            |
 
 ## How a blunder is assembled
 
-The API returns flat `events`, several of which share one `blunder_id`:
+A game's events are every decision by both players, each reviewed. A blunder is one of mine the review flags with `is_blunder`, grouped the way Galaxy's blunder service listed them:
 
-- **Checker blunders** pair a `dice_rolled` event (the roll, plus cube analysis for that position) with a `move_commited` event (the ranked candidate move list).
-- **Cube blunders** arrive either on the `dice_rolled` event or standalone as `double_requested`, `double_accepted`, or `double_rejected`.
+- **Checker blunders** pair a `dice_rolled` event (the roll, plus cube analysis for that position) with the `move_commited` event after it (the ranked candidate move list).
+- **Cube blunders** arrive either on the `dice_rolled` event (a missed double) or standalone as `double_requested`, `double_accepted`, or `double_rejected`. A missed double followed by a turn lost on time pairs `dice_rolled` with `turn_forfeited`.
 - A single blunder can be flagged on **both** sides — a wrong cube followed by a wrong play. Those are stored as `kind = 'both'` with the cube error kept in its own `cube_*` columns rather than being overwritten.
 
-Two gotchas worth knowing if you query the raw JSON directly:
+A blunder is keyed on the id of its first review, which grows through a match, so ids sort in play order. Its category is its position's own classification, with the one name the app spells differently (`6_prime` is `six_prime`).
 
-- `error_analysis.equity_error` is `0.0` on every record Galaxy returns, so it is discarded rather than stored. The real magnitude lives in `raw_error` (negative), which is what `blunders.raw_error` holds — populated on every row, never zero. `error_magnitude` is its absolute value, for sorting. Per-candidate `candidate_moves.equity_error` is a different, genuinely populated field: it is zero only for the rank-1 move, which by definition has no error.
-- `source_position.classification` (the position's own tag, e.g. `6_prime`) does not always match the API category it was listed under (`six_prime`). Both are stored — the latter in `blunder_categories`.
-- The candidate list is truncated around the move you played, so `played_rank` is only ever 2 or 3 and `candidate_count` tops out at 5. It is not the engine's full move ranking.
+Some things worth knowing if you query the raw JSON directly:
+
+- Each review's analysis sits one level down, at `review.result.result`, beside the kind of decision it analysed.
+- `error_analysis.equity_error` is null or `0.0`, so it is discarded rather than stored. The real magnitude lives in `raw_error` (negative), which is what `blunders.raw_error` holds. `error_magnitude` is its absolute value, for sorting. Per-candidate `candidate_moves.equity_error` is a different, genuinely populated field: it is zero only for the rank-1 move, which by definition has no error.
+- The candidate list is truncated around the move you played, so it is not the engine's full move ranking.
 
 ## Schema
 
-| Table                | Contents                                                                                                                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `matches`            | One row per match: date, length, final score, opponent name. `self_*` is resolved against the token's `bg_id`, so it is correct whether you were player1 or player2.                           |
-| `blunders`           | One row per `blunder_id`: category, kind, dice, error magnitude, equity, match score, Crawford state, cube value and ownership, `source_xgid`, GNU BG position/match ID, played vs. best move. |
-| `candidate_moves`    | Every ranked alternative: notation, equity, error, `move_played` flag, and both `xgid` and `gnubgid` for the resulting position.                                                               |
-| `cube_decisions`     | Full cube equities: no-double / double-take / double-pass, plus best action for each side.                                                                                                     |
-| `blunder_categories` | Which API categories a blunder was listed under.                                                                                                                                               |
+| Table                | Contents                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `matches`            | One row per match, clean ones included: date, length, final score, both error rates, opponent name. `self_*` is resolved against the token's `bg_id`, so it is correct whether you were player1 or player2. |
+| `blunders`           | One row per `blunder_id`: category, kind, dice, error magnitude, equity, match score, Crawford state, cube value and ownership, `source_xgid`, GNU BG position/match ID, played vs. best move.              |
+| `candidate_moves`    | Every ranked alternative: notation, equity, error, `move_played` flag, and both `xgid` and `gnubgid` for the resulting position.                                                                            |
+| `cube_decisions`     | Full cube equities: no-double / double-take / double-pass, plus best action for each side.                                                                                                                  |
+| `blunder_categories` | The category each blunder is listed under.                                                                                                                                                                  |
 
 ## Board state
 

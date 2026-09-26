@@ -50,8 +50,7 @@ const category = z.object({
 
 const syncStatus = z.object({
   runId: z.number().nullable(),
-  state: z.enum(["idle", "checking", "scraping", "done", "error"]),
-  category: z.string().nullable(),
+  state: z.enum(["idle", "checking", "fetching", "done", "error"]),
   done: z.number(),
   total: z.number(),
   newBlunders: z.number(),
@@ -543,8 +542,7 @@ const match = z.object({
   theirs: z.number().nullable(),
   /**
    * Your ER as Galaxy measures it, over every decision in the match rather than
-   * only the ones listed here. Null on a match whose page had already left the
-   * scraper's `raw/` when ER started being kept, so `load` could not reach it.
+   * only the ones listed here. Null only where Galaxy gave none.
    */
   your_er: z.number().nullable(),
   blunders: z.array(matchBlunder),
@@ -699,8 +697,8 @@ const MATCH_ORDER_BY: Record<MatchSort, string> = {
 
 /**
  * The matches a list holds: every finished one with at least one decision the
- * filters keep. With nothing asked for that is every match, since the scraper
- * only builds a match's row out of its blunders.
+ * filters keep. With nothing asked for that is every match with a blunder: a
+ * clean match has a row, but no decision to list it by.
  */
 function listedMatches(filter: Clause): Clause {
   return {
@@ -1028,9 +1026,8 @@ export const appRouter = router({
     /**
      * Your newest matches, newest first, each with its blunders.
      *
-     * Newest as far as the database knows: the scraper builds a match's row out
-     * of its blunders, so a match played without one never gets a row and cannot
-     * be among these.
+     * Newest among the matches with a blunder: a clean match has a row, but
+     * `listedMatches` has no decision to list it by.
      */
     recentMatches: publicProcedure
       .output(z.array(match))

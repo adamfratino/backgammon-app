@@ -14,10 +14,8 @@ type SyncTrigger = "boot" | "interval" | "mount";
 export interface SyncStatus {
   /** The `sync_runs` row of the latest run, or null before the first. */
   runId: number | null;
-  state: "idle" | "checking" | "scraping" | "done" | "error";
-  /** The category being fetched, as Galaxy names it (`middle_game`). */
-  category: string | null;
-  /** Categories fetched so far, out of `total`. */
+  state: "idle" | "checking" | "fetching" | "done" | "error";
+  /** Matches fetched so far, out of `total`. */
   done: number;
   total: number;
   newBlunders: number;
@@ -52,7 +50,6 @@ function createSyncJob() {
   let status: SyncStatus = {
     runId: null,
     state: "idle",
-    category: null,
     done: 0,
     total: 0,
     newBlunders: 0,
@@ -74,10 +71,10 @@ function createSyncJob() {
         onPhase: (phase) => {
           if (phase.phase === "checking") {
             const { runId } = phase;
-            status = { ...status, runId, state: "checking", category: null, done: 0, total: 0 };
+            status = { ...status, runId, state: "checking", done: 0, total: 0 };
           } else {
-            const { category, done, total } = phase;
-            status = { ...status, state: "scraping", category, done, total };
+            const { done, total } = phase;
+            status = { ...status, state: "fetching", done, total };
           }
         },
       });

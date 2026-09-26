@@ -1,5 +1,5 @@
 import { gnubgIdToXgid } from "./position.ts";
-import { readRawPages } from "./scrape.ts";
+import { readCachedMatches } from "./matches.ts";
 
 const FIELDS = [
   "board",
@@ -27,10 +27,10 @@ export interface VerifyReport {
 export function verifyConverter(): VerifyReport {
   const pairs: { gnubgid: string; xgid: string }[] = [];
 
-  for (const { payload } of readRawPages()) {
-    for (const event of payload?.data?.events ?? []) {
-      for (const review of event.event?.reviews ?? []) {
-        for (const move of review.result?.moves ?? []) {
+  for (const { games } of readCachedMatches()) {
+    for (const event of games.flat()) {
+      for (const review of event.reviews ?? []) {
+        for (const move of review.result?.result?.moves ?? []) {
           if (move.final?.gnubgid && move.final?.xgid) {
             pairs.push({ gnubgid: move.final.gnubgid, xgid: move.final.xgid });
           }
