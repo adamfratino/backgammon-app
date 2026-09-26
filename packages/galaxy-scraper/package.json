@@ -14,16 +14,16 @@
     "./position": "./src/position.ts"
   },
   "scripts": {
-    "sync": "node --disable-warning=ExperimentalWarning src/cli.ts sync",
-    "login": "node --disable-warning=ExperimentalWarning src/cli.ts login",
-    "categories": "node --disable-warning=ExperimentalWarning src/cli.ts categories",
-    "scrape": "node --disable-warning=ExperimentalWarning src/cli.ts scrape",
-    "load": "node --disable-warning=ExperimentalWarning src/cli.ts load",
-    "reencode": "node --disable-warning=ExperimentalWarning src/cli.ts reencode",
-    "all": "node --disable-warning=ExperimentalWarning src/cli.ts all",
-    "stats": "node --disable-warning=ExperimentalWarning src/cli.ts stats",
+    "sync": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts sync",
+    "login": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts login",
+    "categories": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts categories",
+    "scrape": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts scrape",
+    "load": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts load",
+    "reencode": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts reencode",
+    "all": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts all",
+    "stats": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts stats",
     "check-types": "tsc --noEmit",
-    "verify": "node --disable-warning=ExperimentalWarning src/cli.ts verify",
+    "verify": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts verify",
     "test": "node --disable-warning=ExperimentalWarning --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
