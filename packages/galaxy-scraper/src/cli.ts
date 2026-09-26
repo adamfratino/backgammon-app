@@ -62,7 +62,7 @@ Options
   --max-pages=100            Safety cap on pages per category
   --db=<path>                Database location
 
-Credentials live in .auth.json in the package root (written by login) and are renewed
+Credentials live in .auth.json beside the database (written by login) and are renewed
 automatically while the refresh token lasts. $GALAXY_TOKEN or a .token file still work.
 `;
 

@@ -1,9 +1,12 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { PACKAGE_ROOT } from "./config.ts";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { DATA_DIR, PACKAGE_ROOT } from "./config.ts";
 
 /** Where `login` saves the access and refresh token pair. Gitignored. */
-export const AUTH_FILE = join(PACKAGE_ROOT, ".auth.json");
+export const AUTH_FILE = join(DATA_DIR, ".auth.json");
+
+/** Where `AUTH_FILE` used to live: the package root of the checkout holding the database. */
+const LEGACY_AUTH_FILE = join(dirname(DATA_DIR), ".auth.json");
 
 /** Legacy single-token files, still honoured so an existing setup keeps working. */
 const LEGACY_TOKEN_FILES = [join(PACKAGE_ROOT, ".token"), resolve(PACKAGE_ROOT, "../../.token")];
@@ -95,6 +98,7 @@ export function parsePastedCredentials(
 }
 
 export function saveCredentials(token: string, refreshToken: string | null): void {
+  mkdirSync(DATA_DIR, { recursive: true });
   writeFileSync(
     AUTH_FILE,
     JSON.stringify(
@@ -108,16 +112,19 @@ export function saveCredentials(token: string, refreshToken: string | null): voi
 }
 
 /**
- * Whatever credentials are on disk, valid or not: `$GALAXY_TOKEN`, then `.auth.json`,
- * then a legacy `.token` file. Returns null when there is nothing at all.
+ * Whatever credentials are on disk, valid or not: `$GALAXY_TOKEN`, then `.auth.json`
+ * (where it is now, then where it was), then a legacy `.token` file. Returns null when
+ * there is nothing at all.
  */
 export function readStoredCredentials(): Credentials | null {
   const env = process.env.GALAXY_TOKEN?.trim().replace(/^Bearer\s+/i, "");
   if (env) return describeCredentials(env, null);
 
-  if (existsSync(AUTH_FILE)) {
+  // The next save moves a legacy file's tokens to `AUTH_FILE`.
+  for (const file of [AUTH_FILE, LEGACY_AUTH_FILE]) {
+    if (!existsSync(file)) continue;
     try {
-      const saved = JSON.parse(readFileSync(AUTH_FILE, "utf8")) as {
+      const saved = JSON.parse(readFileSync(file, "utf8")) as {
         accessToken?: string;
         refreshToken?: string | null;
       };

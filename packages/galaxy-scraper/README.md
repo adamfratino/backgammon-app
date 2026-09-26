@@ -29,7 +29,7 @@ The first run walks you through the login:
    back to the clipboard. Nothing leaves the browser.
 3. Paste into the terminal and press Enter. The paste is not echoed.
 
-The tokens are saved to `.auth.json` in this package (gitignored, mode 600).
+The tokens are saved to `.auth.json` in `data/`, beside the database (gitignored, mode 600).
 Both tokens last about nine days. When the snippet also finds the refresh
 token, the CLI renews the pair on every run, which rolls that window forward,
 so running at least once every nine days or so means you never paste again. You
@@ -48,16 +48,16 @@ pnpm --filter @repo/galaxy-scraper stats        # summarise the database
 pnpm --filter @repo/galaxy-scraper verify       # check the XGID converter
 ```
 
-| Option                  | Effect                                              |
-| ----------------------- | --------------------------------------------------- |
-| `--category=blitz,race` | Limit to specific categories                        |
-| `--delay=1000`          | Milliseconds between requests (default 1000)        |
-| `--resume`              | Reuse pages already in `raw/` instead of refetching |
-| `--include-recent`      | Include the cross-cutting `recent` category         |
-| `--max-pages=100`       | Safety cap per category                             |
-| `--db=<path>`           | Database location                                   |
+| Option                  | Effect                                                   |
+| ----------------------- | -------------------------------------------------------- |
+| `--category=blitz,race` | Limit to specific categories                             |
+| `--delay=1000`          | Milliseconds between requests (default 1000)             |
+| `--resume`              | Reuse pages already in `data/raw/` instead of refetching |
+| `--include-recent`      | Include the cross-cutting `recent` category              |
+| `--max-pages=100`       | Safety cap per category                                  |
+| `--db=<path>`           | Database location                                        |
 
-`scrape` writes raw pages to `raw/<category>/page-NNN.json`; `load` builds the
+`scrape` writes raw pages to `data/raw/<category>/page-NNN.json`; `load` builds the
 database from whatever is cached. Because the two are separate, a token expiry
 mid-scrape never costs you the pages already downloaded, and `load` re-runs
 offline as often as you like.
