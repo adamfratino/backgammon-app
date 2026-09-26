@@ -3,188 +3,242 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { BlunderEvent, CategoryPage } from "./types.ts";
+import type { MatchEvent } from "./types.ts";
 
-// Raw pages land beside the database, so keep them out of the real one's folder.
+// Matches are cached beside the database, so keep them out of the real one's folder.
 process.env.BLUNDERS_DB_PATH = join(mkdtempSync(join(tmpdir(), "galaxy-scraper-sync-")), "x.db");
-const { openDatabase, writeBatch } = await import("./db.ts");
-const { normalize } = await import("./transform.ts");
-const { scrapeCategory } = await import("./scrape.ts");
-const { recordFullSync, syncIncremental } = await import("./sync.ts");
+const { openDatabase } = await import("./db.ts");
+const { syncIncremental } = await import("./sync.ts");
 
-/** The least `normalize` accepts as a flagged checker blunder, or, unreviewed, one it drops. */
-const event = (blunder_id: number, reviewed = true): BlunderEvent =>
+const SELF = "self";
+const OPPONENT = "opponent";
+
+let nextId = 1;
+/** One of `user`'s decisions, reviewed unless it's a forfeit, and flagged as a blunder if `blunder`. */
+const decision = (event_type: string, user_id: string, blunder = false): MatchEvent =>
   ({
-    blunder_id,
-    match_id: 1,
-    type: "event",
-    event: {
-      event_type: "move_commited",
-      reviews: reviewed ? [{ result: { error_analysis: { is_blunder: true } } }] : [],
-    },
-    match: { data: { id: 1, type: "match", attributes: { length: 5, status: "finished" } } },
-  }) as unknown as BlunderEvent;
+    id: nextId++,
+    event_type,
+    user_id,
+    color: "black",
+    rolled_dice: event_type === "dice_rolled" ? [3, 1] : [],
+    reviews:
+      event_type === "turn_forfeited"
+        ? []
+        : [
+            {
+              id: nextId++,
+              source_position: { id: 1, classification: "6_prime", formatted_value: "x" },
+              result: { result: { error_analysis: { is_blunder: blunder, raw_error: -0.1 } } },
+            },
+          ],
+  }) as unknown as MatchEvent;
 
-/** `count` ids counting down from `from`, as Galaxy lists them. */
-const ids = (from: number, count: number): number[] =>
-  Array.from({ length: count }, (_, i) => from - i);
-
-interface Galaxy {
-  pages: Record<string, number[][]>;
-  /** A `category/page` request that fails, as a 503 or a dropped connection would. */
-  fail?: string;
-  /** Ids Galaxy lists without a review, which `normalize` drops. */
-  unreviewed?: number[];
+interface FakeMatch {
+  id: number;
+  games: MatchEvent[][];
+  /** The name the history list gives; left out, the list doesn't have the match. */
+  listed?: string;
+  analysed?: boolean;
 }
 
-function fakeGalaxy({ pages, fail, unreviewed = [] }: Galaxy) {
+function fakeGalaxy(matches: FakeMatch[]) {
   const requests: string[] = [];
+  const byId = new Map(matches.map((match) => [match.id, match]));
+  const listed = matches.filter((match) => match.listed !== undefined);
+  const get = (id: number): FakeMatch => byId.get(id) ?? assert.fail(`no match ${id}`);
   return {
     requests,
     client: {
-      async fetchCategories() {
-        requests.push("categories");
-        const counts = Object.fromEntries(Object.keys(pages).map((c) => [c, 1]));
-        return { counts, path: "/blunder/categories" };
+      async fetchResults() {
+        requests.push("results");
+        return { results: matches.slice(0, 50).map(({ id }) => ({ match_id: id })) } as never;
       },
-      async fetchCategoryPage(category: string, page: number): Promise<CategoryPage> {
-        const key = `${category}/${page}`;
-        requests.push(key);
-        if (key === fail) throw new Error(`HTTP 503 on ${key}`);
-        const events = (pages[category]?.[page - 1] ?? []).map((id) =>
-          event(id, !unreviewed.includes(id)),
-        );
-        return { type: "page", data: { events } };
+      async fetchHistoryPage(page: number) {
+        requests.push(`list/${page}`);
+        const analyses = listed
+          .slice((page - 1) * 30, page * 30)
+          .map(({ id, listed }) => ({ matchId: id, opponentName: listed ?? null }));
+        return { page, totalPages: Math.ceil(listed.length / 30), userName: "me", analyses };
+      },
+      async fetchMatch(id: number) {
+        requests.push(`match/${id}`);
+        const player = (id: string) => ({ id, type: "user", attributes: {} });
+        const attributes = { player1: player(SELF), player2: player(OPPONENT), length: 3 };
+        const meta = { analytics: get(id).analysed === false ? "pending" : "ok" };
+        return { data: { id, type: "match", attributes }, meta } as never;
+      },
+      async fetchGameReview(id: number, game: number) {
+        requests.push(`review/${id}/${game}`);
+        return { data: { match_id: id, game_index: game, events: get(id).games[game - 1] ?? [] } };
+      },
+      async fetchMatFile(id: number) {
+        requests.push(`mat/${id}`);
+        return `; [Player 1 "me"]\n; [Player 2 "from-mat"]\n`;
       },
     },
   };
 }
 
-function databaseWith(...blunderIds: number[]) {
-  const db = openDatabase(":memory:");
-  writeBatch(
-    db,
-    normalize(
-      blunderIds.map((id) => event(id)),
-      "seed",
-      null,
-    ),
-  );
-  return db;
-}
+type Database = ReturnType<typeof openDatabase>;
 
-type Database = ReturnType<typeof databaseWith>;
-
-async function run(db: Database, galaxy: Galaxy) {
-  const fake = fakeGalaxy(galaxy);
-  const phases: string[] = [];
+async function run(db: Database, matches: FakeMatch[], full = false) {
+  const fake = fakeGalaxy(matches);
   const result = await syncIncremental(db, {
     trigger: "test",
-    connect: async () => ({ client: fake.client, selfId: null }),
-    onPhase: ({ phase }) => phases.push(phase),
+    full,
+    connect: async () => ({ client: fake.client, selfId: SELF }),
   });
-  return { ...result, requests: fake.requests, phases };
+  return { ...result, requests: fake.requests };
 }
 
-const count = (db: Database, sql: string): number => (db.prepare(sql).get() as { n: number }).n;
+let nextMatch = 1000;
+/** A listed match with one game, holding one blunder of mine unless `clean`. */
+const match = (clean = false, extra: Partial<FakeMatch> = {}): FakeMatch => ({
+  id: nextMatch++,
+  listed: "rival",
+  games: [[decision("dice_rolled", SELF), decision("move_commited", SELF, !clean)]],
+  ...extra,
+});
 
-test("nothing new: one request, and no scraping", async () => {
-  const synced = await run(databaseWith(1000), {
-    pages: { recent: [ids(1000, 100)], blitz: [ids(1000, 100)] },
-  });
-  assert.deepEqual(synced.requests, ["recent/1"]);
-  assert.deepEqual(synced.phases, ["checking"]);
+const rows = (db: Database, sql: string, ...params: number[]) =>
+  db
+    .prepare(sql)
+    .all(...params)
+    .map((row) => ({ ...row }));
+
+test("the first run walks the whole history, clean matches included", async () => {
+  const db = openDatabase(":memory:");
+  const [clean, flagged] = [match(true), match()];
+  const synced = await run(db, [clean, flagged]);
+  assert.deepEqual(synced.requests, [
+    "results",
+    "list/1",
+    `match/${clean.id}`,
+    `review/${clean.id}/1`,
+    `review/${clean.id}/2`,
+    `match/${flagged.id}`,
+    `review/${flagged.id}/1`,
+    `review/${flagged.id}/2`,
+  ]);
+  assert.deepEqual(
+    rows(
+      db,
+      "SELECT match_id, COUNT(blunder_id) AS n FROM matches LEFT JOIN blunders USING (match_id) GROUP BY 1",
+    ),
+    [
+      { match_id: clean.id, n: 0 },
+      { match_id: flagged.id, n: 1 },
+    ],
+  );
+  assert.equal(synced.newMatches, 2);
+  assert.equal(synced.newBlunders, 1);
+});
+
+test("nothing new: one request", async () => {
+  const db = openDatabase(":memory:");
+  const matches = [match(), match()];
+  await run(db, matches);
+  const again = await run(db, matches);
+  assert.deepEqual(again.requests, ["results"]);
+  assert.equal(again.newMatches, 0);
+});
+
+test("a new match: its games, and page 1 of the history for its opponent's name", async () => {
+  const db = openDatabase(":memory:");
+  const old = [match()];
+  await run(db, old);
+  const fresh = match(false, { listed: "newcomer" });
+  const synced = await run(db, [fresh, ...old]);
+  assert.deepEqual(synced.requests, [
+    "results",
+    "list/1",
+    `match/${fresh.id}`,
+    `review/${fresh.id}/1`,
+    `review/${fresh.id}/2`,
+  ]);
+  assert.deepEqual(
+    rows(db, "SELECT opponent_name, self_name FROM matches WHERE match_id = ?", fresh.id),
+    [{ opponent_name: "newcomer", self_name: "me" }],
+  );
+});
+
+test("all 50 newest unknown: walks the whole history", async () => {
+  const db = openDatabase(":memory:");
+  const old = [match()];
+  await run(db, old);
+  const synced = await run(db, [...Array.from({ length: 50 }, () => match(true)), ...old]);
+  assert.ok(synced.requests.includes("list/2"));
+  assert.equal(rows(db, "SELECT * FROM matches").length, 51);
+});
+
+test("a match Galaxy hasn't analysed yet is asked for again next run", async () => {
+  const db = openDatabase(":memory:");
+  const old = [match()];
+  await run(db, old);
+  const pending = match(false, { analysed: false });
+  await run(db, [pending, ...old]);
+  assert.equal(rows(db, "SELECT * FROM matches WHERE match_id = ?", pending.id).length, 0);
+  const synced = await run(db, [{ ...pending, analysed: true }, ...old]);
+  assert.equal(synced.newBlunders, 1);
+});
+
+test("a match the history leaves out takes its names from the .mat", async () => {
+  const db = openDatabase(":memory:");
+  const old = [match()];
+  await run(db, old);
+  const unlisted = match(false, { listed: undefined });
+  const synced = await run(db, [unlisted, ...old]);
+  assert.ok(synced.requests.includes(`mat/${unlisted.id}`));
+  assert.deepEqual(rows(db, "SELECT opponent_name FROM matches WHERE match_id = ?", unlisted.id), [
+    { opponent_name: "from-mat" },
+  ]);
+});
+
+test("a deleted account doesn't replace the name the match had", async () => {
+  const db = openDatabase(":memory:");
+  const known = match();
+  await run(db, [known]);
+  const synced = await run(db, [{ ...known, listed: "Deleted User" }], true);
+  assert.ok(!synced.requests.includes(`mat/${known.id}`));
+  assert.deepEqual(rows(db, "SELECT opponent_name FROM matches"), [{ opponent_name: "rival" }]);
+});
+
+test("a full walk rebuilds a match's blunders, and reuses what it cached", async () => {
+  const db = openDatabase(":memory:");
+  const known = match();
+  await run(db, [known]);
+  db.exec("UPDATE blunders SET raw_error = -9");
+  const synced = await run(db, [known], true);
+  assert.deepEqual(synced.requests, ["results", "list/1"]);
+  assert.deepEqual(rows(db, "SELECT raw_error FROM blunders"), [{ raw_error: -0.1 }]);
   assert.equal(synced.newBlunders, 0);
 });
 
-test("new blunders on page 1: one page per category", async () => {
-  const synced = await run(databaseWith(1000), {
-    pages: {
-      recent: [ids(1050, 100)],
-      blitz: [ids(1050, 100), ids(950, 100)],
-      race: [ids(1020, 100), ids(920, 100)],
-    },
-  });
-  assert.deepEqual(synced.requests, ["recent/1", "categories", "blitz/1", "race/1"]);
-  assert.deepEqual(synced.phases, ["checking", "scraping", "scraping"]);
-});
-
-test("a known id on page 2 stops the category there", async () => {
-  const synced = await run(databaseWith(1000), {
-    pages: {
-      recent: [ids(1250, 100)],
-      blitz: [ids(1250, 100), ids(1050, 100), ids(950, 100)],
-    },
-  });
-  assert.deepEqual(synced.requests, ["recent/1", "categories", "blitz/1", "blitz/2"]);
-});
-
-test("a short page is the last one", async () => {
-  const synced = await run(openDatabase(":memory:"), {
-    pages: { recent: [ids(40, 40)], blitz: [ids(40, 40)] },
-  });
-  assert.deepEqual(synced.requests, ["recent/1", "categories", "blitz/1"]);
-  assert.equal(synced.newBlunders, 40);
-});
-
-test("counts only blunders the database didn't have", async () => {
-  const synced = await run(databaseWith(1000, 990), {
-    pages: { recent: [ids(1050, 100)], blitz: [ids(1050, 100)], race: [ids(1020, 100)] },
-  });
-  assert.equal(synced.newBlunders, 50);
-});
-
-test("a run that fails partway leaves the next to fetch what it missed", async () => {
-  const db = databaseWith(1000);
-  const pages = {
-    recent: [ids(1050, 100)],
-    blitz: [ids(1050, 100)],
-    race: [[...ids(1020, 10), ...ids(1000, 90)]],
-  };
-  await assert.rejects(run(db, { pages, fail: "race/1" }), /503/);
-  assert.equal(count(db, "SELECT COUNT(*) AS n FROM sync_runs WHERE error IS NOT NULL"), 1);
-
-  const retried = await run(db, { pages });
-  assert.deepEqual(retried.requests, ["recent/1", "categories", "blitz/1", "race/1"]);
-  assert.equal(
-    count(db, "SELECT COUNT(*) AS n FROM blunder_categories WHERE category = 'race'"),
-    10,
+test("blunders: mine only, a roll paired with its play, doubles alone", async () => {
+  const db = openDatabase(":memory:");
+  const game = [
+    decision("dice_rolled", OPPONENT),
+    decision("move_commited", OPPONENT, true),
+    decision("dice_rolled", SELF, true),
+    decision("move_commited", SELF, true),
+    decision("double_requested", SELF, true),
+    decision("double_accepted", OPPONENT),
+    decision("dice_rolled", SELF, true),
+    decision("turn_forfeited", SELF),
+    decision("dice_rolled", SELF),
+    decision("move_commited", SELF),
+  ];
+  await run(db, [match(false, { games: [game] })]);
+  assert.deepEqual(
+    rows(db, "SELECT kind, flagged_event_type, cube_action FROM blunders ORDER BY blunder_id"),
+    [
+      { kind: "both", flagged_event_type: "move_commited", cube_action: "dice_rolled" },
+      { kind: "cube", flagged_event_type: "double_requested", cube_action: "double_requested" },
+      { kind: "cube", flagged_event_type: "dice_rolled", cube_action: "dice_rolled" },
+    ],
   );
-});
-
-test("a blunder Galaxy lists but the database can't keep doesn't make every run rescan", async () => {
-  const db = databaseWith(1000);
-  const galaxy = {
-    pages: { recent: [ids(1001, 100)], blitz: [ids(1001, 100)] },
-    unreviewed: [1001],
-  };
-  await run(db, galaxy);
-  const again = await run(db, galaxy);
-  assert.deepEqual(again.requests, ["recent/1"]);
-});
-
-test("leaves the rows it already had alone", async () => {
-  const db = databaseWith(1000);
-  // Stands in for a column only a newer checkout fills, which a rewrite from this one would blank.
-  db.exec("UPDATE blunders SET played_notation = 'kept' WHERE blunder_id = 1000");
-  await run(db, { pages: { recent: [ids(1050, 100)], blitz: [ids(1050, 100)] } });
-  assert.equal(count(db, "SELECT COUNT(*) AS n FROM blunders WHERE played_notation = 'kept'"), 1);
-});
-
-test("a full walk doesn't come back as new", async () => {
-  const db = databaseWith(1000, 1050);
-  db.exec(
-    "INSERT INTO sync_runs (trigger, started_at, finished_at, high_water) VALUES ('test', '', '', 1000)",
-  );
-  recordFullSync(db);
-  const synced = await run(db, { pages: { recent: [ids(1050, 100)], blitz: [ids(1050, 100)] } });
-  assert.deepEqual(synced.requests, ["recent/1"]);
-});
-
-test("a page that shifted mid-walk isn't mistaken for the last", async () => {
-  const fake = fakeGalaxy({
-    pages: { blitz: [ids(300, 100), [201, ...ids(199, 99)], ids(100, 100), []] },
-  });
-  await scrapeCategory(fake.client, "blitz");
-  assert.deepEqual(fake.requests, ["blitz/1", "blitz/2", "blitz/3", "blitz/4"]);
+  assert.deepEqual(rows(db, "SELECT DISTINCT category FROM blunder_categories"), [
+    { category: "six_prime" },
+  ]);
 });

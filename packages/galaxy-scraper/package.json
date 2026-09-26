@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Scrapes Backgammon Galaxy blunder analysis into a local SQLite database",
+  "description": "Syncs Backgammon Galaxy matches and their blunders into a local SQLite database",
   "bin": {
     "galaxy-scraper": "./src/cli.ts"
   },
@@ -16,11 +16,8 @@
   "scripts": {
     "sync": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts sync",
     "login": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts login",
-    "categories": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts categories",
-    "scrape": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts scrape",
     "load": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts load",
     "reencode": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts reencode",
-    "all": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts all",
     "stats": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts stats",
     "check-types": "tsc --noEmit",
     "verify": "node --disable-warning=ExperimentalWarning --env-file-if-exists=../../apps/web/.env.local src/cli.ts verify",

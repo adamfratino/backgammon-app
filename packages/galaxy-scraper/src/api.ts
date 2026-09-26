@@ -1,11 +1,11 @@
 import { API_BASE, APP_VERSION, BROWSER_USER_AGENT } from "./config.ts";
 import type { Credentials } from "./credentials.ts";
-import type { CategoryCounts, CategoryPage } from "./types.ts";
+import type { GameReviewPage, HistoryPage, MatchResponse, ResultsResponse } from "./types.ts";
 
 /** Header set copied from the web client; Galaxy rejects requests without them. */
-function headers(token: string): Record<string, string> {
+function headers(token: string, accept: string): Record<string, string> {
   return {
-    accept: "*/*",
+    accept,
     "accept-language": "en-US,en;q=0.9",
     appenvironment: "PROD",
     appplatform: "WEB",
@@ -53,14 +53,22 @@ export class GalaxyClient {
     this.lastRequestAt = Date.now();
   }
 
-  async get<T>(path: string): Promise<T> {
+  get<T>(path: string): Promise<T> {
+    return this.request(path, "*/*", (response) => response.json() as Promise<T>);
+  }
+
+  private async request<T>(
+    path: string,
+    accept: string,
+    read: (response: Response) => Promise<T>,
+  ): Promise<T> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       await this.throttle();
       try {
         const response = await fetch(`${API_BASE}${path}`, {
-          headers: headers(this.credentials.token),
+          headers: headers(this.credentials.token, accept),
         });
 
         if (response.status === 401 || response.status === 403) {
@@ -83,7 +91,7 @@ export class GalaxyClient {
           throw new PermanentError(`HTTP ${response.status} on ${path}`, response.status);
         }
 
-        return (await response.json()) as T;
+        return await read(response);
       } catch (error) {
         if (error instanceof PermanentError) throw error;
         lastError = error;
@@ -96,35 +104,28 @@ export class GalaxyClient {
     });
   }
 
-  /**
-   * The categories endpoint was never captured from DevTools, so try the
-   * plausible paths and remember whichever answers.
-   */
-  async fetchCategories(): Promise<{ counts: CategoryCounts; path: string } | null> {
-    const paths = [
-      "/blunder/categories",
-      "/blunder/category",
-      "/blunders/categories",
-      "/blunder/category/counts",
-    ];
-
-    for (const path of paths) {
-      try {
-        const counts = await this.get<CategoryCounts>(path);
-        const values = Object.values(counts ?? {});
-        if (values.length > 0 && values.every((v) => typeof v === "number")) {
-          return { counts, path };
-        }
-      } catch (error) {
-        // A rejected token is worth surfacing; a wrong path is not.
-        if (error instanceof PermanentError && (error.status === 401 || error.status === 403))
-          throw error;
-      }
-    }
-    return null;
+  /** The 50 newest matches, newest first. `limit` goes no higher. */
+  fetchResults(selfId: string): Promise<ResultsResponse> {
+    return this.get(`/stats/api/v3/users/analytics/results/${selfId}?limit=50`);
   }
 
-  fetchCategoryPage(category: string, page: number): Promise<CategoryPage> {
-    return this.get<CategoryPage>(`/blunder/category/${category}?page=${page}`);
+  fetchMatch(matchId: number): Promise<MatchResponse> {
+    return this.get(`/api/matches/${matchId}`);
+  }
+
+  /** The match as a `.mat` file, the one place both players' names are sure to be. */
+  fetchMatFile(matchId: number): Promise<string> {
+    return this.request(`/api/matches/${matchId}`, "application/vnd.galaxy+mat", (response) =>
+      response.text(),
+    );
+  }
+
+  /** One game's events, each with its review. `game` is 1-based. */
+  fetchGameReview(matchId: number, game: number): Promise<GameReviewPage> {
+    return this.get(`/match-analytics/api/v1/game_reviews/${matchId}/${game}`);
+  }
+
+  fetchHistoryPage(page: number): Promise<HistoryPage> {
+    return this.get(`/stats/api/v2/analyses/list/${page}`);
   }
 }

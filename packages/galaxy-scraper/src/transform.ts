@@ -1,5 +1,14 @@
 import { cubePositionOf, decodeMatchId, gnubgIdToXgid } from "./position.ts";
-import type { BlunderEvent, CandidateMove, MatchAttributes, Review } from "./types.ts";
+import type { CandidateMove, MatchEvent, MatchResponse, ReviewResult } from "./types.ts";
+
+/** A match as the sync caches it in `raw/`: everything a rebuild needs, offline. */
+export interface MatchRecord {
+  match: MatchResponse["data"];
+  /** Every game's events, in play order. */
+  games: MatchEvent[][];
+  selfName: string | null;
+  opponentName: string | null;
+}
 
 export interface NormalizedMatch {
   match_id: number;
@@ -102,18 +111,18 @@ export interface NormalizedCube {
 }
 
 export interface NormalizedBatch {
-  matches: NormalizedMatch[];
+  match: NormalizedMatch;
   blunders: NormalizedBlunder[];
   candidates: NormalizedCandidate[];
   cubes: NormalizedCube[];
   links: { blunder_id: number; category: string }[];
 }
 
-function normalizeMatch(
-  match_id: number,
-  a: MatchAttributes,
+export function normalizeMatch(
+  { match, selfName, opponentName }: MatchRecord,
   selfId: string | null,
 ): NormalizedMatch {
+  const a = match.attributes;
   // player1 is normally the account holder, but confirm against the token's bg_id.
   const selfIsPlayer1 = selfId ? a.player1?.id === selfId : true;
   const self = selfIsPlayer1 ? a.player1 : a.player2;
@@ -123,18 +132,19 @@ function normalizeMatch(
   const selfStats = selfIsPlayer1 ? a.player1_stats : a.player2_stats;
   const opponentStats = selfIsPlayer1 ? a.player2_stats : a.player1_stats;
   return {
-    match_id,
-    finished_at: a.finished_at ?? null,
+    match_id: match.id,
+    // Stored the way the blunder service wrote it, which the app's date filters compare against.
+    finished_at: a.finished_at?.replace("T", " ") ?? null,
     length: a.length,
     status: a.status,
     subtype: a.subtype,
     analysis_level: a.analysis_level ?? null,
     tournament_id: a.tournament_id != null ? String(a.tournament_id) : null,
     self_id: self?.id ?? null,
-    self_name: self?.name ?? null,
+    self_name: selfName,
     self_score: selfScore ?? null,
     opponent_id: opponent?.id ?? null,
-    opponent_name: opponent?.name ?? null,
+    opponent_name: opponentName,
     opponent_score: opponentScore ?? null,
     self_error_rate: selfStats?.error_rate ?? null,
     opponent_error_rate: opponentStats?.error_rate ?? null,
@@ -170,82 +180,80 @@ const CUBE_EVENT_TYPES = new Set([
   "double_rejected",
 ]);
 
-/**
- * Blunders arrive as one or more events sharing a `blunder_id`. A checker
- * blunder pairs a `dice_rolled` event (the roll, plus cube analysis) with a
- * `move_commited` event (the candidate move list). Cube blunders may instead
- * arrive alone as `double_requested` / `double_accepted` / `double_rejected`.
- * Either side can be the flagged one, and both can be flagged at once.
- */
-export function normalize(
-  events: BlunderEvent[],
-  apiCategory: string,
-  selfId: string | null,
-): NormalizedBatch {
-  const byBlunder = new Map<number, BlunderEvent[]>();
-  for (const event of events) {
-    const bucket = byBlunder.get(event.blunder_id);
-    if (bucket) bucket.push(event);
-    else byBlunder.set(event.blunder_id, [event]);
-  }
+/** The cube decisions that stand alone, rather than before a roll. */
+const DOUBLE_EVENT_TYPES = new Set(["double_requested", "double_accepted", "double_rejected"]);
 
-  const matches = new Map<number, NormalizedMatch>();
+/** The one category the blunder service named differently from the position's own tag. */
+const CATEGORY_ALIASES: Record<string, string> = { "6_prime": "six_prime" };
+
+const analysisOf = (event: MatchEvent | undefined): ReviewResult | undefined =>
+  event?.reviews?.[0]?.result?.result;
+
+const isFlagged = (event: MatchEvent): boolean =>
+  analysisOf(event)?.error_analysis?.is_blunder === true;
+
+/**
+ * My decisions the engine flagged, grouped the way the blunder service listed
+ * them: a roll with the play that follows it (or the turn forfeited when the
+ * clock ran out), flagged on either side, or a double, take or pass alone.
+ */
+function blunderGroups(events: MatchEvent[], selfId: string | null): MatchEvent[][] {
+  const groups: MatchEvent[][] = [];
+  for (const [i, event] of events.entries()) {
+    if (event.user_id !== selfId) continue;
+    if (event.event_type === "dice_rolled") {
+      const next = events[i + 1];
+      const played =
+        next?.user_id === selfId &&
+        (next.event_type === "move_commited" || next.event_type === "turn_forfeited");
+      const group = played ? [event, next] : [event];
+      if (group.some(isFlagged)) groups.push(group);
+    } else if (DOUBLE_EVENT_TYPES.has(event.event_type ?? "") && isFlagged(event)) {
+      groups.push([event]);
+    }
+  }
+  return groups;
+}
+
+/**
+ * A match and the blunders in it. A blunder is keyed on the id of its first
+ * review, which only grows through a match, so ids sort in play order.
+ */
+export function normalize(record: MatchRecord, selfId: string | null): NormalizedBatch {
+  const match = normalizeMatch(record, selfId);
   const blunders: NormalizedBlunder[] = [];
   const candidates: NormalizedCandidate[] = [];
   const cubes: NormalizedCube[] = [];
   const links: { blunder_id: number; category: string }[] = [];
 
-  for (const [blunder_id, group] of byBlunder) {
-    const diceEvent = group.find((e) => e.event?.event_type === "dice_rolled");
-    const moveEvent = group.find((e) => e.event?.event_type === "move_commited");
+  for (const group of record.games.flatMap((events) => blunderGroups(events, match.self_id))) {
+    const blunder_id = group.find((e) => e.reviews?.[0])?.reviews[0]?.id;
+    if (blunder_id === undefined) continue;
 
-    // Prefer a cube event the engine actually flagged over a merely present one.
-    const cubeEvents = group.filter((e) => CUBE_EVENT_TYPES.has(e.event?.event_type ?? ""));
-    const cubeEvent =
-      cubeEvents.find((e) => e.event?.reviews?.[0]?.result?.error_analysis?.is_blunder) ??
-      cubeEvents[0];
-
-    const anyEvent = moveEvent ?? cubeEvent ?? diceEvent ?? group[0];
-    if (!anyEvent) continue;
-
-    const attributes = anyEvent.match?.data?.attributes;
-    if (attributes && !matches.has(anyEvent.match_id)) {
-      matches.set(anyEvent.match_id, normalizeMatch(anyEvent.match_id, attributes, selfId));
-    }
-
-    const moveReview: Review | undefined = moveEvent?.event?.reviews?.[0];
-    const cubeReview: Review | undefined = cubeEvent?.event?.reviews?.[0];
+    const diceEvent = group.find((e) => e.event_type === "dice_rolled");
+    const moveEvent = group.find((e) => e.event_type === "move_commited");
+    const cubeEvent = group.find((e) => CUBE_EVENT_TYPES.has(e.event_type ?? ""));
 
     // Both sides can be flagged at once: a wrong cube followed by a wrong play.
-    const checkerFlagged = moveReview?.result?.error_analysis?.is_blunder === true;
-    const cubeFlagged = cubeReview?.result?.error_analysis?.is_blunder === true;
+    const checkerFlagged = moveEvent ? isFlagged(moveEvent) : false;
+    const cubeFlagged = cubeEvent ? isFlagged(cubeEvent) : false;
 
-    let kind: string;
-    if (checkerFlagged && cubeFlagged) kind = "both";
-    else if (checkerFlagged) kind = "checker";
-    else if (cubeFlagged) kind = "cube";
-    else kind = moveReview ? "checker" : "cube";
+    const kind = checkerFlagged && cubeFlagged ? "both" : checkerFlagged ? "checker" : "cube";
 
     // The primary row reports the checker error when there is one; the cube
     // error is preserved in its own columns either way.
-    const flagged: Review | undefined = checkerFlagged
-      ? moveReview
-      : cubeFlagged
-        ? cubeReview
-        : (moveReview ?? cubeReview);
+    const flaggedEvent = checkerFlagged ? moveEvent : cubeEvent;
+    const flagged = flaggedEvent?.reviews?.[0];
     if (!flagged) continue;
 
-    const flaggedEventType = (
-      checkerFlagged ? moveEvent : cubeFlagged ? cubeEvent : (moveEvent ?? cubeEvent)
-    )?.event?.event_type;
-    const cubeAnalysisSide = cubeReview?.result?.error_analysis;
+    const cubeAnalysisSide = analysisOf(cubeEvent)?.error_analysis;
 
-    const result = flagged.result;
+    const result = flagged.result?.result;
     const analysis = result?.error_analysis;
     const moves = result?.moves ?? [];
     const played = moves.find((m) => m.move_played);
     const best = moves.find((m) => m.rank === 1) ?? moves[0];
-    const dice = diceEvent?.event?.rolled_dice ?? [];
+    const dice = diceEvent?.rolled_dice ?? [];
 
     // The flagged review's ids describe the position actually faced. Only the
     // checker-play review carries the roll; a cube review is pre-roll.
@@ -259,11 +267,11 @@ export function normalize(
 
     blunders.push({
       blunder_id,
-      match_id: anyEvent.match_id,
+      match_id: match.match_id,
       kind,
-      flagged_event_type: flaggedEventType ?? null,
-      cube_action: cubeEvent?.event?.event_type ?? null,
-      color: moveEvent?.event?.color || cubeEvent?.event?.color || diceEvent?.event?.color || null,
+      flagged_event_type: flaggedEvent?.event_type ?? null,
+      cube_action: cubeEvent?.event_type ?? null,
+      color: moveEvent?.color || cubeEvent?.color || diceEvent?.color || null,
       die_1: dice[0] ?? null,
       die_2: dice[1] ?? null,
       source_classification: flagged.source_position?.classification || null,
@@ -305,7 +313,7 @@ export function normalize(
 
     for (const move of moves) candidates.push(candidateRow(blunder_id, move));
 
-    const cube = cubeReview?.result?.cube_analysis ?? flagged.result?.cube_analysis;
+    const cube = analysisOf(cubeEvent)?.cube_analysis ?? result?.cube_analysis;
     if (cube) {
       cubes.push({
         blunder_id,
@@ -325,8 +333,11 @@ export function normalize(
       });
     }
 
-    links.push({ blunder_id, category: apiCategory });
+    const classification = flagged.source_position?.classification;
+    if (classification) {
+      links.push({ blunder_id, category: CATEGORY_ALIASES[classification] ?? classification });
+    }
   }
 
-  return { matches: [...matches.values()], blunders, candidates, cubes, links };
+  return { match, blunders, candidates, cubes, links };
 }

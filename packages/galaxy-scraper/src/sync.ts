@@ -1,49 +1,27 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { GalaxyClient } from "./api.ts";
-import { writeBatch } from "./db.ts";
-import { resolveCategories, scrapeCategory } from "./scrape.ts";
+import { writeMatch } from "./db.ts";
+import { type History, type MatchClient, pullMatch, readHistory } from "./matches.ts";
 import { normalize } from "./transform.ts";
 
 type SyncPhase =
-  | { phase: "checking"; runId: number }
-  | { phase: "scraping"; category: string; done: number; total: number };
+  { phase: "checking"; runId: number } | { phase: "fetching"; done: number; total: number };
 
 interface SyncOptions {
   /** What started the run, as `sync_runs` records it: `boot`, `interval`, `mount`, `cli`. */
   trigger: string;
+  /** Walk the whole match history, not just the newest 50. */
+  full?: boolean;
   /**
    * Logs in and hands back a client. Called inside the run, so a login that has
    * run out is recorded as the run's error like any other failure.
    */
   connect: () => Promise<{
-    client: Pick<GalaxyClient, "fetchCategories" | "fetchCategoryPage">;
+    client: MatchClient;
     /** The account holder's Galaxy id, which decides who is "self" in each match. */
     selfId: string | null;
   }>;
   onPhase?: (phase: SyncPhase) => void;
   onProgress?: (message: string) => void;
-}
-
-const maxBlunderId = (db: DatabaseSync): number =>
-  (db.prepare("SELECT COALESCE(MAX(blunder_id), 0) AS id FROM blunders").get() as { id: number })
-    .id;
-
-/**
- * Everything at or below this id is in the database: the top of `recent` when
- * the last clean run checked it. A failed run leaves it where it was, so the
- * next one re-walks whatever the failed one missed. The table's own highest id
- * can't do this: a run that fails halfway has already raised it.
- */
-function highWater(db: DatabaseSync): number {
-  const { mark } = db
-    .prepare(
-      "SELECT MAX(high_water) AS mark FROM sync_runs WHERE finished_at IS NOT NULL AND error IS NULL",
-    )
-    .get() as { mark: number | null };
-  if (mark !== null) return mark;
-  // Before any clean run, the table is all there is to go on. Record it as one,
-  // so that a first run failing halfway can't move it either.
-  return markSynced(db, "baseline");
 }
 
 const startRun = (db: DatabaseSync, trigger: string): number =>
@@ -56,70 +34,90 @@ const startRun = (db: DatabaseSync, trigger: string): number =>
 function finishRun(
   db: DatabaseSync,
   runId: number,
-  run: { newBlunders: number; error: string | null; highWater: number | null },
+  run: { newBlunders: number; error: string | null; backfilled: boolean },
 ): void {
   db.prepare(
-    "UPDATE sync_runs SET finished_at = ?, new_blunders = ?, error = ?, high_water = ? WHERE id = ?",
-  ).run(new Date().toISOString(), run.newBlunders, run.error, run.highWater, runId);
+    "UPDATE sync_runs SET finished_at = ?, new_blunders = ?, error = ?, backfilled = ? WHERE id = ?",
+  ).run(new Date().toISOString(), run.newBlunders, run.error, run.backfilled ? 1 : 0, runId);
 }
 
-/** Records everything in the table as synced, and returns the id that now marks it. */
-function markSynced(db: DatabaseSync, trigger: string): number {
-  const highWater = maxBlunderId(db);
-  finishRun(db, startRun(db, trigger), { newBlunders: 0, error: null, highWater });
-  return highWater;
-}
-
-/**
- * Records a `--full` walk as a clean run, so the next incremental sync starts
- * from everything it loaded rather than reporting it as new.
- */
-export function recordFullSync(db: DatabaseSync): void {
-  markSynced(db, "full");
-}
+/** Whether a clean run has walked the whole history, which the first one has to. */
+const hasBackfilled = (db: DatabaseSync): boolean =>
+  db
+    .prepare(
+      "SELECT 1 FROM sync_runs WHERE backfilled = 1 AND finished_at IS NOT NULL AND error IS NULL",
+    )
+    .get() !== undefined;
 
 /**
- * Fetches only what Galaxy has added since the last clean sync, and records the
- * run in `sync_runs`. Every category lists its blunders newest first, and ids
- * only grow, so one page of `recent` says whether there is anything new at all,
- * and each category can stop at the first page holding an id already synced.
+ * Pulls the matches Galaxy has finished since the last sync, with every
+ * blunder in them, and records the run in `sync_runs`. One request for the 50
+ * newest match ids says whether there is anything new at all.
+ *
+ * The first run, a `full` one, and one that finds all 50 new walk the whole
+ * history instead, and pull every match in it again, along with any the
+ * database has that the history leaves out.
  */
 export async function syncIncremental(
   db: DatabaseSync,
-  { trigger, connect, onPhase = () => {}, onProgress }: SyncOptions,
-): Promise<{ runId: number; newBlunders: number }> {
-  const known = highWater(db);
-  const isNew = (event: { blunder_id: number }): boolean => event.blunder_id > known;
+  { trigger, full = false, connect, onPhase = () => {}, onProgress = () => {} }: SyncOptions,
+): Promise<{ runId: number; newMatches: number; newBlunders: number }> {
   const runId = startRun(db, trigger);
   onPhase({ phase: "checking", runId });
 
   try {
     const { client, selfId } = await connect();
-    const recent = (await client.fetchCategoryPage("recent", 1))?.data?.events ?? [];
-    const mark = recent.reduce((top, { blunder_id }) => Math.max(top, blunder_id), known);
+    if (!selfId) throw new Error("The saved login has no Galaxy user id. Run login again.");
+    const names = new Map(
+      (
+        db.prepare("SELECT match_id, opponent_name FROM matches").all() as {
+          match_id: number;
+          opponent_name: string | null;
+        }[]
+      ).map(({ match_id, opponent_name }) => [match_id, opponent_name]),
+    );
 
-    if (recent.some(isNew)) {
-      const categories = resolveCategories((await client.fetchCategories())?.counts ?? null, {});
-      for (const [done, category] of categories.entries()) {
-        onPhase({ phase: "scraping", category, done, total: categories.length });
-        await scrapeCategory(client, category, {
-          onProgress,
-          // Rewriting a row already synced would blank any column this checkout doesn't know.
-          onPage: (events) => writeBatch(db, normalize(events.filter(isNew), category, selfId)),
-          stopAfter: (events) => !events.every(isNew),
-        });
-      }
+    const newest = (await client.fetchResults(selfId)).results.map(({ match_id }) => match_id);
+    const unknown = newest.filter((id) => !names.has(id));
+    // Every one of them new means the gap may run further back than `results` reaches.
+    const backfilled =
+      full || !hasBackfilled(db) || (unknown.length > 0 && unknown.length === newest.length);
+
+    let ids = unknown;
+    let history: History = { selfName: null, opponents: new Map() };
+    if (backfilled) {
+      onProgress("Walking the whole match history...");
+      history = await readHistory(client);
+      ids = [...new Set([...newest, ...history.opponents.keys(), ...names.keys()])];
+    } else if (ids.length > 0) {
+      history = await readHistory(client, 1);
     }
 
-    const { n: newBlunders } = db
-      .prepare("SELECT COUNT(*) AS n FROM blunders WHERE blunder_id > ?")
-      .get(known) as { n: number };
-    finishRun(db, runId, { newBlunders, error: null, highWater: mark });
-    return { runId, newBlunders };
+    let newMatches = 0;
+    let newBlunders = 0;
+    for (const [done, matchId] of ids.entries()) {
+      onPhase({ phase: "fetching", done, total: ids.length });
+      const knownName = names.get(matchId) ?? null;
+      const record = await pullMatch(client, matchId, { history, selfId, knownName });
+      if (!record) {
+        onProgress(`  ${matchId}: not analysed yet`);
+        continue;
+      }
+      const batch = normalize(record, selfId);
+      writeMatch(db, batch);
+      if (!names.has(matchId)) {
+        newMatches++;
+        newBlunders += batch.blunders.length;
+      }
+      onProgress(`  ${matchId}: ${batch.blunders.length} blunders (${done + 1} of ${ids.length})`);
+    }
+
+    finishRun(db, runId, { newBlunders, error: null, backfilled });
+    return { runId, newMatches, newBlunders };
   } catch (error) {
     try {
       const message = error instanceof Error ? error.message : String(error);
-      finishRun(db, runId, { newBlunders: 0, error: message, highWater: null });
+      finishRun(db, runId, { newBlunders: 0, error: message, backfilled: false });
     } catch {
       // The database may be what failed; the caller still hears about the first error.
     }

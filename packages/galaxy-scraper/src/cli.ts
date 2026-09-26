@@ -1,71 +1,53 @@
 #!/usr/bin/env node
 import { GalaxyClient } from "./api.ts";
 import { ensureCredentials, login } from "./auth.ts";
-import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
+import { DB_PATH, RAW_DIR } from "./config.ts";
 import { readStoredCredentials } from "./credentials.ts";
-import { openDatabase, reencodeXgids, writeBatch } from "./db.ts";
+import { openDatabase, reencodeXgids, writeMatch } from "./db.ts";
 import { withSyncLock } from "./lock.ts";
-import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
-import { recordFullSync, syncIncremental } from "./sync.ts";
+import { readCachedMatches } from "./matches.ts";
+import { syncIncremental } from "./sync.ts";
 import { normalize } from "./transform.ts";
 import { verifyConverter } from "./verify.ts";
 
 interface Args {
   command: string;
-  categories: string[];
   delayMs: number;
-  resume: boolean;
   full: boolean;
-  includeRecent: boolean;
-  maxPages: number;
   dbPath: string;
 }
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
     command: argv[0] ?? "help",
-    categories: [],
     delayMs: 1000,
-    resume: false,
     full: false,
-    includeRecent: false,
-    maxPages: 100,
     dbPath: DB_PATH,
   };
 
   for (const arg of argv.slice(1)) {
     const [key, value] = arg.startsWith("--") ? arg.slice(2).split("=") : [arg, undefined];
-    if (key === "category" && value) args.categories.push(...value.split(","));
-    else if (key === "delay" && value) args.delayMs = Number(value);
-    else if (key === "max-pages" && value) args.maxPages = Number(value);
+    if (key === "delay" && value) args.delayMs = Number(value);
     else if (key === "db" && value) args.dbPath = value;
-    else if (key === "resume") args.resume = true;
     else if (key === "full") args.full = true;
-    else if (key === "include-recent") args.includeRecent = true;
   }
 
   return args;
 }
 
 const HELP = `
-galaxy-scraper — pull Backgammon Galaxy blunder analysis into SQLite
+galaxy-scraper — pull Backgammon Galaxy matches and their blunders into SQLite
 
-  sync [options]             Log in if needed, then fetch what's new and load it
+  sync [options]             Log in if needed, then fetch the matches that are new
   login                      Capture fresh tokens from the Galaxy web client
-  categories                 List blunder categories and counts
-  scrape [options]           Download category pages into raw/
-  load [options]             Build the SQLite database from raw/
+  load [options]             Rebuild the database from the matches cached in raw/
   reencode [options]         Rewrite every XGID from the GNU BG ids already stored
   stats [options]            Summarise what is in the database
   verify                     Check the XGID converter against Galaxy's own XGIDs
 
 Options
-  --category=a,b             Limit to specific categories (repeatable)
+  --full                     Make sync walk the whole match history
   --delay=1000               Milliseconds between requests
-  --full                     Make sync fetch every page, not just what's new
-  --resume                   Reuse pages already downloaded
-  --include-recent           Include the cross-cutting "recent" category
-  --max-pages=100            Safety cap on pages per category
   --db=<path>                Database location
 
 Credentials live in .auth.json beside the database (written by login) and are renewed
@@ -73,34 +55,25 @@ automatically while the refresh token lasts. $GALAXY_TOKEN or a .token file stil
 `;
 
 function loadIntoDatabase(dbPath: string, selfId: string | null): void {
-  const pages = readRawPages();
-  if (pages.length === 0) {
-    console.log(`No cached pages in ${RAW_DIR}. Run "scrape" first.`);
+  const records = readCachedMatches();
+  if (records.length === 0) {
+    console.log(`No cached matches in ${RAW_DIR}. Run "sync" first.`);
     return;
   }
 
   const db = openDatabase(dbPath);
-  const totals = { matches: 0, blunders: 0, candidates: 0, cubes: 0 };
+  for (const record of records) writeMatch(db, normalize(record, selfId));
 
-  for (const { category, payload } of pages) {
-    const batch = normalize(payload?.data?.events ?? [], category, selfId);
-    const written = writeBatch(db, batch);
-    totals.matches += written.matches;
-    totals.blunders += written.blunders;
-    totals.candidates += written.candidates;
-    totals.cubes += written.cubes;
-  }
-
-  const distinct = db.prepare("SELECT COUNT(*) AS n FROM blunders").get() as { n: number };
+  const blunders = db.prepare("SELECT COUNT(*) AS n FROM blunders").get() as { n: number };
   const moves = db.prepare("SELECT COUNT(*) AS n FROM candidate_moves").get() as { n: number };
   const matches = db.prepare("SELECT COUNT(*) AS n FROM matches").get() as { n: number };
   db.close();
 
-  console.log(`\nRead ${pages.length} cached pages (${totals.blunders} blunder rows written).`);
+  console.log(`\nLoaded ${records.length} cached matches.`);
   console.log(`Database: ${dbPath}`);
-  console.log(`  ${distinct.n} distinct blunders`);
-  console.log(`  ${moves.n} candidate moves`);
   console.log(`  ${matches.n} matches`);
+  console.log(`  ${blunders.n} blunders`);
+  console.log(`  ${moves.n} candidate moves`);
 }
 
 function printStats(dbPath: string): void {
@@ -161,7 +134,7 @@ async function main(): Promise<void> {
   if (args.command === "verify") {
     const report = verifyConverter();
     if (report.total === 0) {
-      console.log('No cached pages to verify against. Run "scrape" first.');
+      console.log('No cached matches to verify against. Run "sync" first.');
       return;
     }
     const pct = ((report.exact / report.total) * 100).toFixed(2);
@@ -196,7 +169,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (!["sync", "all", "scrape", "categories"].includes(args.command)) {
+  if (args.command !== "sync") {
     console.log(HELP);
     return;
   }
@@ -207,69 +180,26 @@ async function main(): Promise<void> {
 }
 
 async function fetchFromGalaxy(args: Args): Promise<void> {
-  if (args.command === "sync" && !args.full) {
-    const db = openDatabase(args.dbPath);
-    try {
-      const { newBlunders } = await syncIncremental(db, {
-        trigger: "cli",
-        connect: async () => {
-          const credentials = await ensureCredentials();
-          const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
-          return { client, selfId: credentials.selfId };
-        },
-        onProgress: (m) => console.log(m),
-      });
-      console.log(newBlunders ? `\n${newBlunders} new blunders.` : "Nothing new on Galaxy.");
-    } finally {
-      db.close();
-    }
-    return;
-  }
-
-  const credentials = await ensureCredentials();
-  const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
-
-  const discovered = await client.fetchCategories();
-  if (discovered) console.log(`Categories endpoint: ${discovered.path}`);
-  else console.log("Categories endpoint not found — using the known category list.");
-
-  if (args.command === "categories") {
-    const counts = discovered?.counts;
-    if (!counts) {
-      console.log(KNOWN_CATEGORIES.join("\n"));
-      return;
-    }
-    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    let total = 0;
-    for (const [name, count] of entries) {
-      console.log(`  ${name.padEnd(24)} ${String(count).padStart(5)}`);
-      total += count;
-    }
-    console.log(`  ${"TOTAL".padEnd(24)} ${String(total).padStart(5)}`);
-    return;
-  }
-
-  const scrapeThenLoad = args.command === "sync" || args.command === "all";
-  const categories = resolveCategories(discovered?.counts ?? null, args);
-  console.log(`\nScraping ${categories.length} categories at ${args.delayMs}ms/request...\n`);
-
-  let grandTotal = 0;
-  for (const category of categories) {
-    const { pages, blunders } = await scrapeCategory(client, category, {
-      resume: args.resume,
-      maxPages: args.maxPages,
+  const db = openDatabase(args.dbPath);
+  try {
+    const { newMatches, newBlunders } = await syncIncremental(db, {
+      trigger: "cli",
+      full: args.full,
+      connect: async () => {
+        const credentials = await ensureCredentials();
+        const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
+        return { client, selfId: credentials.selfId };
+      },
       onProgress: (m) => console.log(m),
     });
-    console.log(`${category}: ${blunders} blunders across ${pages} pages`);
-    grandTotal += blunders;
+    console.log(
+      newMatches
+        ? `\n${newMatches} new matches, ${newBlunders} new blunders.`
+        : "Nothing new on Galaxy.",
+    );
+  } finally {
+    db.close();
   }
-  console.log(`\nScraped ${grandTotal} blunders into ${RAW_DIR}`);
-
-  if (!scrapeThenLoad) return;
-  loadIntoDatabase(args.dbPath, credentials.selfId);
-  const db = openDatabase(args.dbPath);
-  recordFullSync(db);
-  db.close();
 }
 
 main().catch((error: unknown) => {

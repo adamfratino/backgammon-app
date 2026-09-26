@@ -5,11 +5,10 @@ import { Progress, useToastManager } from "@uiid/design-system";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { categoryLabel } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 const isRunning = (state: string | undefined): boolean =>
-  state === "checking" || state === "scraping";
+  state === "checking" || state === "fetching";
 
 /** The last run this browser reported on. Kept across visits, so runs it missed still count. */
 const SEEN_KEY = "galaxy-sync:seen-run";
@@ -63,7 +62,7 @@ export function SyncToasts() {
 
   useEffect(() => {
     if (!status?.runId) return;
-    const { runId, state, category, done, total, newSince } = status;
+    const { runId, state, done, total, newSince } = status;
 
     // A first visit starts from the latest run rather than reporting the whole history.
     if (seen === null) {
@@ -73,12 +72,11 @@ export function SyncToasts() {
     if (runId <= seen) return;
     const ours = loading.current?.runId === runId ? loading.current.id : null;
 
-    if (state === "scraping") {
+    if (state === "fetching") {
       if (ours && loading.current?.done === done) return;
-      const name = categoryLabel(category ?? "").toLowerCase();
       const progress = {
-        title: "Syncing blunders",
-        description: `Scraping ${name} (${done + 1} of ${total})`,
+        title: "Syncing matches",
+        description: `Match ${done + 1} of ${total}`,
         data: {
           children: <Progress value={done} max={total} hideValue aria-label="Sync progress" />,
         },
