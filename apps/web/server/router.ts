@@ -51,6 +51,7 @@ const category = z.object({
 const syncStatus = z.object({
   runId: z.number().nullable(),
   state: z.enum(["idle", "checking", "scraping", "done", "error"]),
+  category: z.string().nullable(),
   done: z.number(),
   total: z.number(),
   newBlunders: z.number(),

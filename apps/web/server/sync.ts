@@ -15,6 +15,8 @@ export interface SyncStatus {
   /** The `sync_runs` row of the latest run, or null before the first. */
   runId: number | null;
   state: "idle" | "checking" | "scraping" | "done" | "error";
+  /** The category being fetched, as Galaxy names it (`middle_game`). */
+  category: string | null;
   /** Categories fetched so far, out of `total`. */
   done: number;
   total: number;
@@ -30,7 +32,10 @@ export interface SyncStatus {
  */
 export const SYNC_INTERVAL_MS = Number(process.env.GALAXY_SYNC_INTERVAL_MS ?? 10 * 60_000);
 
-/** Closer together than this, a second trigger is almost certainly the same moment. */
+/**
+ * An app opening this soon after another run has nothing to add. Boot and the
+ * interval aren't held to it: restarting the server is asking for a sync.
+ */
 const MIN_GAP_MS = 2 * 60_000;
 
 function startedRecently(db: DatabaseSync): boolean {
@@ -45,6 +50,7 @@ function createSyncJob() {
   let status: SyncStatus = {
     runId: null,
     state: "idle",
+    category: null,
     done: 0,
     total: 0,
     newBlunders: 0,
@@ -56,13 +62,21 @@ function createSyncJob() {
     // The app reads the database through a read-only handle, so the job opens its own.
     const db = openDatabase(DB_PATH);
     try {
-      if (startedRecently(db)) return;
+      if (trigger === "mount" && startedRecently(db)) return;
 
       const { lastInsertRowid } = db
         .prepare("INSERT INTO sync_runs (trigger, started_at) VALUES (?, ?)")
         .run(trigger, new Date().toISOString());
       const runId = Number(lastInsertRowid);
-      status = { ...status, runId, state: "checking", done: 0, total: 0, error: null };
+      status = {
+        ...status,
+        runId,
+        state: "checking",
+        category: null,
+        done: 0,
+        total: 0,
+        error: null,
+      };
 
       const finish = (newBlunders: number, error: string | null): void => {
         const finishedAt = new Date().toISOString();
@@ -86,7 +100,8 @@ function createSyncJob() {
           selfId: credentials.selfId,
           onPhase: (phase) => {
             if (phase.phase === "scraping") {
-              status = { ...status, state: "scraping", done: phase.done, total: phase.total };
+              const { category, done, total } = phase;
+              status = { ...status, state: "scraping", category, done, total };
             }
           },
         });

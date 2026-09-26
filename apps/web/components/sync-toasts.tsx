@@ -5,6 +5,7 @@ import { Progress, useToastManager } from "@uiid/design-system";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { categoryLabel } from "@/lib/constants";
 import { useTRPC } from "@/trpc/client";
 
 const isRunning = (state: string | undefined): boolean =>
@@ -45,14 +46,15 @@ export function SyncToasts() {
 
   useEffect(() => {
     if (!status?.runId || announced.current === status.runId) return;
-    const { runId, state, done, total, newBlunders } = status;
+    const { runId, state, category, done, total, newBlunders } = status;
     const ours = loading.current?.runId === runId ? loading.current.id : null;
 
     if (state === "scraping") {
       if (ours && loading.current?.done === done) return;
+      const name = categoryLabel(category ?? "").toLowerCase();
       const progress = {
         title: "Syncing blunders",
-        description: `${done} of ${total} categories`,
+        description: `Scraping ${name} (${done + 1} of ${total})`,
         data: {
           children: <Progress value={done} max={total} hideValue aria-label="Sync progress" />,
         },
