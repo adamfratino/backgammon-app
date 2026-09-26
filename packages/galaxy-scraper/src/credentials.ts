@@ -120,11 +120,14 @@ export function readStoredCredentials(): Credentials | null {
   const env = process.env.GALAXY_TOKEN?.trim().replace(/^Bearer\s+/i, "");
   if (env) return describeCredentials(env, null);
 
+  // The web app bundles this module. Every path here is decided at runtime, so
+  // `turbopackIgnore` stops Turbopack tracing the whole project to cover them.
+
   // The next save moves a legacy file's tokens to `AUTH_FILE`.
   for (const file of [AUTH_FILE, LEGACY_AUTH_FILE]) {
-    if (!existsSync(file)) continue;
+    if (!existsSync(/*turbopackIgnore: true*/ file)) continue;
     try {
-      const saved = JSON.parse(readFileSync(file, "utf8")) as {
+      const saved = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, "utf8")) as {
         accessToken?: string;
         refreshToken?: string | null;
       };
@@ -136,8 +139,8 @@ export function readStoredCredentials(): Credentials | null {
   }
 
   for (const file of LEGACY_TOKEN_FILES) {
-    if (!existsSync(file)) continue;
-    const token = readFileSync(file, "utf8")
+    if (!existsSync(/*turbopackIgnore: true*/ file)) continue;
+    const token = readFileSync(/*turbopackIgnore: true*/ file, "utf8")
       .trim()
       .replace(/^Bearer\s+/i, "");
     if (token) return describeCredentials(token, null);

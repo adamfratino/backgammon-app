@@ -68,7 +68,11 @@ function copyToClipboard(content: string): boolean {
       : process.platform === "win32"
         ? ["clip"]
         : ["xclip", "-selection", "clipboard"];
-  const result = spawnSync(command[0]!, command.slice(1), { input: content, stdio: "pipe" });
+  // The web app bundles this module; tell Turbopack the command isn't a file to trace.
+  const result = spawnSync(/*turbopackIgnore: true*/ command[0]!, command.slice(1), {
+    input: content,
+    stdio: "pipe",
+  });
   return result.status === 0;
 }
 
