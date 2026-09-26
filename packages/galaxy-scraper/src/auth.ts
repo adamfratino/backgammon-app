@@ -22,7 +22,10 @@ const SNIPPET_PATH = join(dirname(fileURLToPath(import.meta.url)), "console-snip
  * does. `account` is Galaxy's public web client, so no secret is involved. Returns null when
  * the refresh token itself is dead, in which case a fresh login is the only way forward.
  */
-export async function refreshCredentials(credentials: Credentials): Promise<Credentials | null> {
+export async function refreshCredentials(
+  credentials: Credentials,
+  log: (message: string) => void = console.log,
+): Promise<Credentials | null> {
   if (!credentials.refreshToken) return null;
 
   const response = await fetch(KEYCLOAK_TOKEN_URL, {
@@ -49,7 +52,7 @@ export async function refreshCredentials(credentials: Credentials): Promise<Cred
     } catch {
       // Non-JSON error body; the status is all we have.
     }
-    console.log(`Could not refresh the Galaxy token (${reason}).`);
+    log(`Could not refresh the Galaxy token (${reason}).`);
     return null;
   }
 
@@ -165,30 +168,48 @@ Let's grab your Galaxy session tokens (about 20 seconds):
   }
 }
 
+/** No usable Galaxy login, and no terminal to paste a new one into. */
+export class LoginRequiredError extends Error {
+  constructor() {
+    super('Galaxy login expired. Run "pnpm blunders" to log in again.');
+    this.name = "LoginRequiredError";
+  }
+}
+
+export interface EnsureCredentialsOptions {
+  /** Fall back to the paste-a-token login. The server has no terminal, so it passes false. */
+  interactive?: boolean;
+  log?: (message: string) => void;
+}
+
 /**
  * The credentials every network command starts from. Uses what is stored, silently renews
  * it via the refresh token when it is close to expiry, and falls back to the interactive
  * login only when nothing usable is left.
  */
-export async function ensureCredentials(): Promise<Credentials> {
+export async function ensureCredentials({
+  interactive = true,
+  log = console.log,
+}: EnsureCredentialsOptions = {}): Promise<Credentials> {
   let credentials = readStoredCredentials();
 
   // Renew on every run while the refresh token is still alive. Each refresh rolls the
   // window forward, so running at least once within it means never pasting again.
   if (credentials?.refreshToken && !isExpired(credentials.refreshExpiresAt)) {
-    const renewed = await refreshCredentials(credentials);
+    const renewed = await refreshCredentials(credentials, log);
     if (renewed) {
       saveCredentials(renewed.token, renewed.refreshToken);
-      console.log(`Renewed the Galaxy token (${describe(renewed)}).`);
+      log(`Renewed the Galaxy token (${describe(renewed)}).`);
       credentials = renewed;
     }
   }
 
   if (!credentials || isExpired(credentials.expiresAt)) {
-    if (credentials) console.log("The saved Galaxy token has expired.");
+    if (!interactive) throw new LoginRequiredError();
+    if (credentials) log("The saved Galaxy token has expired.");
     return login();
   }
 
-  console.log(`Using saved Galaxy credentials (${describe(credentials)}).`);
+  log(`Using saved Galaxy credentials (${describe(credentials)}).`);
   return credentials;
 }
