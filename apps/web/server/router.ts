@@ -48,6 +48,16 @@ const category = z.object({
   total: z.number(),
 });
 
+const syncStatus = z.object({
+  runId: z.number().nullable(),
+  state: z.enum(["idle", "checking", "scraping", "done", "error"]),
+  done: z.number(),
+  total: z.number(),
+  newBlunders: z.number(),
+  error: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+});
+
 const blunder = z.object({
   blunder_id: z.number(),
   kind: z.enum(KINDS),
@@ -1336,9 +1346,10 @@ export const appRouter = router({
   }),
 
   /**
-   * Notes are the one thing the app writes. They live in their own store, which
-   * these procedures reach only through `ctx.notes` — so where notes are kept can
-   * change without anything below, or anything in the browser, noticing.
+   * Notes are the one thing the app writes besides what it syncs from Galaxy.
+   * They live in their own store, which these procedures reach only through
+   * `ctx.notes` — so where notes are kept can change without anything below, or
+   * anything in the browser, noticing.
    */
   notes: router({
     /** The note on one blunder, or null if it has none. */
@@ -1379,6 +1390,14 @@ export const appRouter = router({
 
         return ctx.notes.save(input.blunder_id, input.body);
       }),
+  }),
+
+  /** The server syncs from Galaxy on its own; the app only asks it to, and listens. */
+  sync: router({
+    /** Asks for a sync, which the job skips if one ran moments ago. Returns at once. */
+    start: publicProcedure.mutation(({ ctx }) => ctx.sync.start("mount")),
+
+    status: publicProcedure.output(syncStatus).query(({ ctx }) => ctx.sync.status()),
   }),
 });
 

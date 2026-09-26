@@ -1,4 +1,3 @@
-import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import {
   DB_PATH,
@@ -24,6 +23,12 @@ export interface SyncStatus {
   /** ISO 8601. Tells a page whether the run finished before it opened. */
   finishedAt: string | null;
 }
+
+/**
+ * How often the server syncs while it runs. `GALAXY_SYNC_INTERVAL_MS=0` turns
+ * syncing off altogether, including when the app opens.
+ */
+export const SYNC_INTERVAL_MS = Number(process.env.GALAXY_SYNC_INTERVAL_MS ?? 10 * 60_000);
 
 /** Closer together than this, a second trigger is almost certainly the same moment. */
 const MIN_GAP_MS = 2 * 60_000;
@@ -64,7 +69,15 @@ function createSyncJob() {
         db.prepare(
           "UPDATE sync_runs SET finished_at = ?, new_blunders = ?, error = ? WHERE id = ?",
         ).run(finishedAt, newBlunders, error, runId);
-        status = { ...status, state: error ? "error" : "done", newBlunders, error, finishedAt };
+        const done = error ? status.done : status.total;
+        status = {
+          ...status,
+          state: error ? "error" : "done",
+          done,
+          newBlunders,
+          error,
+          finishedAt,
+        };
       };
 
       try {
@@ -89,7 +102,7 @@ function createSyncJob() {
   return {
     /** Starts a run in the background, unless one is running or another started moments ago. */
     start(trigger: SyncTrigger): void {
-      if (running) return;
+      if (running || !(SYNC_INTERVAL_MS > 0)) return;
       running = true;
       withSyncLock(() => run(trigger))
         .catch((error: unknown) => console.error("Galaxy sync failed:", error))
