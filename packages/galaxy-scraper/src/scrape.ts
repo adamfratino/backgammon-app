@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { PermanentError, type GalaxyClient } from "./api.ts";
 import { CROSS_CUTTING_CATEGORIES, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
-import type { CategoryPage } from "./types.ts";
+import type { BlunderEvent, CategoryPage } from "./types.ts";
+
+/** Blunders per category page. Several events can share one, so this counts ids, not events. */
+export const PAGE_SIZE = 100;
 
 export interface ScrapeOptions {
   categories?: string[];
@@ -11,18 +14,22 @@ export interface ScrapeOptions {
   resume?: boolean;
   maxPages?: number;
   onProgress?: (message: string) => void;
+  /** Called with each page's events as it arrives. */
+  onPage?: (events: BlunderEvent[]) => void;
+  /** Stop after this page, as well as at the end of the category. */
+  stopAfter?: (events: BlunderEvent[]) => boolean;
 }
 
 const pagePath = (category: string, page: number): string =>
   join(RAW_DIR, category, `page-${String(page).padStart(3, "0")}.json`);
 
 /**
- * Walks a category's pages until one comes back empty or stops yielding
- * blunder ids we haven't already seen. The API exposes no page count, so
- * exhaustion is the only stop signal.
+ * Walks a category's pages until one comes back short, or stops yielding
+ * blunder ids we haven't already seen. The API exposes no page count, so a page
+ * with fewer than `PAGE_SIZE` blunders is the only sign of the last one.
  */
 export async function scrapeCategory(
-  client: GalaxyClient,
+  client: Pick<GalaxyClient, "fetchCategoryPage">,
   category: string,
   options: ScrapeOptions = {},
 ): Promise<{ pages: number; blunders: number }> {
@@ -62,6 +69,7 @@ export async function scrapeCategory(
     const before = seen.size;
     for (const event of events) seen.add(event.blunder_id);
     pages = page;
+    options.onPage?.(events);
 
     log(`  ${category}: page ${page} → ${events.length} events, ${seen.size} blunders`);
 
@@ -70,6 +78,11 @@ export async function scrapeCategory(
       log(`  ${category}: page ${page} added no new blunders — done`);
       break;
     }
+    if (seen.size - before < PAGE_SIZE) {
+      log(`  ${category}: page ${page} is the last`);
+      break;
+    }
+    if (options.stopAfter?.(events)) break;
   }
 
   return { pages, blunders: seen.size };

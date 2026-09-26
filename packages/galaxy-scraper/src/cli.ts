@@ -4,7 +4,9 @@ import { ensureCredentials, login } from "./auth.ts";
 import { DB_PATH, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts";
 import { readStoredCredentials } from "./credentials.ts";
 import { openDatabase, reencodeXgids, writeBatch } from "./db.ts";
+import { withSyncLock } from "./lock.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
+import { syncIncremental } from "./sync.ts";
 import { normalize } from "./transform.ts";
 import { verifyConverter } from "./verify.ts";
 
@@ -13,6 +15,7 @@ interface Args {
   categories: string[];
   delayMs: number;
   resume: boolean;
+  full: boolean;
   includeRecent: boolean;
   maxPages: number;
   dbPath: string;
@@ -24,6 +27,7 @@ function parseArgs(argv: string[]): Args {
     categories: [],
     delayMs: 1000,
     resume: false,
+    full: false,
     includeRecent: false,
     maxPages: 100,
     dbPath: DB_PATH,
@@ -36,6 +40,7 @@ function parseArgs(argv: string[]): Args {
     else if (key === "max-pages" && value) args.maxPages = Number(value);
     else if (key === "db" && value) args.dbPath = value;
     else if (key === "resume") args.resume = true;
+    else if (key === "full") args.full = true;
     else if (key === "include-recent") args.includeRecent = true;
   }
 
@@ -45,7 +50,7 @@ function parseArgs(argv: string[]): Args {
 const HELP = `
 galaxy-scraper — pull Backgammon Galaxy blunder analysis into SQLite
 
-  sync [options]             Log in if needed, then scrape everything and load it
+  sync [options]             Log in if needed, then fetch what's new and load it
   login                      Capture fresh tokens from the Galaxy web client
   categories                 List blunder categories and counts
   scrape [options]           Download category pages into raw/
@@ -57,6 +62,7 @@ galaxy-scraper — pull Backgammon Galaxy blunder analysis into SQLite
 Options
   --category=a,b             Limit to specific categories (repeatable)
   --delay=1000               Milliseconds between requests
+  --full                     Make sync fetch every page, not just what's new
   --resume                   Reuse pages already downloaded
   --include-recent           Include the cross-cutting "recent" category
   --max-pages=100            Safety cap on pages per category
@@ -190,8 +196,33 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!["sync", "all", "scrape", "categories"].includes(args.command)) {
+    console.log(HELP);
+    return;
+  }
+
+  // Renewing the token is a write to the login every checkout shares, so it waits its turn.
+  const ran = await withSyncLock(() => fetchFromGalaxy(args));
+  if (ran === null) console.log("Another sync is running. Try again in a minute.");
+}
+
+async function fetchFromGalaxy(args: Args): Promise<void> {
   const credentials = await ensureCredentials();
   const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
+
+  if (args.command === "sync" && !args.full) {
+    const db = openDatabase(args.dbPath);
+    try {
+      const { newBlunders } = await syncIncremental(client, db, {
+        selfId: credentials.selfId,
+        onProgress: (m) => console.log(m),
+      });
+      console.log(newBlunders ? `\n${newBlunders} new blunders.` : "Nothing new on Galaxy.");
+    } finally {
+      db.close();
+    }
+    return;
+  }
 
   const discovered = await client.fetchCategories();
   if (discovered) console.log(`Categories endpoint: ${discovered.path}`);
@@ -214,11 +245,6 @@ async function main(): Promise<void> {
   }
 
   const scrapeThenLoad = args.command === "sync" || args.command === "all";
-  if (args.command !== "scrape" && !scrapeThenLoad) {
-    console.log(HELP);
-    return;
-  }
-
   const categories = resolveCategories(discovered?.counts ?? null, args);
   console.log(`\nScraping ${categories.length} categories at ${args.delayMs}ms/request...\n`);
 
