@@ -23,7 +23,8 @@
     "all": "node --disable-warning=ExperimentalWarning src/cli.ts all",
     "stats": "node --disable-warning=ExperimentalWarning src/cli.ts stats",
     "check-types": "tsc --noEmit",
-    "verify": "node --disable-warning=ExperimentalWarning src/cli.ts verify"
+    "verify": "node --disable-warning=ExperimentalWarning src/cli.ts verify",
+    "test": "node --disable-warning=ExperimentalWarning --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
