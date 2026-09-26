@@ -82,8 +82,9 @@ export function QuickViewProvider({
         onOpenChange={setOpen}
         // This dialog is opened from the rows, so it has no trigger of its own.
         // Left undefined, `resolveTrigger` plants a focusable empty
-        // `<span role="button">` in the list for a screen reader to find.
-        TriggerProps={{ render: <span hidden /> }}
+        // `<span role="button">` in the list for a screen reader to find. Base UI
+        // assumes a custom `render` is a <button> unless told otherwise.
+        TriggerProps={{ render: <span hidden />, nativeButton: false }}
         PopupProps={{ finalFocus: returnFocusTo }}
         action={
           <Button

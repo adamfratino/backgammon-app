@@ -22,24 +22,35 @@ const SNIPPET_PATH = join(dirname(fileURLToPath(import.meta.url)), "console-snip
  * does. `account` is Galaxy's public web client, so no secret is involved. Returns null when
  * the refresh token itself is dead, in which case a fresh login is the only way forward.
  */
-export async function refreshCredentials(credentials: Credentials): Promise<Credentials | null> {
+export async function refreshCredentials(
+  credentials: Credentials,
+  log: (message: string) => void = console.log,
+): Promise<Credentials | null> {
   if (!credentials.refreshToken) return null;
 
-  const response = await fetch(KEYCLOAK_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-      origin: "https://www.backgammongalaxy.com",
-      referer: "https://www.backgammongalaxy.com/play",
-      "user-agent": BROWSER_USER_AGENT,
-    },
-    body: new URLSearchParams({
-      client_id: KEYCLOAK_CLIENT_ID,
-      grant_type: "refresh_token",
-      refresh_token: credentials.refreshToken,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(KEYCLOAK_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        origin: "https://www.backgammongalaxy.com",
+        referer: "https://www.backgammongalaxy.com/play",
+        "user-agent": BROWSER_USER_AGENT,
+      },
+      body: new URLSearchParams({
+        client_id: KEYCLOAK_CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token: credentials.refreshToken,
+      }),
+    });
+  } catch (error) {
+    // Offline, or Galaxy is down. The stored token may well still be good, so carry on with it.
+    const reason = error instanceof Error ? error.message : String(error);
+    log(`Could not reach Galaxy to refresh the token (${reason}).`);
+    return null;
+  }
 
   if (!response.ok) {
     let reason = `HTTP ${response.status}`;
@@ -49,7 +60,7 @@ export async function refreshCredentials(credentials: Credentials): Promise<Cred
     } catch {
       // Non-JSON error body; the status is all we have.
     }
-    console.log(`Could not refresh the Galaxy token (${reason}).`);
+    log(`Could not refresh the Galaxy token (${reason}).`);
     return null;
   }
 
@@ -65,7 +76,11 @@ function copyToClipboard(content: string): boolean {
       : process.platform === "win32"
         ? ["clip"]
         : ["xclip", "-selection", "clipboard"];
-  const result = spawnSync(command[0]!, command.slice(1), { input: content, stdio: "pipe" });
+  // The web app bundles this module; tell Turbopack the command isn't a file to trace.
+  const result = spawnSync(/*turbopackIgnore: true*/ command[0]!, command.slice(1), {
+    input: content,
+    stdio: "pipe",
+  });
   return result.status === 0;
 }
 
@@ -165,30 +180,48 @@ Let's grab your Galaxy session tokens (about 20 seconds):
   }
 }
 
+/** No usable Galaxy login, and no terminal to paste a new one into. */
+export class LoginRequiredError extends Error {
+  constructor() {
+    super('Galaxy login expired. Run "pnpm blunders" to log in again.');
+    this.name = "LoginRequiredError";
+  }
+}
+
+interface EnsureCredentialsOptions {
+  /** Fall back to the paste-a-token login. The server has no terminal, so it passes false. */
+  interactive?: boolean;
+  log?: (message: string) => void;
+}
+
 /**
  * The credentials every network command starts from. Uses what is stored, silently renews
  * it via the refresh token when it is close to expiry, and falls back to the interactive
  * login only when nothing usable is left.
  */
-export async function ensureCredentials(): Promise<Credentials> {
+export async function ensureCredentials({
+  interactive = true,
+  log = console.log,
+}: EnsureCredentialsOptions = {}): Promise<Credentials> {
   let credentials = readStoredCredentials();
 
   // Renew on every run while the refresh token is still alive. Each refresh rolls the
   // window forward, so running at least once within it means never pasting again.
   if (credentials?.refreshToken && !isExpired(credentials.refreshExpiresAt)) {
-    const renewed = await refreshCredentials(credentials);
+    const renewed = await refreshCredentials(credentials, log);
     if (renewed) {
       saveCredentials(renewed.token, renewed.refreshToken);
-      console.log(`Renewed the Galaxy token (${describe(renewed)}).`);
+      log(`Renewed the Galaxy token (${describe(renewed)}).`);
       credentials = renewed;
     }
   }
 
   if (!credentials || isExpired(credentials.expiresAt)) {
-    if (credentials) console.log("The saved Galaxy token has expired.");
+    if (!interactive) throw new LoginRequiredError();
+    if (credentials) log("The saved Galaxy token has expired.");
     return login();
   }
 
-  console.log(`Using saved Galaxy credentials (${describe(credentials)}).`);
+  log(`Using saved Galaxy credentials (${describe(credentials)}).`);
   return credentials;
 }

@@ -1,9 +1,12 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { PACKAGE_ROOT } from "./config.ts";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { DATA_DIR, PACKAGE_ROOT } from "./config.ts";
 
 /** Where `login` saves the access and refresh token pair. Gitignored. */
-export const AUTH_FILE = join(PACKAGE_ROOT, ".auth.json");
+export const AUTH_FILE = join(DATA_DIR, ".auth.json");
+
+/** Where `AUTH_FILE` used to live: the package root of the checkout holding the database. */
+const LEGACY_AUTH_FILE = join(dirname(DATA_DIR), ".auth.json");
 
 /** Legacy single-token files, still honoured so an existing setup keeps working. */
 const LEGACY_TOKEN_FILES = [join(PACKAGE_ROOT, ".token"), resolve(PACKAGE_ROOT, "../../.token")];
@@ -95,8 +98,12 @@ export function parsePastedCredentials(
 }
 
 export function saveCredentials(token: string, refreshToken: string | null): void {
+  mkdirSync(DATA_DIR, { recursive: true });
+  // Every sync renews the login, so a restart can land mid-write. Writing beside
+  // the file and renaming over it means a crash leaves the old login, not half of one.
+  const pending = `${AUTH_FILE}.pending`;
   writeFileSync(
-    AUTH_FILE,
+    pending,
     JSON.stringify(
       { accessToken: token, refreshToken, savedAt: new Date().toISOString() },
       null,
@@ -104,20 +111,27 @@ export function saveCredentials(token: string, refreshToken: string | null): voi
     ) + "\n",
     { mode: 0o600 },
   );
-  chmodSync(AUTH_FILE, 0o600);
+  chmodSync(pending, 0o600);
+  renameSync(pending, AUTH_FILE);
 }
 
 /**
- * Whatever credentials are on disk, valid or not: `$GALAXY_TOKEN`, then `.auth.json`,
- * then a legacy `.token` file. Returns null when there is nothing at all.
+ * Whatever credentials are on disk, valid or not: `$GALAXY_TOKEN`, then `.auth.json`
+ * (where it is now, then where it was), then a legacy `.token` file. Returns null when
+ * there is nothing at all.
  */
 export function readStoredCredentials(): Credentials | null {
   const env = process.env.GALAXY_TOKEN?.trim().replace(/^Bearer\s+/i, "");
   if (env) return describeCredentials(env, null);
 
-  if (existsSync(AUTH_FILE)) {
+  // The web app bundles this module. Every path here is decided at runtime, so
+  // `turbopackIgnore` stops Turbopack tracing the whole project to cover them.
+
+  // The next save moves a legacy file's tokens to `AUTH_FILE`.
+  for (const file of [AUTH_FILE, LEGACY_AUTH_FILE]) {
+    if (!existsSync(/*turbopackIgnore: true*/ file)) continue;
     try {
-      const saved = JSON.parse(readFileSync(AUTH_FILE, "utf8")) as {
+      const saved = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, "utf8")) as {
         accessToken?: string;
         refreshToken?: string | null;
       };
@@ -129,8 +143,8 @@ export function readStoredCredentials(): Credentials | null {
   }
 
   for (const file of LEGACY_TOKEN_FILES) {
-    if (!existsSync(file)) continue;
-    const token = readFileSync(file, "utf8")
+    if (!existsSync(/*turbopackIgnore: true*/ file)) continue;
+    const token = readFileSync(/*turbopackIgnore: true*/ file, "utf8")
       .trim()
       .replace(/^Bearer\s+/i, "");
     if (token) return describeCredentials(token, null);

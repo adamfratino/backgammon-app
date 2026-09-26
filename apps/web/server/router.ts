@@ -48,6 +48,18 @@ const category = z.object({
   total: z.number(),
 });
 
+const syncStatus = z.object({
+  runId: z.number().nullable(),
+  state: z.enum(["idle", "checking", "scraping", "done", "error"]),
+  category: z.string().nullable(),
+  done: z.number(),
+  total: z.number(),
+  newBlunders: z.number(),
+  error: z.string().nullable(),
+  /** New blunders from every clean run after `since`, this one included. */
+  newSince: z.number(),
+});
+
 const blunder = z.object({
   blunder_id: z.number(),
   kind: z.enum(KINDS),
@@ -1336,9 +1348,10 @@ export const appRouter = router({
   }),
 
   /**
-   * Notes are the one thing the app writes. They live in their own store, which
-   * these procedures reach only through `ctx.notes` — so where notes are kept can
-   * change without anything below, or anything in the browser, noticing.
+   * Notes are the one thing the app writes besides what it syncs from Galaxy.
+   * They live in their own store, which these procedures reach only through
+   * `ctx.notes` — so where notes are kept can change without anything below, or
+   * anything in the browser, noticing.
    */
   notes: router({
     /** The note on one blunder, or null if it has none. */
@@ -1378,6 +1391,34 @@ export const appRouter = router({
         }
 
         return ctx.notes.save(input.blunder_id, input.body);
+      }),
+  }),
+
+  /** The server syncs from Galaxy on its own; the app only asks it to, and listens. */
+  sync: router({
+    /** Asks for a sync, which the job skips if one ran moments ago. Returns at once. */
+    start: publicProcedure.mutation(({ ctx }) => ctx.sync.start("mount")),
+
+    /**
+     * The latest run, and what every clean run since the page's last one found,
+     * including runs that finished while no page was open to see them.
+     */
+    status: publicProcedure
+      .input(z.object({ since: z.number().int().nullable() }))
+      .output(syncStatus)
+      .query(({ ctx, input }) => {
+        const status = ctx.sync.status();
+        // No run yet means `sync_runs` may not exist yet either.
+        if (input.since === null || status.runId === null) {
+          return { ...status, newSince: status.newBlunders };
+        }
+        const { n } = ctx.db
+          .prepare(
+            `SELECT COALESCE(SUM(new_blunders), 0) AS n FROM sync_runs
+              WHERE id > ? AND finished_at IS NOT NULL AND error IS NULL`,
+          )
+          .get(input.since) as { n: number };
+        return { ...status, newSince: n };
       }),
   }),
 });

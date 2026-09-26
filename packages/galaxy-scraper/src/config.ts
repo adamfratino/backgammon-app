@@ -3,9 +3,16 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(here, "..");
-export const RAW_DIR = join(PACKAGE_ROOT, "raw");
-export const DATA_DIR = join(PACKAGE_ROOT, "data");
-export const DB_PATH = join(DATA_DIR, "blunders.db");
+
+/**
+ * The database, and everything that has to be shared along with it: the Galaxy
+ * login, the raw pages and the sync lock. A worktree has no database of its own,
+ * so `BLUNDERS_DB_PATH` points it at the main checkout's (see
+ * `scripts/setup-worktree.ts`), and the rest follows it there.
+ */
+export const DB_PATH = process.env.BLUNDERS_DB_PATH ?? join(PACKAGE_ROOT, "data", "blunders.db");
+export const DATA_DIR = dirname(DB_PATH);
+export const RAW_DIR = join(DATA_DIR, "raw");
 
 export const API_BASE = "https://api.backgammongalaxy.com/blunder-service/api/v1";
 
