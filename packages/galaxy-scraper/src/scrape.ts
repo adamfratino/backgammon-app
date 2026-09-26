@@ -5,7 +5,7 @@ import { CROSS_CUTTING_CATEGORIES, KNOWN_CATEGORIES, RAW_DIR } from "./config.ts
 import type { BlunderEvent, CategoryPage } from "./types.ts";
 
 /** Blunders per category page. Several events can share one, so this counts ids, not events. */
-export const PAGE_SIZE = 100;
+const PAGE_SIZE = 100;
 
 export interface ScrapeOptions {
   categories?: string[];
@@ -78,7 +78,8 @@ export async function scrapeCategory(
       log(`  ${category}: page ${page} added no new blunders — done`);
       break;
     }
-    if (seen.size - before < PAGE_SIZE) {
+    // Counted on the page itself: a page that shifted mid-walk repeats ids from the last one.
+    if (new Set(events.map((event) => event.blunder_id)).size < PAGE_SIZE) {
       log(`  ${category}: page ${page} is the last`);
       break;
     }

@@ -56,7 +56,8 @@ const syncStatus = z.object({
   total: z.number(),
   newBlunders: z.number(),
   error: z.string().nullable(),
-  finishedAt: z.string().nullable(),
+  /** New blunders from every clean run after `since`, this one included. */
+  newSince: z.number(),
 });
 
 const blunder = z.object({
@@ -1398,7 +1399,27 @@ export const appRouter = router({
     /** Asks for a sync, which the job skips if one ran moments ago. Returns at once. */
     start: publicProcedure.mutation(({ ctx }) => ctx.sync.start("mount")),
 
-    status: publicProcedure.output(syncStatus).query(({ ctx }) => ctx.sync.status()),
+    /**
+     * The latest run, and what every clean run since the page's last one found,
+     * including runs that finished while no page was open to see them.
+     */
+    status: publicProcedure
+      .input(z.object({ since: z.number().int().nullable() }))
+      .output(syncStatus)
+      .query(({ ctx, input }) => {
+        const status = ctx.sync.status();
+        // No run yet means `sync_runs` may not exist yet either.
+        if (input.since === null || status.runId === null) {
+          return { ...status, newSince: status.newBlunders };
+        }
+        const { n } = ctx.db
+          .prepare(
+            `SELECT COALESCE(SUM(new_blunders), 0) AS n FROM sync_runs
+              WHERE id > ? AND finished_at IS NOT NULL AND error IS NULL`,
+          )
+          .get(input.since) as { n: number };
+        return { ...status, newSince: n };
+      }),
   }),
 });
 

@@ -6,7 +6,7 @@ import { readStoredCredentials } from "./credentials.ts";
 import { openDatabase, reencodeXgids, writeBatch } from "./db.ts";
 import { withSyncLock } from "./lock.ts";
 import { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
-import { syncIncremental } from "./sync.ts";
+import { recordFullSync, syncIncremental } from "./sync.ts";
 import { normalize } from "./transform.ts";
 import { verifyConverter } from "./verify.ts";
 
@@ -207,14 +207,16 @@ async function main(): Promise<void> {
 }
 
 async function fetchFromGalaxy(args: Args): Promise<void> {
-  const credentials = await ensureCredentials();
-  const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
-
   if (args.command === "sync" && !args.full) {
     const db = openDatabase(args.dbPath);
     try {
-      const { newBlunders } = await syncIncremental(client, db, {
-        selfId: credentials.selfId,
+      const { newBlunders } = await syncIncremental(db, {
+        trigger: "cli",
+        connect: async () => {
+          const credentials = await ensureCredentials();
+          const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
+          return { client, selfId: credentials.selfId };
+        },
         onProgress: (m) => console.log(m),
       });
       console.log(newBlunders ? `\n${newBlunders} new blunders.` : "Nothing new on Galaxy.");
@@ -223,6 +225,9 @@ async function fetchFromGalaxy(args: Args): Promise<void> {
     }
     return;
   }
+
+  const credentials = await ensureCredentials();
+  const client = new GalaxyClient(credentials, { delayMs: args.delayMs });
 
   const discovered = await client.fetchCategories();
   if (discovered) console.log(`Categories endpoint: ${discovered.path}`);
@@ -260,7 +265,11 @@ async function fetchFromGalaxy(args: Args): Promise<void> {
   }
   console.log(`\nScraped ${grandTotal} blunders into ${RAW_DIR}`);
 
-  if (scrapeThenLoad) loadIntoDatabase(args.dbPath, credentials.selfId);
+  if (!scrapeThenLoad) return;
+  loadIntoDatabase(args.dbPath, credentials.selfId);
+  const db = openDatabase(args.dbPath);
+  recordFullSync(db);
+  db.close();
 }
 
 main().catch((error: unknown) => {

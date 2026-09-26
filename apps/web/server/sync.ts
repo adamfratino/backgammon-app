@@ -22,15 +22,17 @@ export interface SyncStatus {
   total: number;
   newBlunders: number;
   error: string | null;
-  /** ISO 8601. Tells a page whether the run finished before it opened. */
-  finishedAt: string | null;
 }
 
 /**
  * How often the server syncs while it runs. `GALAXY_SYNC_INTERVAL_MS=0` turns
- * syncing off altogether, including when the app opens.
+ * syncing off altogether, including when the app opens. Capped at the longest
+ * wait `setInterval` takes; past it, Node fires every millisecond instead.
  */
-export const SYNC_INTERVAL_MS = Number(process.env.GALAXY_SYNC_INTERVAL_MS ?? 10 * 60_000);
+export const SYNC_INTERVAL_MS = Math.min(
+  Number(process.env.GALAXY_SYNC_INTERVAL_MS ?? 10 * 60_000),
+  2 ** 31 - 1,
+);
 
 /**
  * An app opening this soon after another run has nothing to add. Boot and the
@@ -55,7 +57,6 @@ function createSyncJob() {
     total: 0,
     newBlunders: 0,
     error: null,
-    finishedAt: null,
   };
 
   async function run(trigger: SyncTrigger): Promise<void> {
@@ -64,58 +65,36 @@ function createSyncJob() {
     try {
       if (trigger === "mount" && startedRecently(db)) return;
 
-      const { lastInsertRowid } = db
-        .prepare("INSERT INTO sync_runs (trigger, started_at) VALUES (?, ?)")
-        .run(trigger, new Date().toISOString());
-      const runId = Number(lastInsertRowid);
-      status = {
-        ...status,
-        runId,
-        state: "checking",
-        category: null,
-        done: 0,
-        total: 0,
-        error: null,
-      };
-
-      const finish = (newBlunders: number, error: string | null): void => {
-        const finishedAt = new Date().toISOString();
-        db.prepare(
-          "UPDATE sync_runs SET finished_at = ?, new_blunders = ?, error = ? WHERE id = ?",
-        ).run(finishedAt, newBlunders, error, runId);
-        const done = error ? status.done : status.total;
-        status = {
-          ...status,
-          state: error ? "error" : "done",
-          done,
-          newBlunders,
-          error,
-          finishedAt,
-        };
-      };
-
-      try {
-        const credentials = await ensureCredentials({ interactive: false, log: () => {} });
-        const { newBlunders } = await syncIncremental(new GalaxyClient(credentials), db, {
-          selfId: credentials.selfId,
-          onPhase: (phase) => {
-            if (phase.phase === "scraping") {
-              const { category, done, total } = phase;
-              status = { ...status, state: "scraping", category, done, total };
-            }
-          },
-        });
-        finish(newBlunders, null);
-      } catch (error) {
-        finish(0, error instanceof Error ? error.message : String(error));
-      }
+      const { newBlunders } = await syncIncremental(db, {
+        trigger,
+        connect: async () => {
+          const credentials = await ensureCredentials({ interactive: false, log: () => {} });
+          return { client: new GalaxyClient(credentials), selfId: credentials.selfId };
+        },
+        onPhase: (phase) => {
+          if (phase.phase === "checking") {
+            const { runId } = phase;
+            status = { ...status, runId, state: "checking", category: null, done: 0, total: 0 };
+          } else {
+            const { category, done, total } = phase;
+            status = { ...status, state: "scraping", category, done, total };
+          }
+        },
+      });
+      status = { ...status, state: "done", done: status.total, newBlunders, error: null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      status = { ...status, state: "error", newBlunders: 0, error: message };
     } finally {
       db.close();
     }
   }
 
   return {
-    /** Starts a run in the background, unless one is running or another started moments ago. */
+    /**
+     * Starts a run in the background, unless one is running, or this is a page
+     * load and another started moments ago.
+     */
     start(trigger: SyncTrigger): void {
       if (running || !(SYNC_INTERVAL_MS > 0)) return;
       running = true;

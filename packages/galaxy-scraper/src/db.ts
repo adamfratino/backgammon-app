@@ -120,7 +120,9 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   started_at   TEXT NOT NULL,
   finished_at  TEXT,
   new_blunders INTEGER,
-  error        TEXT
+  error        TEXT,
+  -- The top of \`recent\` when a clean run checked it; see \`highWater\` in sync.ts.
+  high_water   INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_blunders_class    ON blunders(source_classification);
@@ -152,26 +154,34 @@ function bindable(row: object): Record<string, null | number | string> {
 }
 
 /**
- * `SCHEMA` only creates tables that are missing, so a `matches` built before the
- * error rates were kept never gets their columns from it. This adds them, empty,
- * and the next `load` fills them in.
+ * `SCHEMA` only creates tables that are missing, so a table built before one of
+ * these columns existed never gets it from there. This adds them, empty; the
+ * next `load` fills in the error rates.
  */
-function addErrorRateColumns(db: DatabaseSync): void {
-  const columns = db.prepare("PRAGMA table_info(matches)").all() as { name: string }[];
-  const existing = new Set(columns.map(({ name }) => name));
+const LATE_COLUMNS = [
+  ["matches", "self_error_rate", "REAL"],
+  ["matches", "opponent_error_rate", "REAL"],
+  ["sync_runs", "high_water", "INTEGER"],
+] as const;
 
-  for (const column of ["self_error_rate", "opponent_error_rate"]) {
-    if (!existing.has(column)) db.exec(`ALTER TABLE matches ADD COLUMN ${column} REAL`);
+function addLateColumns(db: DatabaseSync): void {
+  for (const [table, column, type] of LATE_COLUMNS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some(({ name }) => name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
   }
 }
 
 export function openDatabase(path: string): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path);
+  // Every checkout's dev server and the CLI can write this file. Wait out another
+  // writer's transaction rather than failing the moment it holds the lock.
+  const db = new DatabaseSync(path, { timeout: 5000 });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
-  addErrorRateColumns(db);
+  addLateColumns(db);
   return db;
 }
 
