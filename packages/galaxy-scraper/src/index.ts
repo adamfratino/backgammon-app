@@ -5,6 +5,7 @@ export { loadCredentials, readStoredCredentials } from "./credentials.ts";
 export { withSyncLock } from "./lock.ts";
 export { openDatabase, writeBatch } from "./db.ts";
 export { readRawPages, resolveCategories, scrapeCategory } from "./scrape.ts";
+export { syncIncremental, type SyncPhase } from "./sync.ts";
 export { normalize } from "./transform.ts";
 export type { Credentials } from "./credentials.ts";
 export type * from "./types.ts";

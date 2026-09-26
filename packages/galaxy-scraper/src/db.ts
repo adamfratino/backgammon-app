@@ -113,6 +113,16 @@ CREATE TABLE IF NOT EXISTS blunder_categories (
   PRIMARY KEY (blunder_id, category)
 );
 
+-- One row per sync the web server ran, for spacing them out and saying when the last one was.
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id           INTEGER PRIMARY KEY,
+  trigger      TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT,
+  new_blunders INTEGER,
+  error        TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_blunders_class    ON blunders(source_classification);
 CREATE INDEX IF NOT EXISTS idx_blunders_error    ON blunders(error_magnitude DESC);
 CREATE INDEX IF NOT EXISTS idx_blunders_match    ON blunders(match_id);
